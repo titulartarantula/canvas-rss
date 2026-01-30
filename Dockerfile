@@ -1,11 +1,12 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright/Chromium and gosu for entrypoint
+# Install system dependencies for Playwright/Chromium, gosu, and cron
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
     ca-certificates \
     gosu \
+    cron \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -39,9 +40,9 @@ COPY src/ ./src/
 COPY config/ ./config/
 RUN chown -R appuser:appuser /app
 
-# Copy and set up entrypoint (handles volume permissions)
+# Copy and set up entrypoint (handles volume permissions and cron)
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["python", "src/main.py"]
+CMD ["cron"]
