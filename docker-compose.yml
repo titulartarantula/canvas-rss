@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   canvas-rss-aggregator:
     build: .
@@ -8,6 +6,7 @@ services:
     environment:
       - TZ=America/Toronto
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-lite}
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
       - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-canvas-rss-aggregator:v1.0}

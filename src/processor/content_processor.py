@@ -65,13 +65,15 @@ class ContentProcessor:
     REDDIT_USER_PATTERN = re.compile(r'u/\w+')
     PHONE_PATTERN = re.compile(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b')
 
-    def __init__(self, gemini_api_key: str = None):
+    def __init__(self, gemini_api_key: str = None, gemini_model: str = None):
         """Initialize the content processor.
 
         Args:
             gemini_api_key: Google Gemini API key (or set GEMINI_API_KEY env var).
+            gemini_model: Gemini model name (or set GEMINI_MODEL env var).
         """
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
+        self.gemini_model = gemini_model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
         self.model = None
 
         if not GENAI_AVAILABLE:
@@ -92,13 +94,13 @@ class ContentProcessor:
         try:
             genai.configure(api_key=self.gemini_api_key)
             self.model = genai.GenerativeModel(
-                "gemini-2.0-flash-lite",
+                self.gemini_model,
                 generation_config=genai.GenerationConfig(
                     temperature=0.3,
                     max_output_tokens=500
                 )
             )
-            logger.info("Gemini model initialized successfully")
+            logger.info(f"Gemini model initialized successfully: {self.gemini_model}")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini model: {e}")
             self.model = None
