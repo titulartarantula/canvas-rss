@@ -1,0 +1,109 @@
+# Canvas RSS Aggregator Configuration
+
+sources:
+  instructure_community:
+    enabled: true
+    urls:
+      - https://community.instructure.com/en/categories/canvas-release-notes/
+      - https://community.instructure.com/en/categories/canvas-lms-changelog
+    max_pages: 3
+    rate_limit_seconds: 3
+
+  reddit:
+    enabled: true
+    subreddits:
+      - canvas
+      - instructionaldesign
+      - highereducation
+      - professors
+    keywords:
+      - canvas lms
+      - canvas update
+      - canvas feature
+      - canvas release
+      - canvas bug
+    min_score: 5
+    time_window: day
+
+  status_page:
+    enabled: true
+    url: https://status.instructure.com/
+    include_maintenance: false
+
+  github:
+    enabled: false
+    repo: instructure/canvas-lms
+    branches:
+      - master
+      - stable
+
+processing:
+  llm:
+    provider: gemini
+    model: gemini-1.5-flash
+    max_tokens: 500
+    temperature: 0.3
+
+  summarization:
+    max_length: 300
+    style: professional
+
+  sentiment_analysis:
+    enabled: true
+
+  topic_classification:
+    enabled: true
+    categories:
+      - Gradebook
+      - Assignments
+      - SpeedGrader
+      - Quizzes
+      - Discussions
+      - Pages
+      - Files
+      - People
+      - Groups
+      - Calendar
+      - Notifications
+      - Mobile
+      - API
+      - Performance
+      - Accessibility
+
+rss:
+  title: Canvas LMS Daily Digest
+  description: Daily digest of Canvas LMS updates, community feedback, and discussions
+  link: https://drwhom.ca/canvas-digest
+  language: en-us
+  max_items: 50
+
+  sections:
+    - name: Official Release Notes
+      icon: "\U0001F4E2"
+      priority: 1
+    - name: API Changes
+      icon: "\U0001F527"
+      priority: 2
+    - name: Community Highlights
+      icon: "\U0001F4AC"
+      priority: 3
+    - name: Issues & Bugs
+      icon: "\U0001F41B"
+      priority: 4
+    - name: Tips & Workarounds
+      icon: "\U0001F4A1"
+      priority: 5
+
+output:
+  feed_path: output/feed.xml
+  archive_days: 30
+
+teams:
+  enabled: false
+  notify_on_important: true
+
+logging:
+  level: INFO
+  file: logs/aggregator.log
+  max_size_mb: 10
+  backup_count: 5
