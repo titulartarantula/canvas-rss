@@ -9,11 +9,13 @@ from typing import List, Any, Tuple, TYPE_CHECKING
 import bleach
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
     genai = None
+    types = None
 
 if TYPE_CHECKING:
     from src.utils.database import Database
@@ -74,11 +76,11 @@ class ContentProcessor:
         """
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         self.gemini_model = gemini_model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
-        self.model = None
+        self.client = None
 
         if not GENAI_AVAILABLE:
             logger.warning(
-                "google-generativeai is not installed. "
+                "google-genai is not installed. "
                 "LLM features will be disabled."
             )
             return
@@ -92,18 +94,15 @@ class ContentProcessor:
             return
 
         try:
-            genai.configure(api_key=self.gemini_api_key)
-            self.model = genai.GenerativeModel(
-                self.gemini_model,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.3,
-                    max_output_tokens=500
-                )
+            self.client = genai.Client(api_key=self.gemini_api_key)
+            self.generation_config = types.GenerateContentConfig(
+                temperature=0.3,
+                max_output_tokens=500
             )
-            logger.info(f"Gemini model initialized successfully: {self.gemini_model}")
+            logger.info(f"Gemini client initialized successfully: {self.gemini_model}")
         except Exception as e:
-            logger.error(f"Failed to initialize Gemini model: {e}")
-            self.model = None
+            logger.error(f"Failed to initialize Gemini client: {e}")
+            self.client = None
 
     def deduplicate(self, items: List[ContentItem], db: "Database") -> List[ContentItem]:
         """Remove duplicates using SQLite cache.
@@ -147,8 +146,8 @@ class ContentProcessor:
         if not content:
             return ""
 
-        # Fallback if model not available
-        if self.model is None:
+        # Fallback if client not available
+        if self.client is None:
             truncated = content[:300]
             if len(content) > 300:
                 truncated = truncated.rsplit(' ', 1)[0] + "..."
@@ -156,7 +155,11 @@ class ContentProcessor:
 
         try:
             prompt = f"Summarize this Canvas LMS update in 2-3 sentences for educational technologists: {content}"
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
             summary = response.text.strip()
 
             # Limit to 300 characters
@@ -181,8 +184,8 @@ class ContentProcessor:
         if not content:
             return "neutral"
 
-        # Fallback if model not available
-        if self.model is None:
+        # Fallback if client not available
+        if self.client is None:
             return "neutral"
 
         try:
@@ -191,7 +194,11 @@ class ContentProcessor:
                 "Reply with exactly one word: positive, neutral, or negative.\n\n"
                 f"Content: {content}"
             )
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
             sentiment = response.text.strip().lower()
 
             # Validate response
@@ -219,8 +226,8 @@ class ContentProcessor:
         if not content:
             return (self.DEFAULT_TOPIC, [])
 
-        # Fallback if model not available
-        if self.model is None:
+        # Fallback if client not available
+        if self.client is None:
             return (self.DEFAULT_TOPIC, [])
 
         try:
@@ -233,7 +240,11 @@ class ContentProcessor:
                 "If no secondary topics apply, use: PRIMARY: [topic] | SECONDARY: none\n\n"
                 f"Content: {content}"
             )
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
             response_text = response.text.strip()
 
             # Parse the response
@@ -364,14 +375,14 @@ class ContentProcessor:
                 item.summary = self.summarize_with_llm(redacted_content)
 
                 # Rate limiting between API calls
-                if self.model is not None:
+                if self.client is not None:
                     time.sleep(0.5)
 
                 # Step 4: Analyze sentiment
                 item.sentiment = self.analyze_sentiment(redacted_content)
 
                 # Rate limiting between API calls
-                if self.model is not None:
+                if self.client is not None:
                     time.sleep(0.5)
 
                 # Step 5: Classify topics (primary and secondary)
@@ -380,7 +391,7 @@ class ContentProcessor:
                 item.topics = secondary
 
                 # Rate limiting between API calls (except for last item)
-                if self.model is not None and i < total:
+                if self.client is not None and i < total:
                     time.sleep(0.5)
 
                 enriched_items.append(item)
