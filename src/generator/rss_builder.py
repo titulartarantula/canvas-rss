@@ -7,7 +7,7 @@ from pathlib import Path
 
 from feedgen.feed import FeedGenerator
 
-from src.processor.content_processor import ContentItem
+from processor.content_processor import ContentItem
 
 logger = logging.getLogger("canvas_rss")
 

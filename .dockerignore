@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Environment (secrets)
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Debug files
+debug_*.png
+
+# Logs and data (mounted as volumes instead)
+*.log
+data/
+output/
+logs/
+
+# Claude Code
+.claude/
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Tests (not needed in production container)
+tests/

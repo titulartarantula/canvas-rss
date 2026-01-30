@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  canvas-rss-aggregator:
+    build: .
+    container_name: canvas-rss-aggregator
+    restart: unless-stopped
+    environment:
+      - TZ=America/Toronto
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-canvas-rss-aggregator:v1.0}
+      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    networks:
+      - canvas-rss-net
+
+  feed-server:
+    image: python:3.11-alpine
+    container_name: canvas-rss-server
+    restart: unless-stopped
+    command: python -m http.server 8080 --directory /app/output
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./output:/app/output:ro
+    networks:
+      - canvas-rss-net
+    depends_on:
+      - canvas-rss-aggregator
+
+networks:
+  canvas-rss-net:
+    driver: bridge

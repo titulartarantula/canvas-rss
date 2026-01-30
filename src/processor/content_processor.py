@@ -92,7 +92,7 @@ class ContentProcessor:
         try:
             genai.configure(api_key=self.gemini_api_key)
             self.model = genai.GenerativeModel(
-                "gemini-1.5-flash",
+                "gemini-2.0-flash-lite",
                 generation_config=genai.GenerationConfig(
                     temperature=0.3,
                     max_output_tokens=500

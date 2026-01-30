@@ -253,6 +253,34 @@ class InstructureScraper:
         cutoff = now - timedelta(hours=hours)
         return dt >= cutoff
 
+    def _dismiss_cookie_consent(self) -> None:
+        """Dismiss cookie consent banner if present."""
+        if not self.page:
+            return
+
+        try:
+            # Look for common cookie consent buttons
+            accept_selectors = [
+                'button:has-text("Accept")',
+                'button:has-text("Accept All")',
+                'button:has-text("I Accept")',
+                '[id*="accept"]',
+                '[class*="accept"]',
+            ]
+
+            for selector in accept_selectors:
+                try:
+                    btn = self.page.locator(selector).first
+                    if btn.is_visible(timeout=2000):
+                        btn.click()
+                        self.page.wait_for_timeout(1000)
+                        logger.debug("Dismissed cookie consent banner")
+                        return
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"No cookie consent to dismiss: {e}")
+
     def _extract_post_cards(self) -> List[dict]:
         """Extract post card information from the current page.
 
@@ -268,15 +296,25 @@ class InstructureScraper:
             # Wait for content to load
             self.page.wait_for_load_state("networkidle", timeout=15000)
 
+            # Dismiss cookie consent if present
+            self._dismiss_cookie_consent()
+
+            # Wait a bit more for content to render after dismissing cookie banner
+            self.page.wait_for_timeout(2000)
+
             # Try multiple selector strategies for community posts
             # Instructure Community uses various card/list layouts
             selectors = [
+                # H3 links (common in Instructure Community)
+                "h3 a[href*='/discussion/']",
+                "h3 a[href*='/blog/']",
+                "h3 a",
                 # Card-based layouts
                 "article",
                 "[class*='topic-list'] [class*='item']",
                 "[class*='post-list'] [class*='item']",
-                "[class*='topic'] a[href*='/t/']",
-                "[class*='card'] a[href*='/t/']",
+                "[class*='topic'] a[href*='/discussion/']",
+                "[class*='card'] a[href*='/discussion/']",
                 # List-based layouts
                 "li[class*='topic']",
                 "tr[class*='topic']",
@@ -285,6 +323,7 @@ class InstructureScraper:
                 "[data-testid*='topic']",
                 "[data-testid*='post']",
                 # Link-based extraction as fallback
+                "a[href*='/discussion/']",
                 "a[href*='/t/']",
             ]
 
@@ -315,8 +354,12 @@ class InstructureScraper:
                         title = element.inner_text().strip()
                         url = element.get_attribute("href") or ""
                     else:
-                        # Find link within element
-                        link = element.query_selector("a[href*='/t/']") or element.query_selector("a")
+                        # Find link within element - check for /discussion/ first, then /t/
+                        link = (
+                            element.query_selector("a[href*='/discussion/']") or
+                            element.query_selector("a[href*='/t/']") or
+                            element.query_selector("a")
+                        )
                         if link:
                             title = link.inner_text().strip()
                             url = link.get_attribute("href") or ""
@@ -344,7 +387,7 @@ class InstructureScraper:
                         url = f"https://community.instructure.com{url}"
 
                     # Skip if URL doesn't look like a post
-                    if "/t/" not in url and "/topic" not in url.lower():
+                    if "/t/" not in url and "/topic" not in url.lower() and "/discussion/" not in url and "/blog/" not in url:
                         continue
 
                     posts.append({

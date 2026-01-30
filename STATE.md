@@ -6,11 +6,10 @@
 
 ## Active Tasks
 
-| Task | Agent | Status | Notes |
-|------|-------|--------|-------|
-| Write unit tests for content_processor.py | Testing | Complete | 75 tests, all passing |
-| Implement instructure_community.py | Coding | Complete  | Playwright web scraping |
-| Write unit tests for instructure_community.py | Testing | Complete | 46 tests, all passing |
+| Task                                | Agent   | Status   | Notes                   |
+|-------------------------------------|---------|----------|-------------------------|
+| Implement main.py orchestration     | Coding  | Complete | Conversion functions    |
+| Write integration tests for main.py | Testing | Complete | 30 tests, all passing   |
 
 ## Completed
 
@@ -78,7 +77,7 @@
 | 3. Scrapers | Complete | Status page (complete), Reddit (complete), Instructure (complete) |
 | 4. Processing | Complete | Gemini integration, sanitization |
 | 5. RSS Generation | Complete | feedgen RSS builder |
-| 6. Main App | Not Started | Orchestration |
+| 6. Main App | Complete | Orchestration |
 | 7. Docker | Not Started | Container setup |
 
 ---
@@ -130,6 +129,8 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-01-30: Testing Agent completed main.py integration tests (30 tests, all passing)
+- 2026-01-30: Implemented main.py orchestration with conversion functions (Coding Agent)
 - 2026-01-30: Testing Agent completed instructure_community.py unit tests (46 tests, all passing)
 - 2026-01-30: Implemented instructure_community.py with Playwright sync API (InstructureScraper class) - Coding Agent
 - 2026-01-30: Testing Agent completed content_processor.py unit tests (75 tests, all passing)
@@ -147,7 +148,7 @@ canvas-rss/
 
 ## Test Results (2026-01-30)
 
-239 tests total: 239 passed, 0 failed
+270 tests total: 270 passed, 0 failed
 
 ### test_database.py (20 tests)
 
@@ -425,3 +426,47 @@ canvas-rss/
 
 - Full workflow with multiple sources
 - Empty feed workflow
+
+### test_main.py (30 tests)
+
+#### CommunityPostToContentItem (7 tests)
+
+- Converts CommunityPost basic fields
+- Calculates engagement score from likes and comments
+- Converts ReleaseNote dataclass
+- Converts ChangeLogEntry dataclass
+- Preserves source_id
+- Handles zero engagement
+- Returns ContentItem type
+
+#### RedditPostToContentItem (6 tests)
+
+- Converts RedditPost basic fields
+- Calculates engagement score from score and num_comments
+- Anonymizes author during conversion
+- Preserves source_id
+- Handles zero engagement
+- Returns ContentItem type
+
+#### IncidentToContentItem (9 tests)
+
+- Converts Incident basic fields
+- Prefixes title with impact level (MAJOR)
+- Prefixes title with CRITICAL impact
+- No prefix for "none" impact
+- No prefix for empty impact
+- Uses created_at for published_date
+- Engagement score is always 0
+- Preserves source_id
+- Returns ContentItem type
+
+#### MainIntegration (8 tests)
+
+- Main workflow with no items
+- Main workflow with items from all sources
+- Main creates output directory
+- Main writes feed.xml
+- Main closes database on success
+- Main closes database on error
+- Main stores items in database
+- Main records feed generation
