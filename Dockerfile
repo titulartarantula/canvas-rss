@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
 WORKDIR /app
 
@@ -17,20 +18,26 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium && playwright install-deps chromium
+# Install Playwright system dependencies first
+RUN playwright install-deps chromium
+
+# Non-root user for security
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g appuser -m appuser
+
+# Create directories for data persistence and playwright
+RUN mkdir -p /app/data /app/output /app/logs /opt/playwright && \
+    chown -R appuser:appuser /app /opt/playwright
+
+# Install Playwright browsers as appuser
+USER appuser
+RUN playwright install chromium
+USER root
 
 # Copy application code
 COPY src/ ./src/
 COPY config/ ./config/
-
-# Create directories for data persistence
-RUN mkdir -p /app/data /app/output /app/logs
-
-# Non-root user for security
-RUN groupadd -g 1000 appuser && \
-    useradd -u 1000 -g appuser -m appuser && \
-    chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app
 
 # Copy and set up entrypoint (handles volume permissions)
 COPY docker-entrypoint.sh /usr/local/bin/
