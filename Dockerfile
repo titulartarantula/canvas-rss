@@ -1,10 +1,11 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright/Chromium
+# Install system dependencies for Playwright/Chromium and gosu for entrypoint
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
     ca-certificates \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -30,6 +31,10 @@ RUN mkdir -p /app/data /app/output /app/logs
 RUN groupadd -g 1000 appuser && \
     useradd -u 1000 -g appuser -m appuser && \
     chown -R appuser:appuser /app
-USER appuser
 
+# Copy and set up entrypoint (handles volume permissions)
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "src/main.py"]
