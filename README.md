@@ -1,5 +1,7 @@
 # Canvas LMS Daily Digest
 
+**Version 1.0.0** | [Changelog](CHANGELOG.md)
+
 A daily RSS feed aggregator for Canvas LMS release notes, community discussions, and status updates. Designed for educational technologists who want to stay informed about Canvas updates without manually checking multiple sources.
 
 ## Features
@@ -79,7 +81,7 @@ GEMINI_API_KEY=your_gemini_api_key
 # Optional: Reddit API (enables Reddit monitoring)
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USER_AGENT=canvas-rss-aggregator:v1.0
+REDDIT_USER_AGENT=canvas-rss-aggregator:v1.0.0
 
 # Optional: Customization
 GEMINI_MODEL=gemini-2.0-flash       # AI model to use

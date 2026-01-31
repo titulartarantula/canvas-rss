@@ -12,6 +12,49 @@ Create and maintain project documentation including README, API docs, user guide
 2. **Read specs/canvas-rss.md** - Understand the project requirements
 3. **Review existing docs** - Check CLAUDE.md, agent files, and any existing documentation
 
+## Version Management
+
+The Docs Agent is responsible for maintaining project versioning.
+
+### Version Files
+
+| File | Purpose |
+|------|---------|
+| `VERSION` | Single source of truth for current version (e.g., `1.0.0`) |
+| `CHANGELOG.md` | Version history following Keep a Changelog format |
+
+### Semantic Versioning Format
+
+This project uses semantic versioning: `MAJOR.MINOR.PATCH`
+
+| Component | When to Increment | Examples |
+|-----------|-------------------|----------|
+| **MAJOR** | Breaking changes, major revisions | API changes, architectural overhaul |
+| **MINOR** | New features, significant updates | New data source, new output format |
+| **PATCH** | Bug fixes, minor improvements | Fix scraping bug, update dependencies |
+
+### Release Checklist
+
+When releasing a new version:
+
+1. **Update VERSION file** - Change version number
+2. **Update CHANGELOG.md** - Add new section with:
+   - Version number and date: `## [X.Y.Z] - YYYY-MM-DD`
+   - Categorized changes: Added, Changed, Deprecated, Removed, Fixed, Security
+3. **Update user agent** - Ensure `docker-compose.yml` Reddit user agent matches version
+4. **Create git tag** - `git tag -a vX.Y.Z -m "Release X.Y.Z"`
+
+### Changelog Categories
+
+Use these categories in CHANGELOG.md:
+
+- **Added** - New features
+- **Changed** - Changes to existing functionality
+- **Deprecated** - Features to be removed in future
+- **Removed** - Removed features
+- **Fixed** - Bug fixes
+- **Security** - Security-related changes
+
 ## Documentation Types
 
 ### GitHub README (README.md)

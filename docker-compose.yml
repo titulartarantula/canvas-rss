@@ -10,7 +10,8 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
-      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-canvas-rss-aggregator:v1.0}
+      # Note: Keep version in sync with VERSION file (see CHANGELOG.md)
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-canvas-rss-aggregator:v1.0.0}
       - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
     volumes:
       - ./data:/app/data
