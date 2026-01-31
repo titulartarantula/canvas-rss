@@ -6,10 +6,13 @@
 
 ## Active Tasks
 
-| Task                                | Agent   | Status   | Notes                   |
-|-------------------------------------|---------|----------|-------------------------|
-| Docker deployment                   | DevOps  | Complete | All containers working  |
-| GitHub README                       | Docs    | Complete | README.md created       |
+| Task                                | Agent   | Status   | Notes                          |
+|-------------------------------------|---------|----------|--------------------------------|
+| Docker deployment                   | DevOps  | Complete | All containers working         |
+| GitHub README                       | Docs    | Complete | README.md created              |
+| Fix Deploys tab click               | Coding  | Complete | Improved selectors, dual-view  |
+| Update tests for Deploys tab fix   | Testing | Complete | 47 scraper tests pass          |
+| Release v1.1.1 documentation        | Docs    | Complete | VERSION, CHANGELOG updated     |
 
 ## Completed
 
@@ -134,6 +137,10 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-01-31: Fixed Deploys tab click with improved Playwright selectors - Coding Agent
+  - Added `_click_deploys_tab` method with text-based selectors
+  - Updated `scrape_release_notes` to scrape both Releases and Deploys views
+  - All 47 Instructure scraper tests pass - Testing Agent
 - 2026-01-31: Created README.md for GitHub - Docs Agent
 - 2026-01-30: Docker Phase complete - DevOps Agent
   - Created Dockerfile (python:3.11-slim, Playwright, cron)

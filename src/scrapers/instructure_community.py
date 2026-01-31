@@ -581,7 +581,7 @@ class InstructureScraper:
             return ("", 0, 0)
 
     def _click_deploys_tab(self) -> bool:
-        """Click the Deploys tab/button to switch to deploy notes view.
+        """Click the Deploys tab to switch to deploy notes view.
 
         Returns:
             True if successfully clicked, False otherwise.
@@ -590,25 +590,23 @@ class InstructureScraper:
             return False
 
         try:
-            # Look for common deploy tab selectors
+            # Playwright text selectors - try exact text match first
             deploy_selectors = [
-                'button:has-text("Deploys")',
+                'text="Deploys"',
+                'text=Deploys',
+                ':text("Deploys")',
                 'a:has-text("Deploys")',
-                '[data-testid*="deploy"]',
-                '[class*="deploy"]',
-                'button:has-text("Deploy Notes")',
-                'a:has-text("Deploy Notes")',
-                # Tab/filter button patterns
+                'button:has-text("Deploys")',
                 '[role="tab"]:has-text("Deploys")',
-                '[role="button"]:has-text("Deploys")',
+                '[class*="tab"]:has-text("Deploys")',
             ]
 
             for selector in deploy_selectors:
                 try:
-                    btn = self.page.locator(selector).first
-                    if btn.is_visible(timeout=3000):
-                        btn.click()
-                        self.page.wait_for_timeout(2000)  # Wait for content to load
+                    element = self.page.locator(selector).first
+                    if element.is_visible(timeout=2000):
+                        element.click()
+                        self.page.wait_for_timeout(2000)
                         logger.info("Clicked Deploys tab successfully")
                         return True
                 except Exception:
@@ -713,7 +711,7 @@ class InstructureScraper:
     def scrape_release_notes(self, hours: int = 24) -> List[ReleaseNote]:
         """Get posts from last N hours from release notes category.
 
-        Scrapes both Release Notes (default view) and Deploy Notes (via Deploys tab).
+        Scrapes both Release Notes (Releases tab) and Deploy Notes (Deploys tab).
 
         Args:
             hours: Number of hours to look back (default: 24).
@@ -737,7 +735,7 @@ class InstructureScraper:
             self._dismiss_cookie_consent()
             self.page.wait_for_timeout(2000)
 
-            # Scrape release notes from default view
+            # Scrape release notes from default Releases view
             release_notes = self._scrape_notes_from_current_view(hours, "release_note")
             all_notes.extend(release_notes)
             logger.info(f"Scraped {len(release_notes)} release notes")
@@ -753,10 +751,10 @@ class InstructureScraper:
                 all_notes.extend(deploy_notes)
                 logger.info(f"Scraped {len(deploy_notes)} deploy notes")
             else:
-                # Fallback: try to find deploy notes by title pattern in current view
+                # Fallback: log warning but continue with what we have
                 logger.warning(
                     "Could not click Deploys tab. "
-                    "Deploy notes may be missed or misclassified."
+                    "Deploy notes may be missed."
                 )
 
             logger.info(
