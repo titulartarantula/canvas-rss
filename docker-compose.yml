@@ -7,7 +7,7 @@ services:
       - TZ=${TZ:-America/Toronto}
       - CRON_SCHEDULE=${CRON_SCHEDULE:-0 6 * * *}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-lite}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
       - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-canvas-rss-aggregator:v1.0}
@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     command: python -m http.server 8080 --directory /app/output
     ports:
-      - "${FEED_HOST:-127.0.0.1}:${FEED_PORT:-8080}:8080"
+      - "${FEED_HOST:-127.0.0.1}:${FEED_PORT:-8986}:8080"
     volumes:
       - ./output:/app/output:ro
     networks:

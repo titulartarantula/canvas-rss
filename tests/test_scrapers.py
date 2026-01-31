@@ -834,7 +834,7 @@ class TestInstructureScraperDataclasses:
         assert note.source == "community"
 
     def test_release_note_source_id_property(self):
-        """Test ReleaseNote source_id property returns unique ID based on URL."""
+        """Test ReleaseNote source_id property returns unique ID based on URL and post_type."""
         from scrapers.instructure_community import ReleaseNote
 
         note1 = ReleaseNote(
@@ -850,12 +850,22 @@ class TestInstructureScraperDataclasses:
             published_date=datetime.now(timezone.utc)
         )
 
-        # Should start with 'community_'
-        assert note1.source_id.startswith("community_")
-        assert note2.source_id.startswith("community_")
+        # Should start with post_type (default: 'release_note_')
+        assert note1.source_id.startswith("release_note_")
+        assert note2.source_id.startswith("release_note_")
 
         # Different URLs should produce different source_ids
         assert note1.source_id != note2.source_id
+
+        # Deploy note should have different prefix
+        deploy_note = ReleaseNote(
+            title="Deploy Notes",
+            url="https://community.instructure.com/t/post/789",
+            content="Content",
+            published_date=datetime.now(timezone.utc),
+            post_type="deploy_note"
+        )
+        assert deploy_note.source_id.startswith("deploy_note_")
 
     def test_release_note_source_id_same_url(self):
         """Test ReleaseNote source_id is consistent for same URL."""

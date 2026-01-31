@@ -29,6 +29,28 @@ class RSSBuilder:
         "status": "[\U0001F527 Status]",
     }
 
+    # Content type badges for distinguishing Release Notes, Deploy Notes, etc.
+    CONTENT_TYPE_BADGES = {
+        "release_note": "[New]",
+        "deploy_note": "[Fix]",
+        "changelog": "[API]",
+        "blog": "[Blog]",
+        "question": "[Q&A]",
+        "reddit": "",  # Reddit uses source badge instead
+        "status": "",  # Status uses source badge instead
+    }
+
+    # Content type order for sorting (lower = higher priority)
+    CONTENT_TYPE_ORDER = {
+        "release_note": 1,
+        "deploy_note": 2,
+        "changelog": 3,
+        "blog": 4,
+        "question": 5,
+        "reddit": 6,
+        "status": 7,
+    }
+
     # Category mapping for different sources
     SOURCE_CATEGORIES = {
         "community": "Release Notes",
@@ -113,10 +135,10 @@ class RSSBuilder:
         return self.SOURCE_CATEGORIES.get(source.lower(), "General")
 
     def _format_title_with_badge(self, item: ContentItem) -> str:
-        """Format title with topic and source badge for feature-centric view.
+        """Format title with topic, content type, and source badge for feature-centric view.
 
-        Format: "Topic - [Source Badge] Title"
-        Example: "Gradebook - [📢 Community] New weighted grading option"
+        Format: "Topic - [ContentType] [Source Badge] Title"
+        Example: "Gradebook - [Fix] [📢 Community] Fixed weighted grades calculation"
 
         Args:
             item: ContentItem to format
@@ -127,12 +149,24 @@ class RSSBuilder:
         # Get primary topic (fallback to General)
         primary_topic = getattr(item, 'primary_topic', '') or "General"
 
-        # Get source badge
-        badge = self.SOURCE_BADGES.get(item.source.lower(), "")
+        # Get content type badge (e.g., [New], [Fix], [API])
+        content_type = getattr(item, 'content_type', '') or ""
+        type_badge = self.CONTENT_TYPE_BADGES.get(content_type, "")
 
-        # Format: "Topic - [Badge] Title"
-        if badge:
-            return f"{primary_topic} - {badge} {item.title}"
+        # Get source badge (only for types that don't have their own badge)
+        source_badge = self.SOURCE_BADGES.get(item.source.lower(), "")
+
+        # Combine badges: prefer content type badge, fall back to source badge
+        if type_badge:
+            badges = type_badge
+        elif source_badge:
+            badges = source_badge
+        else:
+            badges = ""
+
+        # Format: "Topic - [Badge(s)] Title"
+        if badges:
+            return f"{primary_topic} - {badges} {item.title}"
         else:
             return f"{primary_topic} - {item.title}"
 
@@ -253,14 +287,18 @@ class RSSBuilder:
         if not items:
             logger.info("Creating feed with no items")
         else:
-            # Sort items by topic priority (feature-centric), then by date within each topic
+            # Sort items by:
+            # 1. Topic priority (feature-centric) - Gradebook first, etc.
+            # 2. Content type order - Release notes before deploy notes, etc.
+            # 3. Date (most recent first) within each group
+            #
             # Note: feedgen adds items in reverse order (last added = first in output)
-            # So we sort descending by topic priority (reverse=True) to get highest priority topics first
-            # Within each topic, we sort by date (most recent first)
+            # So we sort descending (reverse=True) to get highest priority topics first
             sorted_items = sorted(
                 items,
                 key=lambda x: (
                     self.TOPIC_PRIORITY.get(getattr(x, 'primary_topic', '') or 'General', 99),
+                    self.CONTENT_TYPE_ORDER.get(getattr(x, 'content_type', '') or '', 99),
                     -(x.published_date.timestamp() if x.published_date else 0)
                 ),
                 reverse=True

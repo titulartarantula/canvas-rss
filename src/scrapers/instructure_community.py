@@ -52,6 +52,7 @@ class ReleaseNote:
     published_date: datetime
     likes: int = 0
     comments: int = 0
+    post_type: str = "release_note"  # 'release_note' or 'deploy_note'
 
     @property
     def source(self) -> str:
@@ -60,8 +61,8 @@ class ReleaseNote:
 
     @property
     def source_id(self) -> str:
-        """Generate unique ID from URL."""
-        return f"community_{hash(self.url)}"
+        """Generate unique ID from URL and post type."""
+        return f"{self.post_type}_{hash(self.url)}"
 
 
 @dataclass
@@ -95,6 +96,29 @@ class InstructureScraper:
     QUESTION_FORUM_URL = "https://community.instructure.com/en/categories/canvas-lms-question-forum"
     BLOG_URL = "https://community.instructure.com/en/categories/canvas_lms_blog"
     USER_AGENT = "Canvas-RSS-Aggregator/1.0 (Educational Use)"
+
+    # Title patterns for Deploy Notes (bug fixes, patches) - check first, more specific
+    DEPLOY_NOTE_PATTERNS = [
+        r"Canvas Deploy Notes",
+        r"Deploy Notes \(\d{4}",
+        r"Canvas \(\w+\) Deploy Notes",
+    ]
+
+    # Title patterns for Release Notes (new features)
+    RELEASE_NOTE_PATTERNS = [
+        r"Canvas Release Notes",
+        r"Release Notes \(\d{4}",
+        r"Canvas \(\w+\) Release Notes",
+    ]
+
+    # Blog filtering - only include Product Overview posts
+    BLOG_PRODUCT_OVERVIEW_PATTERNS = [
+        r"Product Overview",
+        r"\| Product Overview",
+    ]
+
+    # Q&A engagement threshold (likes + comments)
+    MIN_QA_ENGAGEMENT = 5
 
     def __init__(self, headless: bool = True, rate_limit_seconds: float = 3.0):
         """Initialize the scraper with Playwright browser.
@@ -160,6 +184,45 @@ class InstructureScraper:
         """Apply rate limiting between requests."""
         if self.rate_limit_seconds > 0:
             time.sleep(self.rate_limit_seconds)
+
+    def _classify_release_or_deploy(self, title: str) -> str:
+        """Classify a post as release_note or deploy_note based on title.
+
+        Deploy Notes focus on bug fixes, performance improvements, and feature prep.
+        Release Notes focus on new features and major changes.
+
+        Args:
+            title: Post title to classify.
+
+        Returns:
+            'deploy_note' or 'release_note'
+        """
+        # Check deploy note patterns first (more specific)
+        for pattern in self.DEPLOY_NOTE_PATTERNS:
+            if re.search(pattern, title, re.IGNORECASE):
+                return "deploy_note"
+
+        # Check release note patterns
+        for pattern in self.RELEASE_NOTE_PATTERNS:
+            if re.search(pattern, title, re.IGNORECASE):
+                return "release_note"
+
+        # Default to release_note for posts from release notes category
+        return "release_note"
+
+    def _is_product_overview_blog(self, title: str) -> bool:
+        """Check if blog post is a Product Overview post.
+
+        Args:
+            title: Post title to check.
+
+        Returns:
+            True if this is a Product Overview blog post.
+        """
+        for pattern in self.BLOG_PRODUCT_OVERVIEW_PATTERNS:
+            if re.search(pattern, title, re.IGNORECASE):
+                return True
+        return False
 
     def _parse_relative_date(self, date_text: str) -> Optional[datetime]:
         """Parse relative date strings like '2 hours ago', 'Yesterday', etc.
@@ -554,15 +617,20 @@ class InstructureScraper:
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
 
+                # Classify as release_note or deploy_note based on title
+                post_type = self._classify_release_or_deploy(post["title"])
+
                 release_note = ReleaseNote(
                     title=post["title"],
                     url=post["url"],
                     content=content,
                     published_date=published_date,
                     likes=likes,
-                    comments=comments
+                    comments=comments,
+                    post_type=post_type
                 )
                 release_notes.append(release_note)
+                logger.debug(f"Classified '{post['title'][:50]}...' as {post_type}")
 
             logger.info(f"Scraped {len(release_notes)} release notes from last {hours} hours")
             return release_notes
@@ -631,20 +699,25 @@ class InstructureScraper:
             logger.error(f"Error scraping changelog: {e}")
             return []
 
-    def scrape_question_forum(self, hours: int = 24) -> List[CommunityPost]:
-        """Get Q&A posts from the Canvas LMS question forum.
+    def scrape_question_forum(self, hours: int = 24, min_engagement: int = None) -> List[CommunityPost]:
+        """Get high-engagement Q&A posts from the Canvas LMS question forum.
 
         Args:
             hours: Number of hours to look back (default: 24).
+            min_engagement: Minimum likes + comments threshold (default: MIN_QA_ENGAGEMENT).
 
         Returns:
-            List of CommunityPost objects for recent questions.
+            List of CommunityPost objects for recent high-engagement questions.
         """
+        if min_engagement is None:
+            min_engagement = self.MIN_QA_ENGAGEMENT
+
         if not self.page:
             logger.warning("Browser not available, returning empty question forum list")
             return []
 
         posts = []
+        low_engagement_count = 0
 
         try:
             logger.info(f"Scraping question forum from {self.QUESTION_FORUM_URL}")
@@ -654,7 +727,7 @@ class InstructureScraper:
             post_cards = self._extract_post_cards()
             logger.info(f"Found {len(post_cards)} total posts on question forum page")
 
-            # Filter to recent posts and get full content
+            # Filter to recent high-engagement posts and get full content
             for post in post_cards:
                 published_date = self._parse_relative_date(post.get("date_text", ""))
 
@@ -662,8 +735,15 @@ class InstructureScraper:
                     logger.debug(f"Skipping old question: {post['title']}")
                     continue
 
-                # Get full content
+                # Get full content (includes engagement metrics)
                 content, likes, comments = self._get_post_content(post["url"])
+
+                # Filter: Only include high-engagement posts
+                engagement = likes + comments
+                if engagement < min_engagement:
+                    logger.debug(f"Skipping low-engagement Q&A (engagement={engagement}): {post['title']}")
+                    low_engagement_count += 1
+                    continue
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -679,7 +759,7 @@ class InstructureScraper:
                 )
                 posts.append(community_post)
 
-            logger.info(f"Scraped {len(posts)} questions from last {hours} hours")
+            logger.info(f"Scraped {len(posts)} high-engagement questions from last {hours} hours (filtered {low_engagement_count} low-engagement posts)")
             return posts
 
         except PlaywrightTimeout:
@@ -712,8 +792,15 @@ class InstructureScraper:
             post_cards = self._extract_post_cards()
             logger.info(f"Found {len(post_cards)} total posts on blog page")
 
-            # Filter to recent posts and get full content
+            # Filter to recent Product Overview posts and get full content
+            filtered_count = 0
             for post in post_cards:
+                # Filter: Only include Product Overview posts
+                if not self._is_product_overview_blog(post["title"]):
+                    logger.debug(f"Skipping non-Product-Overview blog: {post['title']}")
+                    filtered_count += 1
+                    continue
+
                 published_date = self._parse_relative_date(post.get("date_text", ""))
 
                 if published_date and not self._is_within_hours(published_date, hours):
@@ -737,7 +824,7 @@ class InstructureScraper:
                 )
                 posts.append(community_post)
 
-            logger.info(f"Scraped {len(posts)} blog posts from last {hours} hours")
+            logger.info(f"Scraped {len(posts)} Product Overview blog posts from last {hours} hours (filtered {filtered_count} non-overview posts)")
             return posts
 
         except PlaywrightTimeout:

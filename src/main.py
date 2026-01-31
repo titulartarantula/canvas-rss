@@ -44,12 +44,20 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
     if hasattr(post, 'comments'):
         engagement += post.comments
 
+    # Map post_type to content_type for content-specific summarization
+    # post_type values: 'release_note', 'deploy_note', 'changelog', 'blog', 'question'
+    content_type = getattr(post, 'post_type', 'release_note')
+    # ChangeLogEntry doesn't have post_type, so detect it by class
+    if isinstance(post, ChangeLogEntry):
+        content_type = 'changelog'
+
     return ContentItem(
         source=post.source,
         source_id=post.source_id,
         title=post.title,
         url=post.url,
         content=post.content,
+        content_type=content_type,
         published_date=post.published_date,
         engagement_score=engagement,
     )
@@ -73,6 +81,7 @@ def reddit_post_to_content_item(post: RedditPost) -> ContentItem:
         title=anonymized.title,
         url=anonymized.url,
         content=anonymized.content,
+        content_type="reddit",
         published_date=anonymized.published_date,
         engagement_score=anonymized.score + anonymized.num_comments,
     )
@@ -98,6 +107,7 @@ def incident_to_content_item(incident: Incident) -> ContentItem:
         title=title,
         url=incident.url,
         content=incident.content,
+        content_type="status",
         published_date=incident.created_at,
         engagement_score=0,  # Status incidents don't have engagement metrics
     )

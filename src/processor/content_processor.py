@@ -34,6 +34,7 @@ class ContentItem:
     title: str
     url: str
     content: str
+    content_type: str = ""  # 'release_note', 'deploy_note', 'changelog', 'blog', 'question', 'reddit', 'status'
     summary: str = ""
     sentiment: str = ""  # positive, neutral, negative
     primary_topic: str = ""  # Single topic for feature-centric grouping
@@ -67,6 +68,54 @@ class ContentProcessor:
     REDDIT_USER_PATTERN = re.compile(r'u/\w+')
     PHONE_PATTERN = re.compile(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b')
 
+    # Content-type-specific summarization prompts
+    SUMMARIZATION_PROMPTS = {
+        "release_note": (
+            "Summarize this Canvas LMS release note for educational technologists. "
+            "Focus on WHAT'S NEW: new features, capabilities, and improvements. "
+            "Highlight who is affected (admins, instructors, students) and key benefits. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "deploy_note": (
+            "Summarize this Canvas LMS deploy note for educational technologists. "
+            "Focus on WHAT'S FIXED: bug fixes, performance improvements, and patches. "
+            "Highlight which Canvas feature areas were affected and what problems were resolved. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "changelog": (
+            "Summarize this Canvas LMS API/CLI changelog entry for developers and integrators. "
+            "Focus on API CHANGES: new endpoints, deprecated features, breaking changes, parameter updates. "
+            "Highlight any action required and deadlines. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "blog": (
+            "Summarize this Canvas LMS product announcement for educational technologists. "
+            "Focus on the key feature or capability being announced. "
+            "Highlight availability timeline and who benefits. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "question": (
+            "Summarize this Canvas LMS community discussion for educational technologists. "
+            "Focus on the PROBLEM or question and any SOLUTIONS or workarounds shared. "
+            "Highlight if this is a common issue affecting many users. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "reddit": (
+            "Summarize this Reddit discussion about Canvas LMS for educational technologists. "
+            "Focus on the main topic, user sentiment, and any useful insights or tips shared. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "status": (
+            "Summarize this Canvas status/incident report for educational technologists. "
+            "Focus on the IMPACT: affected services, duration, and current status. "
+            "Highlight any user action required. "
+            "Write 2-3 concise sentences: {content}"
+        ),
+        "default": (
+            "Summarize this Canvas LMS update in 2-3 sentences for educational technologists: {content}"
+        ),
+    }
+
     def __init__(self, gemini_api_key: str = None, gemini_model: str = None):
         """Initialize the content processor.
 
@@ -75,7 +124,7 @@ class ContentProcessor:
             gemini_model: Gemini model name (or set GEMINI_MODEL env var).
         """
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
-        self.gemini_model = gemini_model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+        self.gemini_model = gemini_model or os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
         self.client = None
 
         if not GENAI_AVAILABLE:
@@ -161,11 +210,13 @@ class ContentProcessor:
         logger.info(f"Deduplicated {len(items)} items to {len(new_items)} new items")
         return new_items
 
-    def summarize_with_llm(self, content: str) -> str:
-        """Generate concise summary using Gemini.
+    def summarize_with_llm(self, content: str, content_type: str = "default") -> str:
+        """Generate concise summary using Gemini with content-type-specific prompts.
 
         Args:
             content: The content to summarize.
+            content_type: Type of content ('release_note', 'deploy_note', 'changelog',
+                         'blog', 'question', 'reddit', 'status'). Defaults to 'default'.
 
         Returns:
             Summary string (max 300 chars), or truncated content if LLM unavailable.
@@ -181,7 +232,12 @@ class ContentProcessor:
             return truncated
 
         try:
-            prompt = f"Summarize this Canvas LMS update in 2-3 sentences for educational technologists: {content}"
+            # Get content-type-specific prompt template
+            prompt_template = self.SUMMARIZATION_PROMPTS.get(
+                content_type,
+                self.SUMMARIZATION_PROMPTS["default"]
+            )
+            prompt = prompt_template.format(content=content)
             response = self.client.models.generate_content(
                 model=self.gemini_model,
                 contents=prompt,
@@ -399,8 +455,10 @@ class ContentProcessor:
                 item.content = redacted_content
 
                 # Step 3: Generate summary (with retry for rate limits)
+                # Use content-type-specific prompt for summarization
+                item_content_type = item.content_type or "default"
                 item.summary = self._call_with_retry(
-                    lambda: self.summarize_with_llm(redacted_content),
+                    lambda ct=item_content_type: self.summarize_with_llm(redacted_content, ct),
                     fallback=""
                 )
 
