@@ -53,6 +53,30 @@ Each agent has dedicated instructions:
 6. Hand off to next agent if needed
 ```
 
+## Privacy Rules
+
+**CRITICAL: Never include personal identifying information (PII) in git commits or public outputs.**
+
+When removing or replacing PII:
+
+- Do NOT mention the original values in commit messages
+- Use generic descriptions like "Remove personal identifiers" or "Replace with placeholder"
+- Never include names, emails, domains, or usernames being removed
+
+Bad commit message:
+
+```text
+Remove john.doe@example.com from config
+```
+
+Good commit message:
+
+```text
+Remove personal email from config
+```
+
+This applies to all git operations including commits, PRs, and branch names.
+
 ## Key Files
 
 | File | Purpose |
