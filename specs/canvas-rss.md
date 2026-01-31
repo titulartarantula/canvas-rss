@@ -1078,7 +1078,7 @@ def scrape_page(url: str):
 **User-Agent Best Practice:**
 ```python
 headers = {
-    'User-Agent': 'Canvas-RSS-Aggregator/1.0 (University of Toronto; jordan.holmes@utoronto.ca; Educational Use)'
+    'User-Agent': 'Canvas-RSS-Aggregator/1.0 (Your Institution; contact@example.com; Educational Use)'
 }
 ```
 
