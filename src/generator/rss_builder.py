@@ -88,7 +88,7 @@ class RSSBuilder:
     def __init__(
         self,
         title: str = "Canvas LMS Daily Digest",
-        link: str = "https://drwhom.ca/canvas-digest",
+        link: str = "https://example.com/canvas-digest",
         description: str = "Daily digest of Canvas LMS updates, community feedback, and discussions"
     ):
         """Initialize the RSS builder.

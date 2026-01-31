@@ -73,7 +73,7 @@ processing:
 rss:
   title: Canvas LMS Daily Digest
   description: Daily digest of Canvas LMS updates, community feedback, and discussions
-  link: https://drwhom.ca/canvas-digest
+  link: https://example.com/canvas-digest
   language: en-us
   max_items: 50
 

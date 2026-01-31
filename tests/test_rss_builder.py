@@ -16,7 +16,7 @@ class TestRSSBuilderInitialization:
 
         builder = RSSBuilder()
         assert builder.title == "Canvas LMS Daily Digest"
-        assert "drwhom.ca" in builder.link
+        assert "example.com" in builder.link
         assert builder.description == "Daily digest of Canvas LMS updates, community feedback, and discussions"
 
     def test_rss_builder_custom_title(self):
