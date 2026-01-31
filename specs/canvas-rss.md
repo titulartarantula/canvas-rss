@@ -5,7 +5,7 @@
 **Name:** Canvas Release Notes RSS Aggregator  
 **Purpose:** Aggregate Canvas LMS release notes, API changes, and user feedback into a single daily RSS feed  
 **Audience:** Educational technologists at U of T (CTSI and broader community)  
-**Deployment:** Docker container on Jordan's Docker VM  
+**Deployment:** Docker container on your Docker VM  
 **Distribution:** MS Teams via Power Automate RSS connector  
 
 ## Architecture
@@ -49,7 +49,7 @@
 ┌─────────────────────────────────────────┐
 │          Distribution Layer             │
 ├─────────────────────────────────────────┤
-│ • Static RSS file (drwhom.ca/feed.xml)  │
+│ • Static RSS file (example.com/feed.xml)  │
 │ • Power Automate webhook (optional)     │
 └─────────────────────────────────────────┘
 ```
@@ -317,7 +317,7 @@ Example titles:
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>Canvas LMS Daily Digest</title>
-    <link>https://drwhom.ca/canvas-digest</link>
+    <link>https://example.com/canvas-digest</link>
     <description>Daily digest of Canvas LMS updates, community feedback, and discussions</description>
     <language>en-us</language>
     <lastBuildDate>Wed, 29 Jan 2026 06:00:00 EST</lastBuildDate>
@@ -603,7 +603,7 @@ processing:
 rss:
   title: Canvas LMS Daily Digest
   description: Daily digest of Canvas LMS updates, community feedback, and discussions
-  link: https://drwhom.ca/canvas-digest
+  link: https://example.com/canvas-digest
   language: en-us
   max_items: 50
   organization: topic  # 'topic' for feature-centric, 'source' for legacy
@@ -872,7 +872,7 @@ The feed will be available wherever you point your chosen method.
 ### 7. Configure Power Automate (Optional)
 1. Create new Flow in Power Automate
 2. Trigger: "When a feed item is published" (RSS connector)
-3. Feed URL: `https://drwhom.ca/canvas-digest/feed.xml`
+3. Feed URL: `https://example.com/canvas-digest/feed.xml`
 4. Frequency: Every 1 hour (will check for updates)
 5. Action: "Post message in a chat or channel" (Teams connector)
 6. Select CTSI Teams channel
@@ -1087,7 +1087,7 @@ headers = {
 **Public vs. Private Feed Decision**
 
 **Option A: Public Feed (Simplest)**
-- Feed accessible at `https://drwhom.ca/canvas-digest/feed.xml`
+- Feed accessible at `https://example.com/canvas-digest/feed.xml`
 - Anyone with URL can access
 - **Pros**: Easy to set up, works with standard RSS readers
 - **Cons**: Potentially exposes aggregated content publicly
@@ -1136,7 +1136,7 @@ openssl rand -hex 16
 # Output: a7f3d8e9b2c14f6a8d5e7f0a1b2c3d4e
 
 # Feed URL becomes:
-# https://drwhom.ca/canvas-digest/feed-a7f3d8e9b2c14f6a.xml
+# https://example.com/canvas-digest/feed-a7f3d8e9b2c14f6a.xml
 ```
 
 ### 4. Data Privacy & Content Sanitization
@@ -1599,12 +1599,12 @@ credentials-file: /home/user/.cloudflared/<YOUR-TUNNEL-ID>.json
 
 ingress:
   # Canvas RSS Feed
-  - hostname: drwhom.ca
+  - hostname: example.com
     path: /canvas-digest/*
     service: http://localhost:8080
   
   # Or use subdomain
-  - hostname: canvas-digest.drwhom.ca
+  - hostname: canvas-digest.example.com
     service: http://localhost:8080
   
   # Catch-all (must be last)
@@ -1613,7 +1613,7 @@ ingress:
 
 ```bash
 # 5. Route DNS through tunnel
-cloudflared tunnel route dns canvas-rss drwhom.ca
+cloudflared tunnel route dns canvas-rss example.com
 
 # 6. Test tunnel
 cloudflared tunnel run canvas-rss
@@ -1625,7 +1625,7 @@ sudo systemctl start cloudflared
 
 # 8. Verify
 systemctl status cloudflared
-curl https://drwhom.ca/canvas-digest/feed.xml
+curl https://example.com/canvas-digest/feed.xml
 ```
 
 #### Option 2: Cloudflare Proxy (Traditional)
@@ -1637,7 +1637,7 @@ If you have port forwarding or VPS with public IP:
 Cloudflare Dashboard → DNS → Add Record
 
 Type: A
-Name: drwhom.ca (or canvas-digest.drwhom.ca)
+Name: example.com (or canvas-digest.example.com)
 Content: Your server's public IP
 Proxy status: Proxied (🟠 orange cloud)  ← Enable this!
 TTL: Auto
@@ -1728,7 +1728,7 @@ Add these headers:
 ```
 Rules → Page Rules → Create
 
-URL: drwhom.ca/canvas-digest/feed.xml
+URL: example.com/canvas-digest/feed.xml
 Settings:
   Cache Level: Standard
   Edge Cache TTL: 1 hour
@@ -1817,7 +1817,7 @@ sudo apt install nginx
 ```nginx
 server {
     listen 80;
-    server_name drwhom.ca;
+    server_name example.com;
     
     # Redirect HTTP to HTTPS
     return 301 https://$server_name$request_uri;
@@ -1825,11 +1825,11 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name drwhom.ca;
+    server_name example.com;
 
     # SSL Configuration (use certbot)
-    ssl_certificate /etc/letsencrypt/live/drwhom.ca/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/drwhom.ca/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
@@ -1863,7 +1863,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 
 # Get SSL certificate
-sudo certbot --nginx -d drwhom.ca
+sudo certbot --nginx -d example.com
 ```
 
 ---
@@ -1881,7 +1881,7 @@ sudo apt install caddy
 
 **Configuration:** `/etc/caddy/Caddyfile`
 ```caddy
-drwhom.ca {
+example.com {
     # Automatic HTTPS with Let's Encrypt
     
     # Rate limiting (requires plugin)
@@ -1931,16 +1931,16 @@ sudo a2enmod proxy proxy_http ssl headers rewrite
 **Configuration:** `/etc/apache2/sites-available/canvas-rss.conf`
 ```apache
 <VirtualHost *:80>
-    ServerName drwhom.ca
-    Redirect permanent / https://drwhom.ca/
+    ServerName example.com
+    Redirect permanent / https://example.com/
 </VirtualHost>
 
 <VirtualHost *:443>
-    ServerName drwhom.ca
+    ServerName example.com
 
     SSLEngine on
-    SSLCertificateFile /etc/letsencrypt/live/drwhom.ca/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/drwhom.ca/privkey.pem
+    SSLCertificateFile /etc/letsencrypt/live/example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/example.com/privkey.pem
 
     # Security headers
     Header always set X-Content-Type-Options "nosniff"
