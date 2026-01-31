@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     command: python -m http.server 8080 --directory /app/output
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${FEED_HOST:-127.0.0.1}:${FEED_PORT:-8080}:8080"
     volumes:
       - ./output:/app/output:ro
     networks:
