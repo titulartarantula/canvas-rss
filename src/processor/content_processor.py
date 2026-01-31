@@ -68,51 +68,54 @@ class ContentProcessor:
     REDDIT_USER_PATTERN = re.compile(r'u/\w+')
     PHONE_PATTERN = re.compile(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b')
 
+    # Content types that skip sentiment analysis (official content without discussion)
+    SKIP_SENTIMENT_TYPES = {"release_note", "deploy_note", "changelog", "status", "blog"}
+
     # Content-type-specific summarization prompts
     SUMMARIZATION_PROMPTS = {
         "release_note": (
             "Summarize this Canvas LMS release note for educational technologists. "
             "Focus on WHAT'S NEW: new features, capabilities, and improvements. "
             "Highlight who is affected (admins, instructors, students) and key benefits. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "deploy_note": (
             "Summarize this Canvas LMS deploy note for educational technologists. "
             "Focus on WHAT'S FIXED: bug fixes, performance improvements, and patches. "
             "Highlight which Canvas feature areas were affected and what problems were resolved. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "changelog": (
             "Summarize this Canvas LMS API/CLI changelog entry for developers and integrators. "
             "Focus on API CHANGES: new endpoints, deprecated features, breaking changes, parameter updates. "
             "Highlight any action required and deadlines. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "blog": (
             "Summarize this Canvas LMS product announcement for educational technologists. "
             "Focus on the key feature or capability being announced. "
             "Highlight availability timeline and who benefits. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "question": (
             "Summarize this Canvas LMS community discussion for educational technologists. "
             "Focus on the PROBLEM or question and any SOLUTIONS or workarounds shared. "
             "Highlight if this is a common issue affecting many users. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "reddit": (
             "Summarize this Reddit discussion about Canvas LMS for educational technologists. "
             "Focus on the main topic, user sentiment, and any useful insights or tips shared. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "status": (
             "Summarize this Canvas status/incident report for educational technologists. "
             "Focus on the IMPACT: affected services, duration, and current status. "
             "Highlight any user action required. "
-            "Write 2-3 concise sentences: {content}"
+            "Write 4-6 sentences (~200 words): {content}"
         ),
         "default": (
-            "Summarize this Canvas LMS update in 2-3 sentences for educational technologists: {content}"
+            "Summarize this Canvas LMS update in 4-6 sentences (~200 words) for educational technologists: {content}"
         ),
     }
 
@@ -146,7 +149,7 @@ class ContentProcessor:
             self.client = genai.Client(api_key=self.gemini_api_key)
             self.generation_config = types.GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=500
+                max_output_tokens=1000
             )
             logger.info(f"Gemini client initialized successfully: {self.gemini_model}")
         except Exception as e:
@@ -219,15 +222,15 @@ class ContentProcessor:
                          'blog', 'question', 'reddit', 'status'). Defaults to 'default'.
 
         Returns:
-            Summary string (max 300 chars), or truncated content if LLM unavailable.
+            Summary string (max 1200 chars), or truncated content if LLM unavailable.
         """
         if not content:
             return ""
 
         # Fallback if client not available
         if self.client is None:
-            truncated = content[:300]
-            if len(content) > 300:
+            truncated = content[:1200]
+            if len(content) > 1200:
                 truncated = truncated.rsplit(' ', 1)[0] + "..."
             return truncated
 
@@ -245,9 +248,9 @@ class ContentProcessor:
             )
             summary = response.text.strip()
 
-            # Limit to 300 characters
-            if len(summary) > 300:
-                summary = summary[:300].rsplit(' ', 1)[0] + "..."
+            # Limit to 1200 characters (safety net - prompts should produce ~200 words natively)
+            if len(summary) > 1200:
+                summary = summary[:1200].rsplit(' ', 1)[0] + "..."
 
             return summary
 
@@ -466,15 +469,17 @@ class ContentProcessor:
                 if self.client is not None:
                     time.sleep(2)
 
-                # Step 4: Analyze sentiment (with retry for rate limits)
-                item.sentiment = self._call_with_retry(
-                    lambda: self.analyze_sentiment(redacted_content),
-                    fallback="neutral"
-                )
-
-                # Rate limiting between API calls
-                if self.client is not None:
-                    time.sleep(2)
+                # Step 4: Analyze sentiment (only for community discussion content)
+                if item.content_type not in self.SKIP_SENTIMENT_TYPES:
+                    item.sentiment = self._call_with_retry(
+                        lambda: self.analyze_sentiment(redacted_content),
+                        fallback="neutral"
+                    )
+                    # Rate limiting between API calls
+                    if self.client is not None:
+                        time.sleep(2)
+                else:
+                    item.sentiment = ""  # No sentiment for official content
 
                 # Step 5: Classify topics (with retry for rate limits)
                 primary, secondary = self._call_with_retry(

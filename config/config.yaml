@@ -41,11 +41,11 @@ processing:
   llm:
     provider: gemini
     model: gemini-1.5-flash
-    max_tokens: 500
+    max_tokens: 1000
     temperature: 0.3
 
   summarization:
-    max_length: 300
+    max_length: 1200
     style: professional
 
   sentiment_analysis:

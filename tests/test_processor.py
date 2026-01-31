@@ -209,11 +209,11 @@ class TestSummarizeWithLLM:
         assert result == ""
 
     def test_summarize_model_none_returns_truncated(self):
-        """Test that when model is None, returns truncated content."""
+        """Test that when client is None, returns truncated content."""
         from processor.content_processor import ContentProcessor
 
         processor = ContentProcessor()
-        processor.model = None
+        processor.client = None
 
         content = "This is a short test content."
         result = processor.summarize_with_llm(content)
@@ -221,16 +221,16 @@ class TestSummarizeWithLLM:
         assert result == content
 
     def test_summarize_model_none_truncates_long_content(self):
-        """Test that long content is truncated to ~300 chars when model is None."""
+        """Test that long content is truncated to ~1200 chars when model is None."""
         from processor.content_processor import ContentProcessor
 
         processor = ContentProcessor()
-        processor.model = None
+        processor.client = None
 
-        long_content = "word " * 100  # About 500 chars
+        long_content = "word " * 300  # About 1500 chars
         result = processor.summarize_with_llm(long_content)
 
-        assert len(result) <= 310  # 300 + some buffer for "..."
+        assert len(result) <= 1210  # 1200 + some buffer for "..."
         assert result.endswith("...")
 
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
