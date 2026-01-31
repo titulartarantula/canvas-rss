@@ -104,6 +104,33 @@ class ContentProcessor:
             logger.error(f"Failed to initialize Gemini client: {e}")
             self.client = None
 
+    def _call_with_retry(self, func, fallback, max_retries=3):
+        """Call a function with exponential backoff retry for rate limits.
+
+        Args:
+            func: Function to call (should be a lambda wrapping the actual call).
+            fallback: Value to return if all retries fail.
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            Result of func() or fallback value.
+        """
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    wait_time = (2 ** attempt) * 5  # 5s, 10s, 20s
+                    logger.warning(f"Rate limited, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    # Non-rate-limit error, don't retry
+                    logger.error(f"API call failed: {e}")
+                    return fallback
+        logger.error(f"Max retries exceeded for API call")
+        return fallback
+
     def deduplicate(self, items: List[ContentItem], db: "Database") -> List[ContentItem]:
         """Remove duplicates using SQLite cache.
 
@@ -371,28 +398,37 @@ class ContentProcessor:
                 # Update item content with sanitized/redacted version
                 item.content = redacted_content
 
-                # Step 3: Generate summary
-                item.summary = self.summarize_with_llm(redacted_content)
+                # Step 3: Generate summary (with retry for rate limits)
+                item.summary = self._call_with_retry(
+                    lambda: self.summarize_with_llm(redacted_content),
+                    fallback=""
+                )
+
+                # Rate limiting between API calls (2s to avoid 429s)
+                if self.client is not None:
+                    time.sleep(2)
+
+                # Step 4: Analyze sentiment (with retry for rate limits)
+                item.sentiment = self._call_with_retry(
+                    lambda: self.analyze_sentiment(redacted_content),
+                    fallback="neutral"
+                )
 
                 # Rate limiting between API calls
                 if self.client is not None:
-                    time.sleep(0.5)
+                    time.sleep(2)
 
-                # Step 4: Analyze sentiment
-                item.sentiment = self.analyze_sentiment(redacted_content)
-
-                # Rate limiting between API calls
-                if self.client is not None:
-                    time.sleep(0.5)
-
-                # Step 5: Classify topics (primary and secondary)
-                primary, secondary = self.classify_topic(redacted_content)
+                # Step 5: Classify topics (with retry for rate limits)
+                primary, secondary = self._call_with_retry(
+                    lambda: self.classify_topic(redacted_content),
+                    fallback=(self.DEFAULT_TOPIC, [])
+                )
                 item.primary_topic = primary
                 item.topics = secondary
 
                 # Rate limiting between API calls (except for last item)
                 if self.client is not None and i < total:
-                    time.sleep(0.5)
+                    time.sleep(2)
 
                 enriched_items.append(item)
                 logger.debug(
