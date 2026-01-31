@@ -458,6 +458,8 @@ class TestMainIntegration:
         """Test main workflow when no items are found."""
         # Setup mocks
         mock_db = MagicMock()
+        mock_db.item_exists.return_value = False  # No existing items
+        mock_db.get_comment_count.return_value = None  # No previous comments
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
@@ -475,7 +477,6 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.deduplicate.return_value = []
         mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 
@@ -486,11 +487,10 @@ class TestMainIntegration:
         # Run main
         main()
 
-        # Verify workflow
+        # Verify workflow (deduplication now done inline in main)
         mock_instructure.scrape_all.assert_called_once()
         mock_reddit.search_canvas_discussions.assert_called_once()
         mock_status.get_recent_incidents.assert_called_once()
-        mock_processor.deduplicate.assert_called_once()
         mock_rss.create_feed.assert_called_once()
         mock_db.close.assert_called_once()
 
@@ -547,6 +547,8 @@ class TestMainIntegration:
         # Setup mocks
         mock_db = MagicMock()
         mock_db.insert_item.return_value = 1
+        mock_db.item_exists.return_value = False  # All items are new
+        mock_db.get_comment_count.return_value = None  # No previous comments
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
@@ -565,7 +567,6 @@ class TestMainIntegration:
 
         # Processor returns the items passed to it
         mock_processor = MagicMock()
-        mock_processor.deduplicate.side_effect = lambda items, db: items
         mock_processor.enrich_with_llm.side_effect = lambda items: items
         mock_processor_class.return_value = mock_processor
 
@@ -577,15 +578,16 @@ class TestMainIntegration:
         main()
 
         # Verify 3 items were processed (1 from each source)
-        dedupe_call_args = mock_processor.deduplicate.call_args[0][0]
-        assert len(dedupe_call_args) == 3
+        # Deduplication is now done inline via db.item_exists()
+        enrich_call_args = mock_processor.enrich_with_llm.call_args[0][0]
+        assert len(enrich_call_args) == 3
 
         # Verify all items are ContentItem instances
-        for item in dedupe_call_args:
+        for item in enrich_call_args:
             assert isinstance(item, ContentItem)
 
         # Verify sources
-        sources = {item.source for item in dedupe_call_args}
+        sources = {item.source for item in enrich_call_args}
         assert sources == {"community", "reddit", "status"}
 
     @patch("main.InstructureScraper")
@@ -624,7 +626,6 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.deduplicate.return_value = []
         mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 
@@ -677,7 +678,6 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.deduplicate.return_value = []
         mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 
@@ -729,7 +729,6 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.deduplicate.return_value = []
         mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 
@@ -808,13 +807,29 @@ class TestMainIntegration:
             topics=["Gradebook"],
         )
 
+        # Create a community post that will be converted to ContentItem
+        community_post = CommunityPost(
+            title="Test",
+            url="https://example.com",
+            content="Test content",
+            published_date=datetime.now(),
+            likes=0,
+            comments=0,
+        )
+
+        # The enriched_item should have the same source_id as what gets generated
+        # from the community_post
+        enriched_item.source_id = community_post.source_id
+
         # Setup mocks
         mock_db = MagicMock()
         mock_db.insert_item.return_value = 1
+        mock_db.item_exists.return_value = False  # Item is new
+        mock_db.get_comment_count.return_value = None
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
-        mock_instructure.scrape_all.return_value = []
+        mock_instructure.scrape_all.return_value = [community_post]
         mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
         mock_instructure.__exit__ = MagicMock(return_value=False)
         mock_instructure_class.return_value = mock_instructure
@@ -828,7 +843,6 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.deduplicate.return_value = [enriched_item]
         mock_processor.enrich_with_llm.return_value = [enriched_item]
         mock_processor_class.return_value = mock_processor
 
@@ -881,7 +895,6 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.deduplicate.return_value = []
         mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 

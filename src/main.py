@@ -39,10 +39,12 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
     """
     # Calculate engagement score from likes + comments (if available)
     engagement = 0
+    comment_count = 0
     if hasattr(post, 'likes'):
         engagement += post.likes
     if hasattr(post, 'comments'):
         engagement += post.comments
+        comment_count = post.comments
 
     # Map post_type to content_type for content-specific summarization
     # post_type values: 'release_note', 'deploy_note', 'changelog', 'blog', 'question'
@@ -50,6 +52,9 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
     # ChangeLogEntry doesn't have post_type, so detect it by class
     if isinstance(post, ChangeLogEntry):
         content_type = 'changelog'
+
+    # Check for is_latest flag (for release/deploy notes)
+    is_latest = getattr(post, 'is_latest', False)
 
     return ContentItem(
         source=post.source,
@@ -60,6 +65,8 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
         content_type=content_type,
         published_date=post.published_date,
         engagement_score=engagement,
+        comment_count=comment_count,
+        is_latest=is_latest,
     )
 
 
@@ -162,13 +169,45 @@ def main():
             all_items.append(incident_to_content_item(incident))
         logger.info(f"  -> Found {len(incidents)} status incidents")
 
-        # 4. Process all content (deduplicate and enrich)
+        # 4. Process all content (deduplicate and check for new comments)
         logger.info("Processing content...")
-        new_items = processor.deduplicate(all_items, db)
-        logger.info(f"  -> {len(new_items)} new items after deduplication")
 
-        enriched_items = processor.enrich_with_llm(new_items)
-        logger.info(f"  -> Enriched {len(enriched_items)} items with summaries and sentiment")
+        # Types that should be included if they have new comments (discussion-focused content)
+        COMMENT_TRACKED_TYPES = {"blog", "question"}
+
+        # Separate deduplication: check for new items AND items with new comments
+        new_items = []
+        updated_items = []
+        new_item_ids = set()  # Track source_ids of new items
+
+        for item in all_items:
+            if item is None:
+                continue
+
+            if not db.item_exists(item.source_id):
+                # New item - include it
+                new_items.append(item)
+                new_item_ids.add(item.source_id)
+            elif item.content_type in COMMENT_TRACKED_TYPES:
+                # Existing item of tracked type - check for new comments
+                prev_count = db.get_comment_count(item.source_id)
+                if prev_count is not None and item.comment_count > prev_count:
+                    logger.info(
+                        f"  -> New comments detected on {item.content_type}: "
+                        f"{item.title[:50]}... ({prev_count} -> {item.comment_count})"
+                    )
+                    # Update the comment count in DB and include in feed
+                    db.update_comment_count(item.source_id, item.comment_count)
+                    updated_items.append(item)
+
+        # Combine new items and items with new comments
+        items_to_process = new_items + updated_items
+        logger.info(
+            f"  -> {len(new_items)} new items, {len(updated_items)} items with new comments"
+        )
+
+        enriched_items = processor.enrich_with_llm(items_to_process)
+        logger.info(f"  -> Enriched {len(enriched_items)} items with summaries and topics")
 
         # 5. Generate RSS feed
         logger.info("Generating RSS feed...")
@@ -178,18 +217,23 @@ def main():
         output_path.write_text(feed_xml, encoding="utf-8")
         logger.info(f"  -> RSS feed written to {output_path}")
 
-        # 6. Store in database for future deduplication
-        logger.info("Storing items in database...")
+        # 6. Store new items in database for future deduplication
+        # (Updated items already exist in DB, just had their comment_count updated)
+        logger.info("Storing new items in database...")
         stored_count = 0
         for item in enriched_items:
-            item_id = db.insert_item(item)
-            if item_id > 0:
-                stored_count += 1
+            if item.source_id in new_item_ids:  # Only store genuinely new items
+                item_id = db.insert_item(item)
+                if item_id > 0:
+                    stored_count += 1
         db.record_feed_generation(len(enriched_items), feed_xml)
         logger.info(f"  -> Stored {stored_count} new items in database")
 
         logger.info("=" * 50)
-        logger.info(f"Aggregation complete! {len(all_items)} items collected, {len(enriched_items)} new")
+        logger.info(
+            f"Aggregation complete! {len(all_items)} items collected, "
+            f"{len(new_items)} new, {len(updated_items)} updated"
+        )
         logger.info("=" * 50)
 
     except Exception as e:

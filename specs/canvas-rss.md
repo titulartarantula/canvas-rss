@@ -60,12 +60,19 @@
 
 1. **Instructure Canvas Community**
    - Release Notes: `https://community.instructure.com/en/categories/canvas-release-notes/`
+     - Default view shows Release Notes; click "Deploys" tab to access Deploy Notes
+     - Scraper automatically navigates both views
+     - Detects "Latest Release" and "Latest Deploy" badges
    - Change Log (API): `https://community.instructure.com/en/categories/canvas-lms-changelog`
-   - Q&A Forum: `https://community.instructure.com/en/categories/canvas-lms-question-forum`
-   - Blog: `https://community.instructure.com/en/categories/canvas_lms_blog`
+   - Q&A Forum: `https://community.instructure.com/en/categories/canvas-lms-question-forum?sort=-dateLastComment`
+     - Sorted by most recent comment activity
+     - Re-included in feed when new comments are added
+   - Blog: `https://community.instructure.com/en/categories/canvas_lms_blog?sort=-dateLastComment`
+     - Sorted by most recent comment activity
+     - Re-included in feed when new comments are added
    - Method: Headless browser scraping (Playwright)
    - Frequency: Daily
-   - Data: Titles, dates, content, engagement metrics, post type
+   - Data: Titles, dates, content, engagement metrics, post type, comment count, is_latest flag
 
 2. **Canvas Status Page**
    - URL: `https://status.instructure.com/`
@@ -126,13 +133,19 @@ class CommunityPost:
     published_date: datetime
     likes: int = 0
     comments: int = 0
-    post_type: str = "discussion"  # 'release_note', 'changelog', 'question', 'blog'
+    post_type: str = "discussion"  # 'release_note', 'deploy_note', 'changelog', 'question', 'blog'
+    is_latest: bool = False  # True for "Latest Release" or "Latest Deploy" tagged posts
 
 class InstructureScraper:
-    """Scrape Canvas Community release notes, changelog, Q&A, and blog posts"""
+    """Scrape Canvas Community release notes, deploy notes, changelog, Q&A, and blog posts"""
 
     def scrape_release_notes(self, hours: int = 24) -> List[ReleaseNote]:
-        """Get posts from last N hours from release notes category"""
+        """Get posts from last N hours from release notes category.
+
+        Automatically navigates between Release Notes (default view) and
+        Deploy Notes (accessible via 'Deploys' tab click). Detects and
+        captures 'Latest Release' and 'Latest Deploy' badges.
+        """
         pass
 
     def scrape_changelog(self, hours: int = 24) -> List[ChangeLogEntry]:
@@ -192,12 +205,15 @@ class ContentItem:
     title: str
     url: str
     content: str
+    content_type: str = ""          # 'release_note', 'deploy_note', 'changelog', 'blog', 'question', 'reddit', 'status'
     summary: str = ""
-    sentiment: str = ""             # positive, neutral, negative
+    sentiment: str = ""             # positive, neutral, negative (skipped for release_note, deploy_note, changelog, blog, question)
     primary_topic: str = ""         # Single topic for feature-centric grouping
     topics: List[str] = None        # Additional/secondary topics
     published_date: Any = None
     engagement_score: int = 0
+    comment_count: int = 0          # For tracking discussion activity (blog, question)
+    is_latest: bool = False         # True for "Latest Release" or "Latest Deploy" (release/deploy notes only)
 
 class ContentProcessor:
     """Process and analyze collected content"""
@@ -214,12 +230,23 @@ class ContentProcessor:
         """Remove duplicates using SQLite cache"""
         pass
 
-    def summarize_with_llm(self, content: str) -> str:
-        """Generate concise summary using LLM"""
+    def summarize_with_llm(self, content: str, content_type: str = "") -> str:
+        """Generate concise summary using LLM.
+
+        Uses content-type-specific prompts (v1.1.0):
+        - blog/question: Discussion-focused summaries covering community opinions,
+          staff responses, and direction of conversation
+        - release_note/deploy_note: Feature/fix-focused summaries
+        - Other types: Standard content summaries
+        """
         pass
 
     def analyze_sentiment(self, content: str) -> str:
-        """Determine sentiment: positive/neutral/negative"""
+        """Determine sentiment: positive/neutral/negative.
+
+        Note: Sentiment analysis is skipped for release_note, deploy_note,
+        changelog, blog, question, and status content types (v1.1.0).
+        """
         pass
 
     def classify_topic(self, content: str) -> Tuple[str, List[str]]:
@@ -238,11 +265,33 @@ class ContentProcessor:
 class RSSBuilder:
     """Generate RSS feed from processed content (feature-centric organization)"""
 
-    # Source badges for title prefixes
+    # Source badges for title prefixes (fallback for types without content badges)
     SOURCE_BADGES = {
         "community": "[📢 Community]",
         "reddit": "[💬 Reddit]",
         "status": "[🔧 Status]",
+    }
+
+    # Content type badges (preferred over source badges)
+    CONTENT_TYPE_BADGES = {
+        "release_note": "[New]",
+        "deploy_note": "[Fix]",
+        "changelog": "[API]",
+        "blog": "[Blog]",
+        "question": "[Q&A]",
+        "reddit": "",      # Uses source badge
+        "status": "",      # Uses source badge
+    }
+
+    # Human-readable names for content types (used in RSS description)
+    CONTENT_TYPE_NAMES = {
+        "release_note": "Release Notes",
+        "deploy_note": "Deploy Notes",
+        "changelog": "API Changelog",
+        "blog": "Canvas LMS Blog",
+        "question": "Canvas LMS Question Forum",
+        "reddit": "Reddit Community",
+        "status": "Canvas Status",
     }
 
     # Priority for sorting by topic (lower = higher priority)
@@ -254,13 +303,20 @@ class RSSBuilder:
     }
 
     def create_feed(self, items: List[ContentItem]) -> str:
-        """Generate RSS 2.0 XML feed, sorted by topic priority then date"""
+        """Generate RSS 2.0 XML feed, sorted by topic priority then content type then date"""
         pass
 
     def add_item(self, item: ContentItem) -> None:
-        """Add individual item to feed with feature-centric title format"""
-        # Title format: "{primary_topic} - [{source_badge}] {title}"
-        # Example: "Gradebook - [📢 Community] New weighted grading option"
+        """Add individual item to feed with feature-centric title format.
+
+        Title format: "{primary_topic} - [Latest] [{content_badge}] {title}"
+        Examples:
+        - "Gradebook - [Latest] [New] Canvas Release Notes (2026-01-31)"
+        - "SpeedGrader - [Fix] Canvas Deploy Notes (2026-01-30)"
+        - "API - [API] New Submissions endpoint"
+        - "Assignments - [Blog] Improving workflows"
+        - "Quizzes - [💬 Reddit] Timer issues discussion"
+        """
         pass
 
     def save_feed(self, output_path: str) -> None:
@@ -286,6 +342,8 @@ CREATE TABLE content_items (
     primary_topic TEXT,             -- Single topic for feature-centric grouping
     topics TEXT,                    -- JSON array of secondary topics
     engagement_score INTEGER,
+    comment_count INTEGER DEFAULT 0, -- For tracking discussion activity (v1.1.0)
+    content_type TEXT,              -- 'release_note', 'deploy_note', 'changelog', 'blog', 'question', 'reddit', 'status' (v1.1.0)
     included_in_feed BOOLEAN DEFAULT FALSE
 );
 
@@ -298,16 +356,33 @@ CREATE TABLE feed_history (
 );
 ```
 
+**Comment Tracking (v1.1.0):** For discussion-focused content types (`blog`, `question`), the aggregator tracks `comment_count` between runs. If an existing item has new comments, it is re-included in the feed with an updated summary focused on the discussion progress.
+
 ## RSS Feed Format
 
 ### Feature-Centric Organization
 
 The RSS feed is organized by **Canvas feature/topic** rather than by source. This groups related content together regardless of where it came from (community, Reddit, status page).
 
-**Title Format:** `{PrimaryTopic} - [{SourceBadge}] {Title}`
+**Title Format:** `{PrimaryTopic} - [Latest] [{ContentBadge}] {Title}`
+
+The `[Latest]` badge only appears for Release Notes and Deploy Notes that are tagged as the current release/deploy on the Instructure Community site.
+
+**Content Type Badges:**
+- `[New]` - Release Notes (new features)
+- `[Fix]` - Deploy Notes (bug fixes, patches)
+- `[API]` - API Changelog entries
+- `[Blog]` - Canvas LMS Blog posts
+- `[Q&A]` - Question Forum discussions
+- `[💬 Reddit]` - Reddit discussions (uses source badge)
+- `[🔧 Status]` - Status page incidents (uses source badge)
 
 Example titles:
-- `Gradebook - [📢 Community] New weighted grading option`
+- `Gradebook - [Latest] [New] Canvas Release Notes (2026-01-31)`
+- `SpeedGrader - [Fix] Canvas Deploy Notes (2026-01-30)`
+- `API - [API] New Submissions API endpoint`
+- `Assignments - [Blog] Improving assignment workflows`
+- `Calendar - [Q&A] How to sync with external calendars?`
 - `Assignments - [💬 Reddit] Discussion about late submissions`
 - `Performance - [🔧 Status] Maintenance complete`
 

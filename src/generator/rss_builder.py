@@ -58,6 +58,17 @@ class RSSBuilder:
         "status": "Status",
     }
 
+    # Human-readable names for content types (used in RSS description)
+    CONTENT_TYPE_NAMES = {
+        "release_note": "Release Notes",
+        "deploy_note": "Deploy Notes",
+        "changelog": "API Changelog",
+        "blog": "Canvas LMS Blog",
+        "question": "Canvas LMS Question Forum",
+        "reddit": "Reddit Community",
+        "status": "Canvas Status",
+    }
+
     # Priority for sorting by topic (lower number = higher priority)
     TOPIC_PRIORITY = {
         "Gradebook": 1,
@@ -137,8 +148,8 @@ class RSSBuilder:
     def _format_title_with_badge(self, item: ContentItem) -> str:
         """Format title with topic, content type, and source badge for feature-centric view.
 
-        Format: "Topic - [ContentType] [Source Badge] Title"
-        Example: "Gradebook - [Fix] [📢 Community] Fixed weighted grades calculation"
+        Format: "Topic - [Latest] [ContentType] Title"
+        Example: "Gradebook - [Latest] [New] Canvas Release Notes (2026-01-17)"
 
         Args:
             item: ContentItem to format
@@ -148,6 +159,10 @@ class RSSBuilder:
         """
         # Get primary topic (fallback to General)
         primary_topic = getattr(item, 'primary_topic', '') or "General"
+
+        # Check for "Latest" badge (only for release/deploy notes)
+        is_latest = getattr(item, 'is_latest', False)
+        latest_badge = "[Latest] " if is_latest else ""
 
         # Get content type badge (e.g., [New], [Fix], [API])
         content_type = getattr(item, 'content_type', '') or ""
@@ -164,11 +179,11 @@ class RSSBuilder:
         else:
             badges = ""
 
-        # Format: "Topic - [Badge(s)] Title"
+        # Format: "Topic - [Latest] [Badge(s)] Title"
         if badges:
-            return f"{primary_topic} - {badges} {item.title}"
+            return f"{primary_topic} - {latest_badge}{badges} {item.title}"
         else:
-            return f"{primary_topic} - {item.title}"
+            return f"{primary_topic} - {latest_badge}{item.title}"
 
     def _format_description(self, item: ContentItem) -> str:
         """Format item description with summary, sentiment, topics, and source.
@@ -190,8 +205,9 @@ class RSSBuilder:
         if item.sentiment:
             parts.append(f"<h3>Sentiment</h3>\n<p>{item.sentiment}</p>")
 
-        # Source section
-        source_name = self.SOURCE_CATEGORIES.get(item.source.lower(), item.source)
+        # Source section - use content_type for accurate labeling
+        content_type = getattr(item, 'content_type', '') or ''
+        source_name = self.CONTENT_TYPE_NAMES.get(content_type, item.source.title())
         parts.append(f"<h3>Source</h3>\n<p>{source_name}</p>")
 
         # Topics section (secondary topics)

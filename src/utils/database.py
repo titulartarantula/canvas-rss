@@ -48,6 +48,8 @@ class Database:
                 primary_topic TEXT,
                 topics TEXT,
                 engagement_score INTEGER,
+                comment_count INTEGER DEFAULT 0,
+                content_type TEXT,
                 included_in_feed BOOLEAN DEFAULT FALSE
             )
         """)
@@ -55,6 +57,22 @@ class Database:
         # Migration: Add primary_topic column if it doesn't exist (for existing databases)
         try:
             cursor.execute("ALTER TABLE content_items ADD COLUMN primary_topic TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
+
+        # Migration: Add comment_count column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE content_items ADD COLUMN comment_count INTEGER DEFAULT 0")
+            conn.commit()
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
+
+        # Migration: Add content_type column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE content_items ADD COLUMN content_type TEXT")
             conn.commit()
         except sqlite3.OperationalError:
             # Column already exists, ignore
@@ -107,11 +125,16 @@ class Database:
         # Get primary_topic (may not exist on older ContentItem instances)
         primary_topic = getattr(item, 'primary_topic', '') or ''
 
+        # Get comment_count and content_type
+        comment_count = getattr(item, 'comment_count', 0) or 0
+        content_type = getattr(item, 'content_type', '') or ''
+
         cursor.execute("""
             INSERT INTO content_items
             (source, source_id, url, title, content, summary, published_date,
-             sentiment, primary_topic, topics, engagement_score, included_in_feed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             sentiment, primary_topic, topics, engagement_score, comment_count,
+             content_type, included_in_feed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.source,
             item.source_id,
@@ -124,11 +147,50 @@ class Database:
             primary_topic,
             topics_json,
             item.engagement_score,
+            comment_count,
+            content_type,
             True  # Mark as included in feed
         ))
 
         conn.commit()
         return cursor.lastrowid
+
+    def get_comment_count(self, source_id: str) -> Optional[int]:
+        """Get the stored comment count for an item.
+
+        Args:
+            source_id: The unique source ID of the item.
+
+        Returns:
+            The comment count, or None if item not found.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT comment_count FROM content_items WHERE source_id = ?",
+            (source_id,)
+        )
+        row = cursor.fetchone()
+        return row["comment_count"] if row else None
+
+    def update_comment_count(self, source_id: str, comment_count: int) -> bool:
+        """Update the comment count for an existing item.
+
+        Args:
+            source_id: The unique source ID of the item.
+            comment_count: The new comment count.
+
+        Returns:
+            True if updated, False if item not found.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE content_items SET comment_count = ? WHERE source_id = ?",
+            (comment_count, source_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
     def get_recent_items(self, days: int = 7) -> List[dict]:
         """Get items from the last N days.

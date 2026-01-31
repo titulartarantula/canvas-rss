@@ -41,6 +41,8 @@ class ContentItem:
     topics: List[str] = None  # Additional/secondary topics
     published_date: Any = None
     engagement_score: int = 0
+    comment_count: int = 0  # Track comments for detecting new activity
+    is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
 
     def __post_init__(self):
         if self.topics is None:
@@ -68,8 +70,8 @@ class ContentProcessor:
     REDDIT_USER_PATTERN = re.compile(r'u/\w+')
     PHONE_PATTERN = re.compile(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b')
 
-    # Content types that skip sentiment analysis (official content without discussion)
-    SKIP_SENTIMENT_TYPES = {"release_note", "deploy_note", "changelog", "status", "blog"}
+    # Content types that skip sentiment analysis (official content and discussion-focused content)
+    SKIP_SENTIMENT_TYPES = {"release_note", "deploy_note", "changelog", "status", "blog", "question"}
 
     # Content-type-specific summarization prompts
     SUMMARIZATION_PROMPTS = {
@@ -92,15 +94,17 @@ class ContentProcessor:
             "Write 4-6 sentences (~200 words): {content}"
         ),
         "blog": (
-            "Summarize this Canvas LMS product announcement for educational technologists. "
-            "Focus on the key feature or capability being announced. "
-            "Highlight availability timeline and who benefits. "
+            "Summarize the discussion activity on this Canvas LMS blog post for educational technologists. "
+            "Focus on: ongoing issues raised in comments, community opinions and feedback, "
+            "responses from Instructure staff, and the overall direction of the conversation. "
+            "Highlight any actionable insights or concerns from the community. "
             "Write 4-6 sentences (~200 words): {content}"
         ),
         "question": (
-            "Summarize this Canvas LMS community discussion for educational technologists. "
-            "Focus on the PROBLEM or question and any SOLUTIONS or workarounds shared. "
-            "Highlight if this is a common issue affecting many users. "
+            "Summarize the discussion on this Canvas LMS question forum post for educational technologists. "
+            "Focus on: concerns raised by users, community opinions and workarounds, "
+            "responses from Instructure staff, and the relevance/impact to Canvas users. "
+            "Highlight any solutions proposed or unresolved issues. "
             "Write 4-6 sentences (~200 words): {content}"
         ),
         "reddit": (

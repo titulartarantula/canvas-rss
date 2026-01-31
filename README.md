@@ -1,14 +1,19 @@
 # Canvas LMS Daily Digest
 
-**Version 1.0.0** | [Changelog](CHANGELOG.md)
+**Version 1.1.0** | [Changelog](CHANGELOG.md)
 
 A daily RSS feed aggregator for Canvas LMS release notes, community discussions, and status updates. Designed for educational technologists who want to stay informed about Canvas updates without manually checking multiple sources.
 
 ## Features
 
-- **Multi-source aggregation** - Collects updates from Instructure Community (release notes, changelog, Q&A, blog), Reddit discussions, and Canvas status page
-- **AI-powered summaries** - Uses Google Gemini to generate concise summaries, sentiment analysis, and topic classification
+- **Multi-source aggregation** - Collects updates from Instructure Community (release notes, deploy notes, changelog, Q&A, blog), Reddit discussions, and Canvas status page
+- **Release & Deploy Notes separation** - Automatically navigates between Release Notes and Deploy Notes tabs to capture both types of updates
+- **"Latest" badges** - Identifies and tags the current "Latest Release" and "Latest Deploy" notes for quick reference
+- **Discussion-focused updates** - Blog and Q&A posts are sorted by recent comment activity, with summaries focused on discussion progress rather than just the original content
+- **Comment tracking** - Re-includes previously seen posts when new comments are added to ongoing discussions
+- **AI-powered summaries** - Uses Google Gemini to generate concise summaries, sentiment analysis (where appropriate), and topic classification
 - **Feature-centric organization** - RSS items grouped by Canvas feature (Gradebook, Assignments, Quizzes, etc.) rather than by source
+- **Accurate source labeling** - Each item shows its true content type (Release Notes, Deploy Notes, API Changelog, Canvas LMS Blog, Question Forum, etc.)
 - **Privacy-focused** - Automatically redacts personal information and anonymizes Reddit usernames
 - **Docker deployment** - Ready-to-deploy containerized setup with cron scheduling
 - **Deduplication** - SQLite-backed history prevents duplicate items across runs
@@ -81,7 +86,7 @@ GEMINI_API_KEY=your_gemini_api_key
 # Optional: Reddit API (enables Reddit monitoring)
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USER_AGENT=canvas-rss-aggregator:v1.0.0
+REDDIT_USER_AGENT=canvas-rss-aggregator:v1.1.0
 
 # Optional: Customization
 GEMINI_MODEL=gemini-2.0-flash       # AI model to use
@@ -121,17 +126,32 @@ rss:
 
 ## RSS Feed Format
 
-Items are organized by Canvas feature with source badges:
+Items are organized by Canvas feature with content type badges:
 
 ```
-Gradebook - [📢 Community] New weighted grading option
-Assignments - [💬 Reddit] Discussion about late submissions
+Gradebook - [Latest] [New] Canvas Release Notes (2026-01-31)
+SpeedGrader - [Fix] Canvas Deploy Notes (2026-01-30)
+API - [API] New Submissions API endpoint
+Assignments - [Blog] Improving assignment workflows
+Calendar - [Q&A] How to sync with external calendars?
 Performance - [🔧 Status] Maintenance complete
+Quizzes - [💬 Reddit] Discussion about quiz timer issues
 ```
+
+Badge meanings:
+
+- **[Latest]** - Current release or deploy (Release/Deploy Notes only)
+- **[New]** - Release Notes (new features)
+- **[Fix]** - Deploy Notes (bug fixes, patches)
+- **[API]** - API Changelog entries
+- **[Blog]** - Canvas LMS Blog posts
+- **[Q&A]** - Question Forum discussions
 
 Each item includes:
-- AI-generated summary
-- Sentiment (positive/neutral/negative)
+
+- AI-generated summary (discussion-focused for blog/Q&A posts)
+- Sentiment analysis (for Reddit and status updates)
+- Accurate source label (Release Notes, Deploy Notes, Canvas LMS Blog, etc.)
 - Related topics
 - Link to original source
 

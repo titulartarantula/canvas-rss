@@ -1257,17 +1257,19 @@ class TestInstructureScraperScraping:
 
         scraper = InstructureScraper()
 
-        # Mock the internal method to return test data
+        # Mock the internal methods to return test data
         with patch.object(scraper, '_extract_post_cards') as mock_extract:
             with patch.object(scraper, '_get_post_content') as mock_content:
-                mock_extract.return_value = [{
-                    "title": "Canvas Q1 2024 Release",
-                    "url": "https://community.instructure.com/t/canvas-q1/123",
-                    "date_text": "2 hours ago"
-                }]
-                mock_content.return_value = ("Post content about new features", 25, 5)
+                with patch.object(scraper, '_click_deploys_tab') as mock_click:
+                    mock_extract.return_value = [{
+                        "title": "Canvas Q1 2024 Release",
+                        "url": "https://community.instructure.com/t/canvas-q1/123",
+                        "date_text": "2 hours ago"
+                    }]
+                    mock_content.return_value = ("Post content about new features", 25, 5)
+                    mock_click.return_value = False  # Don't scrape deploy notes
 
-                result = scraper.scrape_release_notes(hours=24)
+                    result = scraper.scrape_release_notes(hours=24)
 
         assert len(result) == 1
         assert isinstance(result[0], ReleaseNote)
@@ -1326,13 +1328,15 @@ class TestInstructureScraperScraping:
 
         with patch.object(scraper, '_extract_post_cards') as mock_extract:
             with patch.object(scraper, '_get_post_content') as mock_content:
-                mock_extract.return_value = [
-                    {"title": "Recent Post", "url": "https://example.com/1", "date_text": "2 hours ago"},
-                    {"title": "Old Post", "url": "https://example.com/2", "date_text": "5 days ago"}
-                ]
-                mock_content.return_value = ("Content", 0, 0)
+                with patch.object(scraper, '_click_deploys_tab') as mock_click:
+                    mock_extract.return_value = [
+                        {"title": "Recent Post", "url": "https://example.com/1", "date_text": "2 hours ago"},
+                        {"title": "Old Post", "url": "https://example.com/2", "date_text": "5 days ago"}
+                    ]
+                    mock_content.return_value = ("Content", 0, 0)
+                    mock_click.return_value = False  # Don't scrape deploy notes
 
-                result = scraper.scrape_release_notes(hours=24)
+                    result = scraper.scrape_release_notes(hours=24)
 
         # Only the recent post should be included
         assert len(result) == 1

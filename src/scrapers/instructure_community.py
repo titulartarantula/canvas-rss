@@ -29,6 +29,7 @@ class CommunityPost:
     likes: int = 0
     comments: int = 0
     post_type: str = "discussion"  # 'release_note', 'changelog', 'question', 'blog'
+    is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
 
     @property
     def source(self) -> str:
@@ -53,6 +54,7 @@ class ReleaseNote:
     likes: int = 0
     comments: int = 0
     post_type: str = "release_note"  # 'release_note' or 'deploy_note'
+    is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
 
     @property
     def source(self) -> str:
@@ -93,8 +95,9 @@ class InstructureScraper:
 
     RELEASE_NOTES_URL = "https://community.instructure.com/en/categories/canvas-release-notes/"
     CHANGELOG_URL = "https://community.instructure.com/en/categories/canvas-lms-changelog"
-    QUESTION_FORUM_URL = "https://community.instructure.com/en/categories/canvas-lms-question-forum"
-    BLOG_URL = "https://community.instructure.com/en/categories/canvas_lms_blog"
+    # Sort by most recently commented for discussion-focused content
+    QUESTION_FORUM_URL = "https://community.instructure.com/en/categories/canvas-lms-question-forum?sort=-dateLastComment"
+    BLOG_URL = "https://community.instructure.com/en/categories/canvas_lms_blog?sort=-dateLastComment"
     USER_AGENT = "Canvas-RSS-Aggregator/1.0 (Educational Use)"
 
     # Title patterns for Deploy Notes (bug fixes, patches) - check first, more specific
@@ -577,35 +580,103 @@ class InstructureScraper:
             logger.error(f"Error getting post content from {url}: {e}")
             return ("", 0, 0)
 
-    def scrape_release_notes(self, hours: int = 24) -> List[ReleaseNote]:
-        """Get posts from last N hours from release notes category.
-
-        Args:
-            hours: Number of hours to look back (default: 24).
+    def _click_deploys_tab(self) -> bool:
+        """Click the Deploys tab/button to switch to deploy notes view.
 
         Returns:
-            List of ReleaseNote objects for recent posts.
+            True if successfully clicked, False otherwise.
         """
         if not self.page:
-            logger.warning("Browser not available, returning empty release notes list")
-            return []
-
-        release_notes = []
+            return False
 
         try:
-            logger.info(f"Scraping release notes from {self.RELEASE_NOTES_URL}")
-            self.page.goto(self.RELEASE_NOTES_URL, timeout=30000)
+            # Look for common deploy tab selectors
+            deploy_selectors = [
+                'button:has-text("Deploys")',
+                'a:has-text("Deploys")',
+                '[data-testid*="deploy"]',
+                '[class*="deploy"]',
+                'button:has-text("Deploy Notes")',
+                'a:has-text("Deploy Notes")',
+                # Tab/filter button patterns
+                '[role="tab"]:has-text("Deploys")',
+                '[role="button"]:has-text("Deploys")',
+            ]
 
-            # Extract post cards
+            for selector in deploy_selectors:
+                try:
+                    btn = self.page.locator(selector).first
+                    if btn.is_visible(timeout=3000):
+                        btn.click()
+                        self.page.wait_for_timeout(2000)  # Wait for content to load
+                        logger.info("Clicked Deploys tab successfully")
+                        return True
+                except Exception:
+                    continue
+
+            logger.warning("Could not find Deploys tab to click")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error clicking Deploys tab: {e}")
+            return False
+
+    def _detect_latest_badge(self, post_element) -> bool:
+        """Detect if a post has a 'Latest Release' or 'Latest Deploy' badge.
+
+        Args:
+            post_element: Playwright element handle for the post.
+
+        Returns:
+            True if the post has a "Latest" badge.
+        """
+        try:
+            # Look for common badge/label patterns
+            badge_selectors = [
+                '[class*="latest"]',
+                '[class*="badge"]',
+                'span:has-text("Latest")',
+                '[data-testid*="latest"]',
+            ]
+
+            for selector in badge_selectors:
+                try:
+                    badge = post_element.query_selector(selector)
+                    if badge:
+                        badge_text = badge.inner_text().lower()
+                        if "latest" in badge_text:
+                            return True
+                except Exception:
+                    continue
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"Error detecting latest badge: {e}")
+            return False
+
+    def _scrape_notes_from_current_view(
+        self, hours: int, post_type: str
+    ) -> List[ReleaseNote]:
+        """Scrape notes from the currently displayed view.
+
+        Args:
+            hours: Number of hours to look back.
+            post_type: Type of post ('release_note' or 'deploy_note').
+
+        Returns:
+            List of ReleaseNote objects.
+        """
+        notes = []
+
+        try:
+            # Extract post cards from current view
             posts = self._extract_post_cards()
-            logger.info(f"Found {len(posts)} total posts on release notes page")
+            logger.info(f"Found {len(posts)} posts in {post_type} view")
 
-            # Filter to recent posts and get full content
             for post in posts:
                 published_date = self._parse_relative_date(post.get("date_text", ""))
 
-                # If we couldn't parse the date, we'll check it during content fetch
-                # For now, include posts with unparseable dates
                 if published_date and not self._is_within_hours(published_date, hours):
                     logger.debug(f"Skipping old post: {post['title']}")
                     continue
@@ -613,34 +684,93 @@ class InstructureScraper:
                 # Get full content
                 content, likes, comments = self._get_post_content(post["url"])
 
-                # Use current time if we couldn't parse the date
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
 
-                # Classify as release_note or deploy_note based on title
-                post_type = self._classify_release_or_deploy(post["title"])
+                # Detect if this is marked as "Latest"
+                is_latest = "latest" in post.get("title", "").lower() or \
+                           "latest" in post.get("badge", "").lower() if post.get("badge") else False
 
-                release_note = ReleaseNote(
+                note = ReleaseNote(
                     title=post["title"],
                     url=post["url"],
                     content=content,
                     published_date=published_date,
                     likes=likes,
                     comments=comments,
-                    post_type=post_type
+                    post_type=post_type,
+                    is_latest=is_latest
                 )
-                release_notes.append(release_note)
-                logger.debug(f"Classified '{post['title'][:50]}...' as {post_type}")
+                notes.append(note)
+                logger.debug(f"Scraped {post_type}: {post['title'][:50]}...")
 
-            logger.info(f"Scraped {len(release_notes)} release notes from last {hours} hours")
-            return release_notes
+            return notes
+
+        except Exception as e:
+            logger.error(f"Error scraping {post_type} view: {e}")
+            return notes
+
+    def scrape_release_notes(self, hours: int = 24) -> List[ReleaseNote]:
+        """Get posts from last N hours from release notes category.
+
+        Scrapes both Release Notes (default view) and Deploy Notes (via Deploys tab).
+
+        Args:
+            hours: Number of hours to look back (default: 24).
+
+        Returns:
+            List of ReleaseNote objects for recent posts (both release and deploy notes).
+        """
+        if not self.page:
+            logger.warning("Browser not available, returning empty release notes list")
+            return []
+
+        all_notes = []
+
+        try:
+            # 1. Navigate to release notes page and scrape release notes (default view)
+            logger.info(f"Scraping release notes from {self.RELEASE_NOTES_URL}")
+            self.page.goto(self.RELEASE_NOTES_URL, timeout=30000)
+
+            # Wait for page to load
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+            self._dismiss_cookie_consent()
+            self.page.wait_for_timeout(2000)
+
+            # Scrape release notes from default view
+            release_notes = self._scrape_notes_from_current_view(hours, "release_note")
+            all_notes.extend(release_notes)
+            logger.info(f"Scraped {len(release_notes)} release notes")
+
+            # 2. Click Deploys tab and scrape deploy notes
+            logger.info("Switching to Deploy Notes view...")
+            if self._click_deploys_tab():
+                # Wait for the deploy notes to load
+                self.page.wait_for_load_state("networkidle", timeout=15000)
+                self.page.wait_for_timeout(2000)
+
+                deploy_notes = self._scrape_notes_from_current_view(hours, "deploy_note")
+                all_notes.extend(deploy_notes)
+                logger.info(f"Scraped {len(deploy_notes)} deploy notes")
+            else:
+                # Fallback: try to find deploy notes by title pattern in current view
+                logger.warning(
+                    "Could not click Deploys tab. "
+                    "Deploy notes may be missed or misclassified."
+                )
+
+            logger.info(
+                f"Total: {len(all_notes)} notes "
+                f"({len(release_notes)} release, {len(all_notes) - len(release_notes)} deploy)"
+            )
+            return all_notes
 
         except PlaywrightTimeout:
             logger.error(f"Timeout loading release notes page: {self.RELEASE_NOTES_URL}")
-            return []
+            return all_notes  # Return any notes we managed to scrape
         except Exception as e:
             logger.error(f"Error scraping release notes: {e}")
-            return []
+            return all_notes  # Return any notes we managed to scrape
 
     def scrape_changelog(self, hours: int = 24) -> List[ChangeLogEntry]:
         """Get API change log entries from last N hours.
@@ -847,7 +977,7 @@ class InstructureScraper:
         """
         all_posts = []
 
-        # Scrape release notes and convert to CommunityPost
+        # Scrape release notes (includes both release and deploy notes) and convert to CommunityPost
         release_notes = self.scrape_release_notes(hours)
         for note in release_notes:
             post = CommunityPost(
@@ -857,7 +987,8 @@ class InstructureScraper:
                 published_date=note.published_date,
                 likes=note.likes,
                 comments=note.comments,
-                post_type="release_note"
+                post_type=note.post_type,  # Preserve the actual type (release_note or deploy_note)
+                is_latest=note.is_latest,  # Preserve the Latest badge status
             )
             all_posts.append(post)
 
