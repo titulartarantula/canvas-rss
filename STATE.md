@@ -9,6 +9,7 @@
 | Task                                | Agent   | Status   | Notes                   |
 |-------------------------------------|---------|----------|-------------------------|
 | Docker deployment                   | DevOps  | Complete | All containers working  |
+| GitHub README                       | Docs    | Complete | README.md created       |
 
 ## Completed
 
@@ -85,6 +86,7 @@
 
 ```
 canvas-rss/
+├── README.md
 ├── CLAUDE.md
 ├── STATE.md
 ├── Dockerfile
@@ -132,6 +134,7 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-01-31: Created README.md for GitHub - Docs Agent
 - 2026-01-30: Docker Phase complete - DevOps Agent
   - Created Dockerfile (python:3.11-slim, Playwright, cron)
   - Created docker-compose.yml (aggregator + feed-server services)

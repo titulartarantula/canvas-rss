@@ -40,6 +40,7 @@ Each agent has dedicated instructions:
 | Coding | [agents/CODING.md](agents/CODING.md) | Write implementation code |
 | Testing | [agents/TESTING.md](agents/TESTING.md) | Write and run tests |
 | DevOps | [agents/DEVOPS.md](agents/DEVOPS.md) | Docker and deployment |
+| Docs | [agents/DOCS.md](agents/DOCS.md) | Documentation and README |
 
 ## Workflow
 
@@ -102,7 +103,8 @@ canvas-rss/
 ├── agents/
 │   ├── CODING.md          # Coding agent instructions
 │   ├── TESTING.md         # Testing agent instructions
-│   └── DEVOPS.md          # DevOps agent instructions
+│   ├── DEVOPS.md          # DevOps agent instructions
+│   └── DOCS.md            # Docs agent instructions
 ├── specs/
 │   └── canvas-rss.md      # Technical specification
 ├── src/                   # Application code
