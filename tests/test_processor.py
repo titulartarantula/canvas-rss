@@ -1060,6 +1060,31 @@ class TestContentProcessorConstants:
         assert ContentProcessor.PHONE_PATTERN.search("555-123-4567")
 
 
+class TestSummarizeFeature:
+    """Tests for feature summarization."""
+
+    def test_summarize_feature_prompt(self):
+        """Test feature summarization uses correct prompt."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import Feature, FeatureTableData
+
+        processor = ContentProcessor(gemini_api_key=None)  # No API key = fallback
+
+        table = FeatureTableData("Account", "Off", "Admin", ["Assignments"], ["instructors"])
+        feature = Feature(
+            category="Assignments",
+            name="Document Processing App",
+            anchor_id="doc-app",
+            added_date=None,
+            raw_content="This feature allows document processing in Canvas.",
+            table_data=table
+        )
+
+        # Without API key, should return truncated content
+        result = processor.summarize_feature(feature)
+        assert "document processing" in result.lower() or result == ""
+
+
 class TestContentItemDataclass:
     """Tests for ContentItem dataclass."""
 

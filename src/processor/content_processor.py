@@ -19,6 +19,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from src.utils.database import Database
+    from src.scrapers.instructure_community import Feature
 
 from dataclasses import dataclass
 
@@ -134,6 +135,21 @@ class ContentProcessor:
             "Summarize this Canvas LMS update in 4-6 sentences (~200 words) for educational technologists: {content}"
         ),
     }
+
+    FEATURE_SUMMARIZATION_PROMPT = """You are summarizing a Canvas LMS feature for educational technologists.
+
+Feature: {feature_name}
+Category: {category}
+
+Content:
+{raw_content}
+
+Write a 2-3 sentence summary that covers:
+1. What this feature does
+2. Who benefits from it (students, instructors, admins)
+3. The key improvement or capability it provides
+
+Keep it concise and jargon-free."""
 
     def __init__(self, gemini_api_key: str = None, gemini_model: str = None):
         """Initialize the content processor.
@@ -272,6 +288,37 @@ class ContentProcessor:
 
         except Exception as e:
             logger.error(f"LLM summarization failed: {e}")
+            return ""
+
+    def summarize_feature(self, feature: "Feature") -> str:
+        """Generate summary for a release/deploy feature.
+
+        Args:
+            feature: Feature dataclass with raw_content.
+
+        Returns:
+            2-3 sentence summary string.
+        """
+        if not feature.raw_content:
+            return ""
+
+        if self.client is None:
+            return feature.raw_content[:300] if len(feature.raw_content) > 300 else feature.raw_content
+
+        try:
+            prompt = self.FEATURE_SUMMARIZATION_PROMPT.format(
+                feature_name=feature.name,
+                category=feature.category,
+                raw_content=feature.raw_content
+            )
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
+            return response.text.strip()[:500]
+        except Exception as e:
+            logger.error(f"Feature summarization failed: {e}")
             return ""
 
     def analyze_sentiment(self, content: str) -> str:
