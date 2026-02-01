@@ -488,6 +488,10 @@ class InstructureScraper:
                     if "/t/" not in url and "/topic" not in url.lower() and "/discussion/" not in url and "/blog/" not in url:
                         continue
 
+                    # Skip comment URLs (these are replies, not main posts)
+                    if "/comment/" in url or "#Comment_" in url:
+                        continue
+
                     posts.append({
                         "title": title[:500],  # Limit title length
                         "url": url,
