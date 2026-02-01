@@ -1042,3 +1042,109 @@ class TestV130Integration:
         # Second run - same change should not appear
         is_new_page2, new_anchors2 = classify_deploy_changes(page, temp_db, first_run_limit=10)
         assert len(new_anchors2) == 0
+
+
+class TestV130FullIntegration:
+    """Full integration tests for v1.3.0."""
+
+    def test_first_run_then_update_flow(self, temp_db):
+        """Test complete first run and update detection flow."""
+        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+
+        # Simulate 7 Q&A posts
+        qa_posts = [
+            CommunityPost(
+                title=f"Question {i}",
+                url=f"http://example.com/discussion/{i}/test",
+                content=f"Content {i}",
+                published_date=datetime.now(),
+                comments=i,
+                post_type="question"
+            ) for i in range(7)
+        ]
+
+        # First run - limit 5
+        results1 = classify_discussion_posts(qa_posts, temp_db, first_run_limit=5)
+        assert len(results1) == 5
+        assert all(r.is_new for r in results1)
+
+        # All 7 should be tracked in DB (even those beyond limit)
+        for i in range(7):
+            assert temp_db.get_discussion_tracking(f"question_{i}") is not None
+
+        # Second run - posts 0, 1 have new comments
+        qa_posts_updated = [
+            CommunityPost(
+                title=f"Question {i}",
+                url=f"http://example.com/discussion/{i}/test",
+                content=f"Content {i}",
+                published_date=datetime.now(),
+                comments=10 if i == 0 else 15 if i == 1 else i,
+                post_type="question"
+            ) for i in range(7)
+        ]
+
+        results2 = classify_discussion_posts(qa_posts_updated, temp_db, first_run_limit=5)
+        assert len(results2) == 2
+        assert all(not r.is_new for r in results2)
+
+        # Verify deltas (new_comment_count = current - previous)
+        deltas = {r.post.url: r.new_comment_count for r in results2}
+        assert deltas["http://example.com/discussion/0/test"] == 10  # 10 - 0 = 10
+        assert deltas["http://example.com/discussion/1/test"] == 14  # 15 - 1 = 14
+
+    def test_rss_title_formatting(self):
+        """Test RSS title formatting for all content types."""
+        from generator.rss_builder import build_discussion_title
+
+        # Q&A
+        assert build_discussion_title("question", "SSO Help", True) == "[NEW] - Question Forum - SSO Help"
+        assert build_discussion_title("question", "SSO Help", False) == "[UPDATE] - Question Forum - SSO Help"
+
+        # Blog
+        assert build_discussion_title("blog", "Updates", True) == "[NEW] - Blog - Updates"
+
+        # Release Notes (no source label)
+        assert build_discussion_title("release_note", "Canvas Release Notes (2026-02-21)", True) == "[NEW] Canvas Release Notes (2026-02-21)"
+        assert build_discussion_title("deploy_note", "Canvas Deploy Notes (2026-02-11)", False) == "[UPDATE] Canvas Deploy Notes (2026-02-11)"
+
+    def test_mixed_content_types_classification(self, temp_db):
+        """Test classification handles different content types correctly."""
+        from scrapers.instructure_community import (
+            CommunityPost, classify_discussion_posts,
+            ReleaseNotePage, Feature, FeatureTableData, classify_release_features,
+            DeployNotePage, DeployChange, classify_deploy_changes
+        )
+
+        # Q&A posts
+        qa_posts = [CommunityPost(
+            title="Q&A Question",
+            url="http://example.com/discussion/1/qa",
+            content="Q&A content",
+            published_date=datetime.now(),
+            comments=3,
+            post_type="question"
+        )]
+
+        # Blog posts
+        blog_posts = [CommunityPost(
+            title="Blog Post",
+            url="http://example.com/blog/2/post",
+            content="Blog content",
+            published_date=datetime.now(),
+            comments=5,
+            post_type="blog"
+        )]
+
+        # Classify both types
+        qa_results = classify_discussion_posts(qa_posts, temp_db, first_run_limit=5)
+        blog_results = classify_discussion_posts(blog_posts, temp_db, first_run_limit=5)
+
+        assert len(qa_results) == 1
+        assert len(blog_results) == 1
+        assert qa_results[0].is_new is True
+        assert blog_results[0].is_new is True
+
+        # Verify both are tracked separately
+        assert temp_db.get_discussion_tracking("question_1") is not None
+        assert temp_db.get_discussion_tracking("blog_2") is not None
