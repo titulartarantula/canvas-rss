@@ -3,7 +3,7 @@
 import logging
 import time
 import re
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -1486,3 +1486,45 @@ def classify_discussion_posts(
         db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
 
     return results
+
+
+def classify_release_features(
+    page: ReleaseNotePage,
+    db: "Database",
+    first_run_limit: int = 3
+) -> Tuple[bool, List[str]]:
+    """Classify release note features as new or existing.
+
+    Args:
+        page: ReleaseNotePage with parsed features.
+        db: Database instance for tracking.
+        first_run_limit: Max new features on first run.
+
+    Returns:
+        Tuple of (is_new_page, list_of_new_anchor_ids).
+    """
+    parent_id = page.release_date.strftime("release-%Y-%m-%d")
+    new_anchors = []
+    new_count = 0
+
+    for feature in page.features:
+        source_id = f"{parent_id}#{feature.anchor_id}"
+        tracked = db.get_feature_tracking(source_id)
+
+        if tracked is None:
+            new_count += 1
+            if new_count <= first_run_limit:
+                new_anchors.append(feature.anchor_id)
+
+            db.upsert_feature_tracking(
+                source_id=source_id,
+                parent_id=parent_id,
+                feature_type="release_note_feature",
+                anchor_id=feature.anchor_id
+            )
+
+    # Page is "new" if all features are new (first time seeing this page)
+    existing_features = db.get_features_for_parent(parent_id)
+    is_new_page = len(existing_features) == len(page.features) and len(new_anchors) > 0
+
+    return (is_new_page, new_anchors)

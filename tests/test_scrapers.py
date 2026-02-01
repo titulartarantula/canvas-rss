@@ -2113,3 +2113,48 @@ class TestClassifyDiscussionPosts:
         # All should be tracked
         for i in range(10):
             assert temp_db.get_discussion_tracking(f"question_{i}") is not None
+
+
+class TestClassifyReleaseFeatures:
+    """Tests for classify_release_features function."""
+
+    def test_new_features_detected(self, temp_db):
+        """Test new features are detected."""
+        from scrapers.instructure_community import (
+            ReleaseNotePage, Feature, FeatureTableData, classify_release_features
+        )
+        from datetime import datetime
+
+        feature = Feature("Apps", "New Feature", "new-feature", None, "", None)
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[], features=[feature], sections={}
+        )
+
+        is_new, new_anchors = classify_release_features(page, temp_db, first_run_limit=3)
+        assert is_new is True
+        assert "new-feature" in new_anchors
+
+    def test_first_run_limit_for_features(self, temp_db):
+        """Test first-run limit for features."""
+        from scrapers.instructure_community import (
+            ReleaseNotePage, Feature, classify_release_features
+        )
+        from datetime import datetime
+
+        features = [Feature("Cat", f"Feature {i}", f"f{i}", None, "", None) for i in range(5)]
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[], features=features, sections={}
+        )
+
+        is_new, new_anchors = classify_release_features(page, temp_db, first_run_limit=3)
+        assert len(new_anchors) == 3  # Limited
+
+        # All should be tracked
+        for i in range(5):
+            assert temp_db.get_feature_tracking(f"release-2026-02-21#f{i}") is not None
