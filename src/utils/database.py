@@ -281,6 +281,47 @@ class Database:
 
         conn.commit()
 
+    def get_discussion_tracking(self, source_id: str) -> Optional[dict]:
+        """Get tracking data for a discussion post."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT source_id, post_type, comment_count, first_seen, last_checked "
+            "FROM discussion_tracking WHERE source_id = ?",
+            (source_id,)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def upsert_discussion_tracking(
+        self, source_id: str, post_type: str, comment_count: int
+    ) -> None:
+        """Insert or update tracking data for a discussion post."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+
+        existing = self.get_discussion_tracking(source_id)
+        if existing:
+            cursor.execute(
+                "UPDATE discussion_tracking SET comment_count = ?, last_checked = ? WHERE source_id = ?",
+                (comment_count, now, source_id)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO discussion_tracking (source_id, post_type, comment_count, first_seen, last_checked) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (source_id, post_type, comment_count, now, now)
+            )
+        conn.commit()
+
+    def is_discussion_tracking_empty(self) -> bool:
+        """Check if discussion_tracking table is empty (first run)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM discussion_tracking")
+        return cursor.fetchone()[0] == 0
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:

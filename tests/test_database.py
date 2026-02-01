@@ -344,6 +344,35 @@ class TestDiscussionTracking:
         expected = {"source_id", "post_type", "comment_count", "first_seen", "last_checked"}
         assert expected == columns
 
+    def test_get_discussion_tracking_returns_none_for_unknown(self, temp_db):
+        """Test get_discussion_tracking returns None for unknown source_id."""
+        result = temp_db.get_discussion_tracking("unknown-id")
+        assert result is None
+
+    def test_upsert_discussion_tracking_creates_record(self, temp_db):
+        """Test upsert creates new tracking record."""
+        temp_db.upsert_discussion_tracking("question_123", "question", 5)
+        result = temp_db.get_discussion_tracking("question_123")
+        assert result is not None
+        assert result["comment_count"] == 5
+
+    def test_upsert_discussion_tracking_updates_existing(self, temp_db):
+        """Test upsert updates comment_count but preserves first_seen."""
+        temp_db.upsert_discussion_tracking("question_789", "question", 2)
+        first = temp_db.get_discussion_tracking("question_789")
+
+        temp_db.upsert_discussion_tracking("question_789", "question", 8)
+        updated = temp_db.get_discussion_tracking("question_789")
+
+        assert updated["comment_count"] == 8
+        assert updated["first_seen"] == first["first_seen"]
+
+    def test_is_discussion_tracking_empty(self, temp_db):
+        """Test first-run detection."""
+        assert temp_db.is_discussion_tracking_empty() is True
+        temp_db.upsert_discussion_tracking("q_1", "question", 0)
+        assert temp_db.is_discussion_tracking_empty() is False
+
 
 class TestFeatureTracking:
     """Tests for release/deploy feature tracking."""
