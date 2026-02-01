@@ -1060,6 +1060,35 @@ class TestContentProcessorConstants:
         assert ContentProcessor.PHONE_PATTERN.search("555-123-4567")
 
 
+class TestFormatAvailability:
+    """Tests for format_availability helper."""
+
+    def test_format_availability_full(self):
+        """Test full availability string."""
+        from processor.content_processor import format_availability
+        from scrapers.instructure_community import FeatureTableData
+
+        table = FeatureTableData(
+            enable_location="Account Settings",
+            default_status="Off",
+            permissions="Admin only",
+            affected_areas=["Assignments", "SpeedGrader"],
+            affects_roles=["instructors", "students"]
+        )
+
+        result = format_availability(table)
+        assert "Admin" in result
+        assert "account" in result.lower()  # lowercase since implementation uses .lower()
+        assert "instructors" in result
+
+    def test_format_availability_none_table(self):
+        """Test with None table returns default."""
+        from processor.content_processor import format_availability
+
+        result = format_availability(None)
+        assert "Automatic" in result
+
+
 class TestSummarizeFeature:
     """Tests for feature summarization."""
 

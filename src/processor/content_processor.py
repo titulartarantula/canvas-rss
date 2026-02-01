@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import time
-from typing import List, Any, Tuple, TYPE_CHECKING
+from typing import List, Any, Tuple, Optional, TYPE_CHECKING
 
 import bleach
 
@@ -19,11 +19,39 @@ except ImportError:
 
 if TYPE_CHECKING:
     from src.utils.database import Database
-    from src.scrapers.instructure_community import Feature
+    from src.scrapers.instructure_community import Feature, FeatureTableData
 
 from dataclasses import dataclass
 
 logger = logging.getLogger("canvas_rss")
+
+
+def format_availability(table: Optional["FeatureTableData"]) -> str:
+    """Format availability summary from feature table.
+
+    Args:
+        table: FeatureTableData or None.
+
+    Returns:
+        Formatted availability string.
+    """
+    if table is None:
+        return "Automatic update"
+
+    parts = []
+
+    if table.permissions and table.enable_location:
+        parts.append(f"{table.permissions}-enabled at {table.enable_location.lower()}")
+
+    if table.affects_roles:
+        roles = " and ".join(table.affects_roles)
+        parts.append(f"affects {roles}")
+
+    if table.affected_areas:
+        areas = ", ".join(table.affected_areas)
+        parts.append(f"in {areas}")
+
+    return "; ".join(parts) if parts else "Automatic update"
 
 
 @dataclass
