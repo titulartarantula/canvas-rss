@@ -373,6 +373,22 @@ class TestDiscussionTracking:
         temp_db.upsert_discussion_tracking("q_1", "question", 0)
         assert temp_db.is_discussion_tracking_empty() is False
 
+    def test_is_first_run_for_type(self, temp_db):
+        """Test type-specific first-run detection."""
+        # All empty initially
+        assert temp_db.is_first_run_for_type("question") is True
+        assert temp_db.is_first_run_for_type("blog") is True
+        assert temp_db.is_first_run_for_type("release_note") is True
+
+        # Add a question
+        temp_db.upsert_discussion_tracking("q_1", "question", 0)
+        assert temp_db.is_first_run_for_type("question") is False
+        assert temp_db.is_first_run_for_type("blog") is True  # Still empty
+
+        # Add a release feature
+        temp_db.upsert_feature_tracking("r#f", "r", "release_note_feature", "f")
+        assert temp_db.is_first_run_for_type("release_note") is False
+
 
 class TestFeatureTracking:
     """Tests for release/deploy feature tracking."""

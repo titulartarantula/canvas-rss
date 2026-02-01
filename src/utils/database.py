@@ -374,6 +374,34 @@ class Database:
         cursor.execute("SELECT COUNT(*) FROM feature_tracking")
         return cursor.fetchone()[0] == 0
 
+    def is_first_run_for_type(self, content_type: str) -> bool:
+        """Check if this is the first run for a specific content type.
+
+        Args:
+            content_type: 'question', 'blog', 'release_note', or 'deploy_note'
+
+        Returns:
+            True if no items of this type have been tracked yet.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        if content_type in ("question", "blog"):
+            cursor.execute(
+                "SELECT COUNT(*) FROM discussion_tracking WHERE post_type = ?",
+                (content_type,)
+            )
+        elif content_type in ("release_note", "deploy_note"):
+            feature_type = f"{content_type}_feature"
+            cursor.execute(
+                "SELECT COUNT(*) FROM feature_tracking WHERE feature_type = ?",
+                (feature_type,)
+            )
+        else:
+            return True
+
+        return cursor.fetchone()[0] == 0
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:
