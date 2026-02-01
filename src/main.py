@@ -137,6 +137,11 @@ def main():
     processor = ContentProcessor(gemini_api_key=os.getenv("GEMINI_API_KEY"))
     rss_builder = RSSBuilder()
 
+    # Detect first run (empty database) - skip date filtering to capture history
+    is_first_run = len(db.get_recent_items(days=30)) == 0
+    if is_first_run:
+        logger.info("First run detected - will skip date filtering to capture history")
+
     # Collect content from all sources
     all_items: List[ContentItem] = []
 
@@ -144,7 +149,7 @@ def main():
         # 1. Scrape Instructure Community
         logger.info("Scraping Instructure Community...")
         with InstructureScraper() as instructure:
-            community_posts = instructure.scrape_all()
+            community_posts = instructure.scrape_all(skip_date_filter=is_first_run)
             for post in community_posts:
                 all_items.append(community_post_to_content_item(post))
             logger.info(f"  -> Found {len(community_posts)} community posts")

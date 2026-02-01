@@ -319,6 +319,35 @@ class InstructureScraper:
         cutoff = now - timedelta(hours=hours)
         return dt >= cutoff
 
+    def _scroll_to_load_posts(self, max_scrolls: int = 5) -> None:
+        """Scroll down to trigger infinite scroll and load more posts.
+
+        Args:
+            max_scrolls: Maximum number of scroll iterations (default: 5).
+        """
+        if not self.page:
+            return
+
+        previous_height = 0
+        for i in range(max_scrolls):
+            # Get current scroll height
+            current_height = self.page.evaluate("document.body.scrollHeight")
+
+            # If height hasn't changed, we've likely loaded all content
+            if current_height == previous_height:
+                logger.debug(f"Scroll stopped at iteration {i+1} - no new content loaded")
+                break
+
+            previous_height = current_height
+
+            # Scroll to bottom
+            self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            self.page.wait_for_timeout(1500)  # Wait for content to load
+
+            # Log progress
+            post_count = len(self.page.query_selector_all("h3 a") or [])
+            logger.debug(f"Scroll {i+1}/{max_scrolls}: found {post_count} post links")
+
     def _dismiss_cookie_consent(self) -> None:
         """Dismiss cookie consent banner if present."""
         if not self.page:
@@ -367,6 +396,9 @@ class InstructureScraper:
 
             # Wait a bit more for content to render after dismissing cookie banner
             self.page.wait_for_timeout(2000)
+
+            # Scroll to load more posts (infinite scroll pages)
+            self._scroll_to_load_posts(max_scrolls=5)
 
             # Try multiple selector strategies for community posts
             # Instructure Community uses various card/list layouts
@@ -654,18 +686,20 @@ class InstructureScraper:
             return False
 
     def _scrape_notes_from_current_view(
-        self, hours: int, post_type: str
+        self, hours: int, post_type: str, skip_date_filter: bool = False
     ) -> List[ReleaseNote]:
         """Scrape notes from the currently displayed view.
 
         Args:
             hours: Number of hours to look back.
             post_type: Type of post ('release_note' or 'deploy_note').
+            skip_date_filter: If True, skip date filtering (e.g., for first run).
 
         Returns:
             List of ReleaseNote objects.
         """
         notes = []
+        filtered_count = 0
 
         try:
             # Extract post cards from current view
@@ -675,8 +709,9 @@ class InstructureScraper:
             for post in posts:
                 published_date = self._parse_relative_date(post.get("date_text", ""))
 
-                if published_date and not self._is_within_hours(published_date, hours):
-                    logger.debug(f"Skipping old post: {post['title']}")
+                if not skip_date_filter and published_date and not self._is_within_hours(published_date, hours):
+                    filtered_count += 1
+                    logger.debug(f"Skipping old post (>{hours}h): {post['title']}")
                     continue
 
                 # Get full content
@@ -702,19 +737,23 @@ class InstructureScraper:
                 notes.append(note)
                 logger.debug(f"Scraped {post_type}: {post['title'][:50]}...")
 
+            if filtered_count > 0:
+                logger.info(f"Filtered {filtered_count} {post_type}s older than {hours}h")
+
             return notes
 
         except Exception as e:
             logger.error(f"Error scraping {post_type} view: {e}")
             return notes
 
-    def scrape_release_notes(self, hours: int = 24) -> List[ReleaseNote]:
+    def scrape_release_notes(self, hours: int = 24, skip_date_filter: bool = False) -> List[ReleaseNote]:
         """Get posts from last N hours from release notes category.
 
         Scrapes both Release Notes (Releases tab) and Deploy Notes (Deploys tab).
 
         Args:
             hours: Number of hours to look back (default: 24).
+            skip_date_filter: If True, skip date filtering (e.g., for first run).
 
         Returns:
             List of ReleaseNote objects for recent posts (both release and deploy notes).
@@ -736,7 +775,7 @@ class InstructureScraper:
             self.page.wait_for_timeout(2000)
 
             # Scrape release notes from default Releases view
-            release_notes = self._scrape_notes_from_current_view(hours, "release_note")
+            release_notes = self._scrape_notes_from_current_view(hours, "release_note", skip_date_filter)
             all_notes.extend(release_notes)
             logger.info(f"Scraped {len(release_notes)} release notes")
 
@@ -747,7 +786,7 @@ class InstructureScraper:
                 self.page.wait_for_load_state("networkidle", timeout=15000)
                 self.page.wait_for_timeout(2000)
 
-                deploy_notes = self._scrape_notes_from_current_view(hours, "deploy_note")
+                deploy_notes = self._scrape_notes_from_current_view(hours, "deploy_note", skip_date_filter)
                 all_notes.extend(deploy_notes)
                 logger.info(f"Scraped {len(deploy_notes)} deploy notes")
             else:
@@ -962,13 +1001,14 @@ class InstructureScraper:
             logger.error(f"Error scraping blog: {e}")
             return []
 
-    def scrape_all(self, hours: int = 24) -> List[CommunityPost]:
+    def scrape_all(self, hours: int = 24, skip_date_filter: bool = False) -> List[CommunityPost]:
         """Scrape all community sources and return unified list.
 
         Scrapes release notes, changelog, Q&A forum, and blog posts.
 
         Args:
             hours: Number of hours to look back (default: 24).
+            skip_date_filter: If True, skip date filtering (e.g., for first run).
 
         Returns:
             List of CommunityPost objects from all sources.
@@ -976,7 +1016,7 @@ class InstructureScraper:
         all_posts = []
 
         # Scrape release notes (includes both release and deploy notes) and convert to CommunityPost
-        release_notes = self.scrape_release_notes(hours)
+        release_notes = self.scrape_release_notes(hours, skip_date_filter)
         for note in release_notes:
             post = CommunityPost(
                 title=note.title,
