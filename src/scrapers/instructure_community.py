@@ -3,9 +3,12 @@
 import logging
 import time
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+
+if TYPE_CHECKING:
+    from utils.database import Database
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -1430,3 +1433,56 @@ class InstructureScraper:
         """Clean up on context manager exit."""
         self.close()
         return False
+
+
+def classify_discussion_posts(
+    posts: List[CommunityPost],
+    db: "Database",
+    first_run_limit: int = 5,
+    scraper: Optional["InstructureScraper"] = None
+) -> List[DiscussionUpdate]:
+    """Classify posts as new or updated based on comment tracking.
+
+    Args:
+        posts: List of CommunityPost objects.
+        db: Database instance for tracking.
+        first_run_limit: Max new posts on first run.
+        scraper: Optional scraper for fetching latest comments.
+
+    Returns:
+        List of DiscussionUpdate objects to include in feed.
+    """
+    results = []
+    new_count = 0
+
+    for post in posts:
+        source_id = extract_source_id(post.url, post.post_type)
+        tracked = db.get_discussion_tracking(source_id)
+
+        if tracked is None:
+            new_count += 1
+            if new_count > first_run_limit:
+                db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
+                continue
+
+            results.append(DiscussionUpdate(
+                post=post, is_new=True,
+                previous_comment_count=0,
+                new_comment_count=post.comments,
+                latest_comment=None
+            ))
+
+        elif post.comments > tracked["comment_count"]:
+            new_comments = post.comments - tracked["comment_count"]
+            latest_comment = scraper.scrape_latest_comment(post.url) if scraper else None
+
+            results.append(DiscussionUpdate(
+                post=post, is_new=False,
+                previous_comment_count=tracked["comment_count"],
+                new_comment_count=new_comments,
+                latest_comment=latest_comment
+            ))
+
+        db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
+
+    return results

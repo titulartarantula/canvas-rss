@@ -2056,3 +2056,60 @@ class TestParseDeployNotePage:
         result = scraper.parse_deploy_note_page("http://example.com/deploy")
         assert result is not None
         assert "2026-02-11" in result.title
+
+
+class TestClassifyDiscussionPosts:
+    """Tests for classify_discussion_posts function."""
+
+    def test_new_post_classified(self, temp_db):
+        """Test new posts are classified as new."""
+        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+        from datetime import datetime
+
+        posts = [CommunityPost(
+            title="New Q", url="http://example.com/discussion/999/test",
+            content="Content", published_date=datetime.now(),
+            comments=3, post_type="question"
+        )]
+
+        results = classify_discussion_posts(posts, temp_db, first_run_limit=5)
+        assert len(results) == 1
+        assert results[0].is_new is True
+
+    def test_updated_post_classified(self, temp_db):
+        """Test posts with new comments are classified as updates."""
+        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+        from datetime import datetime
+
+        temp_db.upsert_discussion_tracking("question_888", "question", 5)
+
+        posts = [CommunityPost(
+            title="Existing Q", url="http://example.com/discussion/888/test",
+            content="Content", published_date=datetime.now(),
+            comments=8, post_type="question"
+        )]
+
+        results = classify_discussion_posts(posts, temp_db, first_run_limit=5)
+        assert len(results) == 1
+        assert results[0].is_new is False
+        assert results[0].new_comment_count == 3
+
+    def test_first_run_limit_enforced(self, temp_db):
+        """Test first-run limit caps new posts."""
+        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+        from datetime import datetime
+
+        posts = [
+            CommunityPost(
+                title=f"Q{i}", url=f"http://example.com/discussion/{i}/test",
+                content="Content", published_date=datetime.now(),
+                comments=0, post_type="question"
+            ) for i in range(10)
+        ]
+
+        results = classify_discussion_posts(posts, temp_db, first_run_limit=3)
+        assert len(results) == 3  # Limited
+
+        # All should be tracked
+        for i in range(10):
+            assert temp_db.get_discussion_tracking(f"question_{i}") is not None
