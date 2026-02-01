@@ -72,6 +72,7 @@ class ContentItem:
     engagement_score: int = 0
     comment_count: int = 0  # Track comments for detecting new activity
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
+    has_v130_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
 
     def __post_init__(self):
         if self.topics is None:
@@ -596,6 +597,9 @@ Keep it concise and jargon-free."""
                 # Update item content with sanitized/redacted version
                 item.content = redacted_content
 
+                # Also redact PII from title (emails, usernames, phone numbers)
+                item.title = self.redact_pii(item.title)
+
                 # Step 3: Generate summary (with retry for rate limits)
                 # Use content-type-specific prompt for summarization
                 item_content_type = item.content_type or "default"
@@ -641,7 +645,13 @@ Keep it concise and jargon-free."""
 
             except Exception as e:
                 logger.error(f"Failed to enrich item {item.source_id}: {e}")
-                # Include item even if enrichment fails
+                # Include item even if enrichment fails, but ensure content is sanitized
+                # (defensive sanitization in case exception occurred before sanitization)
+                try:
+                    item.content = self.redact_pii(self.sanitize_html(item.content))
+                    item.title = self.redact_pii(item.title)
+                except Exception:
+                    pass  # Best effort - don't fail on sanitization errors
                 enriched_items.append(item)
 
         logger.info(f"Enriched {len(enriched_items)} items")

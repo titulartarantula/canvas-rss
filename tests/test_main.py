@@ -455,15 +455,19 @@ class TestMainIntegration:
         mock_instructure_class,
         mock_environment,
     ):
-        """Test main workflow when no items are found."""
+        """Test main workflow when no items are found (v1.3.0 workflow)."""
         # Setup mocks
         mock_db = MagicMock()
         mock_db.item_exists.return_value = False  # No existing items
-        mock_db.get_comment_count.return_value = None  # No previous comments
+        mock_db.is_discussion_tracking_empty.return_value = True  # First run
+        mock_db.is_feature_tracking_empty.return_value = True  # First run
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
-        mock_instructure.scrape_all.return_value = []
+        # v1.3.0 uses individual scraping methods instead of scrape_all
+        mock_instructure.scrape_question_forum.return_value = []
+        mock_instructure.scrape_blog.return_value = []
+        mock_instructure.scrape_release_notes.return_value = []
         mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
         mock_instructure.__exit__ = MagicMock(return_value=False)
         mock_instructure_class.return_value = mock_instructure
@@ -487,8 +491,10 @@ class TestMainIntegration:
         # Run main
         main()
 
-        # Verify workflow (deduplication now done inline in main)
-        mock_instructure.scrape_all.assert_called_once()
+        # Verify v1.3.0 workflow - uses individual scraping methods
+        mock_instructure.scrape_question_forum.assert_called_once()
+        mock_instructure.scrape_blog.assert_called_once()
+        mock_instructure.scrape_release_notes.assert_called_once()
         mock_reddit.search_canvas_discussions.assert_called_once()
         mock_status.get_recent_incidents.assert_called_once()
         mock_rss.create_feed.assert_called_once()
@@ -510,17 +516,12 @@ class TestMainIntegration:
         mock_instructure_class,
         mock_environment,
     ):
-        """Test main workflow when items are found from all sources."""
-        # Setup mock items
-        community_post = CommunityPost(
-            title="Release Notes",
-            url="https://community.instructure.com/123",
-            content="New features",
-            published_date=datetime.now(),
-            likes=10,
-            comments=5,
-        )
+        """Test main workflow when items are found (v1.3.0 workflow).
 
+        Note: This test focuses on Reddit and Status items which use
+        simple deduplication. Instructure community items use v1.3.0
+        classification functions which are tested separately.
+        """
         reddit_post = RedditPost(
             title="Canvas Question",
             url="https://reddit.com/r/canvas/456",
@@ -548,11 +549,16 @@ class TestMainIntegration:
         mock_db = MagicMock()
         mock_db.insert_item.return_value = 1
         mock_db.item_exists.return_value = False  # All items are new
-        mock_db.get_comment_count.return_value = None  # No previous comments
+        mock_db.is_discussion_tracking_empty.return_value = True  # First run
+        mock_db.is_feature_tracking_empty.return_value = True  # First run
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
-        mock_instructure.scrape_all.return_value = [community_post]
+        # v1.3.0 uses individual scraping methods - return empty for simplicity
+        # (v1.3.0 classification is tested separately in TestV130Integration)
+        mock_instructure.scrape_question_forum.return_value = []
+        mock_instructure.scrape_blog.return_value = []
+        mock_instructure.scrape_release_notes.return_value = []
         mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
         mock_instructure.__exit__ = MagicMock(return_value=False)
         mock_instructure_class.return_value = mock_instructure
@@ -577,18 +583,18 @@ class TestMainIntegration:
         # Run main
         main()
 
-        # Verify 3 items were processed (1 from each source)
-        # Deduplication is now done inline via db.item_exists()
+        # Verify 2 items were processed (Reddit + Status)
+        # Instructure items use v1.3.0 classification (tested separately)
         enrich_call_args = mock_processor.enrich_with_llm.call_args[0][0]
-        assert len(enrich_call_args) == 3
+        assert len(enrich_call_args) == 2
 
         # Verify all items are ContentItem instances
         for item in enrich_call_args:
             assert isinstance(item, ContentItem)
 
-        # Verify sources
+        # Verify sources (only Reddit and Status in this test)
         sources = {item.source for item in enrich_call_args}
-        assert sources == {"community", "reddit", "status"}
+        assert sources == {"reddit", "status"}
 
     @patch("main.InstructureScraper")
     @patch("main.RedditMonitor")

@@ -347,6 +347,10 @@ class RSSBuilder:
         # Get primary topic (fallback to General)
         primary_topic = getattr(item, 'primary_topic', '') or "General"
 
+        # v1.3.0 items already have [NEW]/[UPDATE] badges in title
+        if getattr(item, 'has_v130_badge', False):
+            return f"{primary_topic} - {item.title}"
+
         # Check for "Latest" badge (only for release/deploy notes)
         is_latest = getattr(item, 'is_latest', False)
         latest_badge = "[Latest] " if is_latest else ""
