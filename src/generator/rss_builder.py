@@ -141,6 +141,58 @@ def build_release_note_entry(
     return "\n".join(parts)
 
 
+# Status flags for deploy notes
+STATUS_FLAGS = {
+    "delayed": "⏸️",
+}
+
+
+def build_deploy_note_entry(
+    page: "DeployNotePage",
+    is_update: bool,
+    new_changes: Optional[List[str]] = None
+) -> str:
+    """Build RSS description for a deploy notes page.
+
+    Args:
+        page: DeployNotePage with parsed changes.
+        is_update: True if this is an update.
+        new_changes: List of anchor_ids for new changes (updates only).
+
+    Returns:
+        Formatted description string.
+    """
+    parts = [f"[Full Deploy Notes]({page.url})", ""]
+
+    if page.beta_date:
+        parts.append(f"Beta: {page.beta_date.strftime('%Y-%m-%d')} | Production: {page.deploy_date.strftime('%Y-%m-%d')}")
+        parts.append("")
+
+    for section_name, section_changes in page.sections.items():
+        if is_update and new_changes:
+            section_changes = [c for c in section_changes if c.anchor_id in new_changes]
+        if not section_changes:
+            continue
+
+        parts.append(f"━━━ {section_name.upper()} ━━━")
+        parts.append("")
+
+        for change in section_changes:
+            anchor_link = f"{page.url}#{change.anchor_id}"
+            status_flag = STATUS_FLAGS.get(change.status, "▸")
+
+            parts.append(f"{status_flag} {change.category} - [{change.name}]({anchor_link})")
+            parts.append("[Summary placeholder]")
+            parts.append(f"Availability: {format_availability(change.table_data)}")
+
+            if change.status == "delayed" and change.status_date:
+                parts.append(f"Delayed: {change.status_date.strftime('%Y-%m-%d')}")
+
+            parts.append("")
+
+    return "\n".join(parts)
+
+
 class RSSBuilder:
     """Generate RSS feed from processed content."""
 

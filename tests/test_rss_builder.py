@@ -1152,3 +1152,32 @@ class TestBuildReleaseNoteEntry:
         result = build_release_note_entry(page, is_update=False, new_features=None)
         assert "NEW FEATURES" in result
         assert "Doc App" in result
+
+
+class TestBuildDeployNoteEntry:
+    """Tests for build_deploy_note_entry function."""
+
+    def test_deploy_note_with_delayed_status(self):
+        """Test deploy note with delayed status flag."""
+        from generator.rss_builder import build_deploy_note_entry
+        from scrapers.instructure_community import DeployNotePage, DeployChange
+        from datetime import datetime
+
+        change = DeployChange(
+            category="Apps", name="Delayed Feature",
+            anchor_id="delayed-feature", section="Updated Features",
+            raw_content="Content", table_data=None,
+            status="delayed", status_date=datetime(2026, 1, 30)
+        )
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-11)",
+            url="http://example.com/deploy",
+            deploy_date=datetime(2026, 2, 11),
+            beta_date=datetime(2026, 1, 29),
+            changes=[change],
+            sections={"Updated Features": [change]}
+        )
+
+        result = build_deploy_note_entry(page, is_update=False, new_changes=None)
+        assert "⏸️" in result  # Delayed flag
+        assert "2026-01-30" in result
