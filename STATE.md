@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-**Phase 7: Docker** - Complete. Ready for production deployment.
+**Phase 9: v1.3.0 - Unified Tracking** - Complete. [NEW]/[UPDATE] badges with granular tracking.
 
 ## Active Tasks
 
@@ -15,8 +15,33 @@
 | Release v1.1.1 documentation        | Docs    | Complete | VERSION, CHANGELOG updated     |
 | Full discussion tracking            | Coding  | Complete | All blog/Q&A posts captured    |
 | Release v1.2.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, STATE.md   |
+| Security audit                      | Coding  | Complete | Full audit of 4 areas          |
+| Security remediation                | Coding  | Complete | All high-severity issues fixed |
+| v1.3.0 unified implementation       | Coding  | Complete | 30 tasks, 251 tests pass       |
+| Release v1.3.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, README     |
 
 ## Completed
+
+### Phase 9: v1.3.0 - Unified Tracking (Complete)
+
+- [x] Database tables for discussion and feature tracking
+- [x] Dataclasses for Release Notes, Deploy Notes, Discussion Updates
+- [x] Classification functions for [NEW]/[UPDATE] detection
+- [x] LLM summarization for features and deploy changes
+- [x] RSS formatting with [NEW]/[UPDATE] badges
+- [x] First-run flood prevention limits
+- [x] Integration tests (251 tests)
+- [x] Documentation updates
+
+### Phase 8: Security Hardening (Complete)
+
+- [x] Security audit - input sanitization, credential handling, Docker config, PII data flow
+- [x] PII redaction for titles in content_processor.py
+- [x] Defensive sanitization in exception handler
+- [x] Docker security options (no-new-privileges, cap_drop, resource limits)
+- [x] Non-root feed-server with read-only filesystem
+- [x] Supercronic replacement for cron (runs as non-root)
+- [x] Health checks for both containers
 
 ### Phase 4: Content Processing (Complete)
 
@@ -84,6 +109,8 @@
 | 5. RSS Generation | Complete | feedgen RSS builder |
 | 6. Main App | Complete | Orchestration |
 | 7. Docker | Complete | Container setup, cron scheduling |
+| 8. Security | Complete | Audit and hardening |
+| 9. v1.3.0 Tracking | Complete | [NEW]/[UPDATE] badges, granular tracking |
 
 ---
 
@@ -139,6 +166,27 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-02-01: v1.3.0 Unified Tracking Implementation - Coding Agent
+  - Added [NEW]/[UPDATE] badges to RSS feed titles
+  - Implemented granular feature tracking for Release Notes
+  - Implemented granular change tracking for Deploy Notes
+  - Added discussion tracking for Q&A and Blog posts
+  - Added first-run flood prevention (5 Q&A, 5 Blog, 3 features, 3 changes)
+  - Created 30 implementation tasks following TDD methodology
+  - Added 251 new tests for v1.3.0 features
+  - New dataclasses: DiscussionUpdate, Feature, FeatureTableData, ReleaseNotePage, DeployChange, DeployNotePage, UpcomingChange
+  - New database tables: discussion_tracking, feature_tracking
+  - New classification functions: classify_discussion_posts, classify_release_features, classify_deploy_changes
+  - New RSS functions: build_discussion_title, format_discussion_description, build_release_note_entry, build_deploy_note_entry
+- 2026-02-01: Security hardening - Coding Agent
+  - Full security audit (input sanitization, credentials, Docker, PII handling)
+  - Added PII redaction for titles (emails, usernames, phone numbers)
+  - Added defensive sanitization in exception handler
+  - Docker: Added security_opt (no-new-privileges), cap_drop/cap_add, resource limits
+  - Docker: Feed-server now runs as non-root (user 1000:1000) with read_only filesystem
+  - Docker: Replaced cron with supercronic (non-root cron alternative)
+  - Docker: Added health checks for both containers
+  - Docker: Restricted env.sh file permissions (chmod 600)
 - 2026-02-01: Release v1.2.0 - Full discussion tracking - Coding/Docs Agent
   - Removed engagement filter from question forum (all posts now captured)
   - Removed Product Overview filter from blog (all blog posts now captured)
@@ -175,9 +223,9 @@ canvas-rss/
 
 ---
 
-## Test Results (2026-01-30)
+## Test Results (2026-02-01)
 
-270 tests total: 270 passed, 0 failed
+320+ tests total (251 for v1.3.0 features alone)
 
 ### test_database.py (20 tests)
 

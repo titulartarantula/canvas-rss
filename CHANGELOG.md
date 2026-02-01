@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-01
+
+### Added
+
+- **[NEW]/[UPDATE] badges** for all content types in RSS feed titles
+- **Granular feature tracking** for Release Notes - each feature tracked individually
+- **Granular change tracking** for Deploy Notes - each change tracked individually
+- **Discussion tracking tables** in SQLite database (`discussion_tracking`, `feature_tracking`)
+- **First-run flood prevention** - limits new items on first run (5 Q&A, 5 Blog, 3 Release features, 3 Deploy changes)
+- **New dataclasses** for structured content:
+  - `DiscussionUpdate` - tracks Q&A/Blog post comment changes
+  - `Feature`, `FeatureTableData`, `ReleaseNotePage` - parsed release notes
+  - `DeployChange`, `DeployNotePage` - parsed deploy notes
+  - `UpcomingChange` - upcoming Canvas changes/deprecations
+- **Classification functions** for update detection:
+  - `classify_discussion_posts()` - detects new posts and posts with new comments
+  - `classify_release_features()` - detects new features in release notes
+  - `classify_deploy_changes()` - detects new changes in deploy notes
+- **LLM summarization methods** for new content types:
+  - `summarize_feature()` - summarizes release note features
+  - `summarize_deploy_change()` - summarizes deploy note changes
+  - `format_availability()` - formats feature availability info
+- **RSS formatting functions**:
+  - `build_discussion_title()` - formats titles with [NEW]/[UPDATE] badges
+  - `format_discussion_description()` - formats descriptions with comment info
+  - `build_release_note_entry()` - formats release note RSS entries
+  - `build_deploy_note_entry()` - formats deploy note RSS entries
+- **Database methods** for tracking:
+  - `get_discussion_tracking()`, `upsert_discussion_tracking()`
+  - `get_feature_tracking()`, `upsert_feature_tracking()`, `get_features_for_parent()`
+  - `is_discussion_tracking_empty()`, `is_feature_tracking_empty()`, `is_first_run_for_type()`
+- Comprehensive integration test suite (251 tests for v1.3.0 features)
+
+### Changed
+
+- RSS titles now show `[NEW]` for first-time items and `[UPDATE]` for items with new activity
+- Q&A and Blog titles include source label: `[NEW] - Question Forum - Title`
+- Release/Deploy notes use simpler format: `[NEW] Canvas Release Notes (2026-02-21)`
+
 ## [1.2.0] - 2026-02-01
 
 ### Added
