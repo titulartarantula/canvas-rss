@@ -11,6 +11,14 @@ from processor.content_processor import ContentItem
 
 logger = logging.getLogger("canvas_rss")
 
+# Source labels for title formatting
+SOURCE_LABELS = {
+    "question": "Question Forum",
+    "blog": "Blog",
+    "release_note": "Release Notes",
+    "deploy_note": "Deploy Notes",
+}
+
 
 class RSSBuilder:
     """Generate RSS feed from processed content."""

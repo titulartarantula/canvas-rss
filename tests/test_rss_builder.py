@@ -1059,3 +1059,16 @@ class TestRSSBuilderIntegration:
         assert "<rss" in content
         assert "<channel>" in content
         assert "</rss>" in content
+
+
+class TestSourceLabels:
+    """Tests for SOURCE_LABELS constant."""
+
+    def test_source_labels_defined(self):
+        """Test SOURCE_LABELS has expected keys."""
+        from generator.rss_builder import SOURCE_LABELS
+
+        assert "question" in SOURCE_LABELS
+        assert "blog" in SOURCE_LABELS
+        assert SOURCE_LABELS["question"] == "Question Forum"
+        assert SOURCE_LABELS["blog"] == "Blog"
