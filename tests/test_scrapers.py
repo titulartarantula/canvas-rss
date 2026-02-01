@@ -1867,3 +1867,53 @@ class TestReleaseNotePage:
         # Parent source_id should be date-based
         expected_id = "release-2026-02-21"
         assert page.release_date.strftime("release-%Y-%m-%d") == expected_id
+
+
+class TestDeployNoteDataclasses:
+    """Tests for Deploy Note dataclasses."""
+
+    def test_deploy_change_creation(self):
+        """Test creating DeployChange."""
+        from scrapers.instructure_community import DeployChange, FeatureTableData
+
+        change = DeployChange(
+            category="Navigation",
+            name="Small Screen Branding Updated",
+            anchor_id="small-screen-global-navigation-branding-updated",
+            section="Updated Features",
+            raw_content="<p>Content</p>",
+            table_data=None,
+            status=None,
+            status_date=None
+        )
+        assert change.section == "Updated Features"
+
+    def test_deploy_change_delayed_status(self):
+        """Test DeployChange with delayed status."""
+        from scrapers.instructure_community import DeployChange
+        from datetime import datetime
+
+        change = DeployChange(
+            category="Apps", name="Delayed Feature",
+            anchor_id="delayed-feature", section="Updated Features",
+            raw_content="", table_data=None,
+            status="delayed", status_date=datetime(2026, 1, 30)
+        )
+        assert change.status == "delayed"
+
+    def test_deploy_note_page_creation(self):
+        """Test creating DeployNotePage."""
+        from scrapers.instructure_community import DeployNotePage, DeployChange
+        from datetime import datetime
+
+        change = DeployChange("Nav", "Fix", "fix", "Updates", "", None, None, None)
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-11)",
+            url="https://example.com/deploy",
+            deploy_date=datetime(2026, 2, 11),
+            beta_date=datetime(2026, 1, 29),
+            changes=[change],
+            sections={"Updated Features": [change]}
+        )
+        assert page.beta_date is not None
+        assert len(page.changes) == 1

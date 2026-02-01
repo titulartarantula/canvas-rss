@@ -92,6 +92,30 @@ class ReleaseNotePage:
     sections: Dict[str, List[Feature]]
 
 
+@dataclass
+class DeployChange:
+    """A single change from a Deploy Notes page."""
+    category: str
+    name: str
+    anchor_id: str
+    section: str
+    raw_content: str
+    table_data: Optional[FeatureTableData]
+    status: Optional[str]  # "delayed", None
+    status_date: Optional[datetime]
+
+
+@dataclass
+class DeployNotePage:
+    """A parsed Deploy Notes page with all changes."""
+    title: str
+    url: str
+    deploy_date: datetime
+    beta_date: Optional[datetime]
+    changes: List[DeployChange]
+    sections: Dict[str, List[DeployChange]]
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:
