@@ -19,7 +19,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from src.utils.database import Database
-    from src.scrapers.instructure_community import Feature, FeatureTableData
+    from src.scrapers.instructure_community import Feature, FeatureTableData, DeployChange
 
 from dataclasses import dataclass
 
@@ -176,6 +176,22 @@ Write a 2-3 sentence summary that covers:
 1. What this feature does
 2. Who benefits from it (students, instructors, admins)
 3. The key improvement or capability it provides
+
+Keep it concise and jargon-free."""
+
+    DEPLOY_CHANGE_PROMPT = """You are summarizing a Canvas LMS change for educational technologists.
+
+Change: {change_name}
+Category: {category}
+Section: {section}
+
+Content:
+{raw_content}
+
+Write a 2-3 sentence summary that covers:
+1. What behavior changed
+2. Why it was changed (bug fix, improvement, accessibility, etc.)
+3. Who needs to be aware of this change
 
 Keep it concise and jargon-free."""
 
@@ -347,6 +363,38 @@ Keep it concise and jargon-free."""
             return response.text.strip()[:500]
         except Exception as e:
             logger.error(f"Feature summarization failed: {e}")
+            return ""
+
+    def summarize_deploy_change(self, change: "DeployChange") -> str:
+        """Generate summary for a deploy change.
+
+        Args:
+            change: DeployChange dataclass.
+
+        Returns:
+            2-3 sentence summary string.
+        """
+        if not change.raw_content:
+            return ""
+
+        if self.client is None:
+            return change.raw_content[:300] if len(change.raw_content) > 300 else change.raw_content
+
+        try:
+            prompt = self.DEPLOY_CHANGE_PROMPT.format(
+                change_name=change.name,
+                category=change.category,
+                section=change.section,
+                raw_content=change.raw_content
+            )
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
+            return response.text.strip()[:500]
+        except Exception as e:
+            logger.error(f"Deploy change summarization failed: {e}")
             return ""
 
     def analyze_sentiment(self, content: str) -> str:

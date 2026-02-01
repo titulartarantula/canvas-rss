@@ -1114,6 +1114,31 @@ class TestSummarizeFeature:
         assert "document processing" in result.lower() or result == ""
 
 
+class TestSummarizeDeployChange:
+    """Tests for deploy change summarization."""
+
+    def test_summarize_deploy_change(self):
+        """Test deploy change summarization."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import DeployChange
+
+        processor = ContentProcessor(gemini_api_key=None)
+
+        change = DeployChange(
+            category="Navigation",
+            name="Small Screen Branding Fix",
+            anchor_id="small-screen-fix",
+            section="Updated Features",
+            raw_content="Fixed branding display on mobile devices.",
+            table_data=None,
+            status=None,
+            status_date=None
+        )
+
+        result = processor.summarize_deploy_change(change)
+        assert "branding" in result.lower() or "mobile" in result.lower() or result == ""
+
+
 class TestContentItemDataclass:
     """Tests for ContentItem dataclass."""
 
