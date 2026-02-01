@@ -2000,6 +2000,33 @@ class TestParseReleaseNotePage:
         assert result is not None
         assert "2026-02-21" in result.title
 
+    def test_parses_features_from_headings(self):
+        """Test feature parsing from H4 headings with data-id."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-21)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+
+        # Mock H4 feature heading
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: "h4" if "tagName" in js else ""
+        mock_h4.get_attribute.return_value = "document-processing-app"
+        mock_h4.inner_text.return_value = "Document Processing App"
+
+        mock_page.query_selector_all.return_value = [mock_h4]
+        mock_page.query_selector.return_value = None
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+        assert result is not None
+        assert len(result.features) == 1
+        assert result.features[0].anchor_id == "document-processing-app"
+
 
 class TestParseDeployNotePage:
     """Tests for parse_deploy_note_page method."""

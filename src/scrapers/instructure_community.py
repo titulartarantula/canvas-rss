@@ -1189,15 +1189,69 @@ class InstructureScraper:
             else:
                 release_date = datetime.now(timezone.utc)
 
-            # TODO: Implement full parsing of features
-            # For now, return empty features list
+            features = []
+            sections: Dict[str, List[Feature]] = {}
+            current_section = "New Features"
+            current_category = "General"
+
+            # Parse H2 (sections), H3 (categories), H4 (features)
+            headings = self.page.query_selector_all("h2[data-id], h3[data-id], h4[data-id]")
+
+            for heading in headings:
+                try:
+                    tag = heading.evaluate("el => el.tagName.toLowerCase()")
+                    data_id = heading.get_attribute("data-id") or ""
+                    text = heading.inner_text().strip()
+
+                    if tag == "h2":
+                        current_section = text
+                        if current_section not in sections:
+                            sections[current_section] = []
+                    elif tag == "h3":
+                        current_category = text
+                    elif tag == "h4":
+                        # Extract [Added DATE] annotation
+                        added_date = None
+                        added_match = re.search(r'\[Added (\d{4}-\d{2}-\d{2})\]', text)
+                        if added_match:
+                            added_date = datetime.strptime(added_match.group(1), "%Y-%m-%d")
+                            text = re.sub(r'\s*\[Added \d{4}-\d{2}-\d{2}\]', '', text)
+
+                        # Get content after heading (simplified)
+                        raw_content = ""
+                        try:
+                            next_sibling = heading.evaluate(
+                                "el => { let s = el.nextElementSibling; return s ? s.outerHTML : ''; }"
+                            )
+                            if next_sibling:
+                                raw_content = next_sibling
+                        except Exception:
+                            pass
+
+                        feature = Feature(
+                            category=current_category,
+                            name=text,
+                            anchor_id=data_id,
+                            added_date=added_date,
+                            raw_content=raw_content,
+                            table_data=None
+                        )
+                        features.append(feature)
+
+                        if current_section not in sections:
+                            sections[current_section] = []
+                        sections[current_section].append(feature)
+                except Exception as e:
+                    logger.debug(f"Error parsing heading: {e}")
+                    continue
+
             return ReleaseNotePage(
                 title=title,
                 url=url,
                 release_date=release_date,
                 upcoming_changes=[],
-                features=[],
-                sections={}
+                features=features,
+                sections=sections
             )
 
         except Exception as e:
