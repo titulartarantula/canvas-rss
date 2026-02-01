@@ -13,6 +13,8 @@
 | Fix Deploys tab click               | Coding  | Complete | Improved selectors, dual-view  |
 | Update tests for Deploys tab fix   | Testing | Complete | 47 scraper tests pass          |
 | Release v1.1.1 documentation        | Docs    | Complete | VERSION, CHANGELOG updated     |
+| Full discussion tracking            | Coding  | Complete | All blog/Q&A posts captured    |
+| Release v1.2.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, STATE.md   |
 
 ## Completed
 
@@ -137,6 +139,12 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-02-01: Release v1.2.0 - Full discussion tracking - Coding/Docs Agent
+  - Removed engagement filter from question forum (all posts now captured)
+  - Removed Product Overview filter from blog (all blog posts now captured)
+  - Added discussion state summaries with `_updated` content types
+  - Added `[Blog Update]` and `[Q&A Update]` RSS badges
+  - Added version logging at startup
 - 2026-01-31: Fixed Deploys tab click with improved Playwright selectors - Coding Agent
   - Added `_click_deploys_tab` method with text-based selectors
   - Updated `scrape_release_notes` to scrape both Releases and Deploys views

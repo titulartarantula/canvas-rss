@@ -26,6 +26,7 @@ from scrapers.reddit_client import RedditMonitor, RedditPost
 from scrapers.status_page import StatusPageMonitor, Incident
 from processor.content_processor import ContentProcessor, ContentItem
 from generator.rss_builder import RSSBuilder
+from __init__ import __version__
 
 
 def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, ChangeLogEntry]) -> ContentItem:
@@ -129,7 +130,7 @@ def main():
     )
 
     logger.info("=" * 50)
-    logger.info(f"Canvas RSS Aggregator started at {datetime.now()}")
+    logger.info(f"Canvas RSS Aggregator v{__version__} started at {datetime.now()}")
     logger.info("=" * 50)
 
     # Initialize components
@@ -201,6 +202,8 @@ def main():
                         f"  -> New comments detected on {item.content_type}: "
                         f"{item.title[:50]}... ({prev_count} -> {item.comment_count})"
                     )
+                    # Mark as updated for different summarization prompt
+                    item.content_type = f"{item.content_type}_updated"
                     # Update the comment count in DB and include in feed
                     db.update_comment_count(item.source_id, item.comment_count)
                     updated_items.append(item)

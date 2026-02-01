@@ -107,6 +107,18 @@ class ContentProcessor:
             "Highlight any solutions proposed or unresolved issues. "
             "Write 4-6 sentences (~200 words): {content}"
         ),
+        "blog_updated": (
+            "This Canvas LMS blog post has NEW COMMENT ACTIVITY. Summarize the current discussion state. "
+            "Focus on: (1) Recent comments and key points raised, (2) Shifts in community sentiment, "
+            "(3) Any new Instructure staff responses, (4) Whether concerns are being addressed. "
+            "Write 4-6 sentences (~200 words): {content}"
+        ),
+        "question_updated": (
+            "This Canvas LMS question has NEW ACTIVITY. Summarize where the discussion is at. "
+            "Focus on: (1) New solutions or workarounds proposed, (2) Updates from original poster, "
+            "(3) Any official Instructure responses, (4) Whether the question is closer to resolution. "
+            "Write 4-6 sentences (~200 words): {content}"
+        ),
         "reddit": (
             "Summarize this Reddit discussion about Canvas LMS for educational technologists. "
             "Focus on the main topic, user sentiment, and any useful insights or tips shared. "

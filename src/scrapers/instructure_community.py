@@ -866,25 +866,20 @@ class InstructureScraper:
             logger.error(f"Error scraping changelog: {e}")
             return []
 
-    def scrape_question_forum(self, hours: int = 24, min_engagement: int = None) -> List[CommunityPost]:
-        """Get high-engagement Q&A posts from the Canvas LMS question forum.
+    def scrape_question_forum(self, hours: int = 24) -> List[CommunityPost]:
+        """Get Q&A posts from the Canvas LMS question forum.
 
         Args:
             hours: Number of hours to look back (default: 24).
-            min_engagement: Minimum likes + comments threshold (default: MIN_QA_ENGAGEMENT).
 
         Returns:
-            List of CommunityPost objects for recent high-engagement questions.
+            List of CommunityPost objects for recent questions.
         """
-        if min_engagement is None:
-            min_engagement = self.MIN_QA_ENGAGEMENT
-
         if not self.page:
             logger.warning("Browser not available, returning empty question forum list")
             return []
 
         posts = []
-        low_engagement_count = 0
 
         try:
             logger.info(f"Scraping question forum from {self.QUESTION_FORUM_URL}")
@@ -894,7 +889,7 @@ class InstructureScraper:
             post_cards = self._extract_post_cards()
             logger.info(f"Found {len(post_cards)} total posts on question forum page")
 
-            # Filter to recent high-engagement posts and get full content
+            # Get recent posts with full content
             for post in post_cards:
                 published_date = self._parse_relative_date(post.get("date_text", ""))
 
@@ -904,13 +899,6 @@ class InstructureScraper:
 
                 # Get full content (includes engagement metrics)
                 content, likes, comments = self._get_post_content(post["url"])
-
-                # Filter: Only include high-engagement posts
-                engagement = likes + comments
-                if engagement < min_engagement:
-                    logger.debug(f"Skipping low-engagement Q&A (engagement={engagement}): {post['title']}")
-                    low_engagement_count += 1
-                    continue
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -926,7 +914,7 @@ class InstructureScraper:
                 )
                 posts.append(community_post)
 
-            logger.info(f"Scraped {len(posts)} high-engagement questions from last {hours} hours (filtered {low_engagement_count} low-engagement posts)")
+            logger.info(f"Scraped {len(posts)} questions from last {hours} hours")
             return posts
 
         except PlaywrightTimeout:
@@ -959,15 +947,8 @@ class InstructureScraper:
             post_cards = self._extract_post_cards()
             logger.info(f"Found {len(post_cards)} total posts on blog page")
 
-            # Filter to recent Product Overview posts and get full content
-            filtered_count = 0
+            # Get recent posts with full content
             for post in post_cards:
-                # Filter: Only include Product Overview posts
-                if not self._is_product_overview_blog(post["title"]):
-                    logger.debug(f"Skipping non-Product-Overview blog: {post['title']}")
-                    filtered_count += 1
-                    continue
-
                 published_date = self._parse_relative_date(post.get("date_text", ""))
 
                 if published_date and not self._is_within_hours(published_date, hours):
@@ -991,7 +972,7 @@ class InstructureScraper:
                 )
                 posts.append(community_post)
 
-            logger.info(f"Scraped {len(posts)} Product Overview blog posts from last {hours} hours (filtered {filtered_count} non-overview posts)")
+            logger.info(f"Scraped {len(posts)} blog posts from last {hours} hours")
             return posts
 
         except PlaywrightTimeout:

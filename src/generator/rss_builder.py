@@ -35,7 +35,9 @@ class RSSBuilder:
         "deploy_note": "[Fix]",
         "changelog": "[API]",
         "blog": "[Blog]",
+        "blog_updated": "[Blog Update]",
         "question": "[Q&A]",
+        "question_updated": "[Q&A Update]",
         "reddit": "",  # Reddit uses source badge instead
         "status": "",  # Status uses source badge instead
     }
@@ -46,7 +48,9 @@ class RSSBuilder:
         "deploy_note": 2,
         "changelog": 3,
         "blog": 4,
+        "blog_updated": 4,  # Same priority as blog
         "question": 5,
+        "question_updated": 5,  # Same priority as question
         "reddit": 6,
         "status": 7,
     }
@@ -64,7 +68,9 @@ class RSSBuilder:
         "deploy_note": "Deploy Notes",
         "changelog": "API Changelog",
         "blog": "Canvas LMS Blog",
+        "blog_updated": "Canvas LMS Blog (Discussion Update)",
         "question": "Canvas LMS Question Forum",
+        "question_updated": "Canvas LMS Question Forum (Discussion Update)",
         "reddit": "Reddit Community",
         "status": "Canvas Status",
     }
