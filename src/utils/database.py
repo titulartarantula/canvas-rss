@@ -89,6 +89,17 @@ class Database:
             )
         """)
 
+        # Discussion tracking table for [NEW]/[UPDATE] badges
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS discussion_tracking (
+                source_id TEXT PRIMARY KEY,
+                post_type TEXT NOT NULL,
+                comment_count INTEGER DEFAULT 0,
+                first_seen TEXT NOT NULL,
+                last_checked TEXT NOT NULL
+            )
+        """)
+
         conn.commit()
 
     def item_exists(self, source_id: str) -> bool:

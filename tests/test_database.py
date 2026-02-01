@@ -321,3 +321,25 @@ class TestDatabase:
         conn = temp_db._get_connection()
         assert conn is not None
         assert temp_db.item_exists("some-id") is False
+
+
+class TestDiscussionTracking:
+    """Tests for discussion tracking functionality."""
+
+    def test_discussion_tracking_table_created(self, temp_db):
+        """Test that discussion_tracking table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='discussion_tracking'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_discussion_tracking_schema(self, temp_db):
+        """Test that discussion_tracking has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(discussion_tracking)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {"source_id", "post_type", "comment_count", "first_seen", "last_checked"}
+        assert expected == columns
