@@ -1940,3 +1940,32 @@ class TestExtractSourceId:
         url = "https://example.com/other/path"
         result = extract_source_id(url, "question")
         assert result.startswith("question_")
+
+
+class TestScrapeLatestComment:
+    """Tests for scrape_latest_comment method."""
+
+    def test_returns_none_without_browser(self):
+        """Test returns None when browser not available."""
+        from scrapers.instructure_community import InstructureScraper
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.page = None
+        assert scraper.scrape_latest_comment("http://example.com") is None
+
+    def test_truncates_long_comments(self):
+        """Test that long comments are truncated to 500 chars."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_element = MagicMock()
+        mock_element.inner_text.return_value = "A" * 600
+        mock_page.query_selector.return_value = mock_element
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        scraper.page = mock_page
+
+        result = scraper.scrape_latest_comment("http://example.com/discussion/1")
+        assert len(result) == 500

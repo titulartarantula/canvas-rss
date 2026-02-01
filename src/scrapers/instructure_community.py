@@ -1120,6 +1120,49 @@ class InstructureScraper:
         )
         return all_posts
 
+    def scrape_latest_comment(self, url: str) -> Optional[str]:
+        """Navigate to a post and extract the most recent comment.
+
+        Args:
+            url: URL of the community post.
+
+        Returns:
+            Text of the latest comment (max 500 chars), or None.
+        """
+        if not self.page:
+            return None
+
+        try:
+            self._rate_limit()
+            self.page.goto(url, timeout=30000)
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+
+            comment_selectors = [
+                "[class*='comment']:last-child",
+                "[class*='reply']:last-of-type",
+                "[class*='message']:last-child",
+                "[class*='Comment']:last-child",
+            ]
+
+            for selector in comment_selectors:
+                try:
+                    element = self.page.query_selector(selector)
+                    if element:
+                        text = element.inner_text().strip()
+                        if text and len(text) > 10:
+                            return text[:500] if len(text) > 500 else text
+                except Exception:
+                    continue
+
+            return None
+
+        except PlaywrightTimeout:
+            logger.warning(f"Timeout scraping comment from: {url}")
+            return None
+        except Exception as e:
+            logger.error(f"Error scraping comment from {url}: {e}")
+            return None
+
     def get_community_reactions(self, post_url: str) -> dict:
         """Extract likes, comments, views from a specific post.
 
