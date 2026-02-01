@@ -40,6 +40,58 @@ def build_discussion_title(post_type: str, title: str, is_new: bool) -> str:
         return f"{badge} {title}"
 
 
+# Section headers for discussion descriptions
+SECTION_HEADERS = {
+    "question_new": "NEW QUESTION",
+    "question_update": "DISCUSSION UPDATE",
+    "blog_new": "NEW BLOG POST",
+    "blog_update": "BLOG UPDATE",
+}
+
+
+def format_discussion_description(
+    post_type: str,
+    is_new: bool,
+    content: str,
+    comment_count: int,
+    previous_comment_count: int,
+    new_comment_count: int,
+    latest_comment: Optional[str]
+) -> str:
+    """Format RSS description for a discussion post."""
+    key = f"{post_type}_{'new' if is_new else 'update'}"
+    header = SECTION_HEADERS.get(key, "UPDATE")
+
+    parts = [f"━━━ {header} ━━━", ""]
+
+    if is_new:
+        truncated = content[:300] if len(content) > 300 else content
+        if len(content) > 300:
+            truncated = truncated.rsplit(' ', 1)[0] + "..."
+        parts.append(truncated)
+        parts.append("")
+        parts.append(f"Posted: {comment_count} comments")
+    else:
+        parts.append(f"+{new_comment_count} new comments ({comment_count} total)")
+        parts.append("")
+
+        if latest_comment:
+            preview = latest_comment[:300]
+            if len(latest_comment) > 300:
+                preview = preview.rsplit(' ', 1)[0] + "..."
+            parts.append("▸ Latest reply:")
+            parts.append(f'"{preview}"')
+            parts.append("")
+
+        parts.append("───")
+        truncated = content[:200] if len(content) > 200 else content
+        if len(content) > 200:
+            truncated = truncated.rsplit(' ', 1)[0] + "..."
+        parts.append(f"Original: {truncated}")
+
+    return "\n".join(parts)
+
+
 class RSSBuilder:
     """Generate RSS feed from processed content."""
 

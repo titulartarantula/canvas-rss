@@ -1097,3 +1097,33 @@ class TestBuildDiscussionTitle:
 
         result = build_discussion_title("release_note", "Canvas Release Notes (2026-02-21)", True)
         assert result == "[NEW] Canvas Release Notes (2026-02-21)"
+
+
+class TestFormatDiscussionDescription:
+    """Tests for format_discussion_description function."""
+
+    def test_new_question_description(self):
+        """Test description for new question."""
+        from generator.rss_builder import format_discussion_description
+
+        desc = format_discussion_description(
+            post_type="question", is_new=True,
+            content="How do I configure SSO?",
+            comment_count=0, previous_comment_count=0,
+            new_comment_count=0, latest_comment=None
+        )
+        assert "NEW QUESTION" in desc
+
+    def test_update_description_with_comment(self):
+        """Test update description with latest comment."""
+        from generator.rss_builder import format_discussion_description
+
+        desc = format_discussion_description(
+            post_type="question", is_new=False,
+            content="Original question",
+            comment_count=8, previous_comment_count=5,
+            new_comment_count=3, latest_comment="Try this solution..."
+        )
+        assert "+3 new comments" in desc
+        assert "8 total" in desc
+        assert "Latest reply" in desc
