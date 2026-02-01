@@ -116,6 +116,22 @@ class DeployNotePage:
     sections: Dict[str, List[DeployChange]]
 
 
+def extract_source_id(url: str, post_type: str) -> str:
+    """Extract numeric ID from Instructure Community URL.
+
+    Args:
+        url: Full URL to a community post.
+        post_type: Type of post ('question', 'blog', etc.).
+
+    Returns:
+        Source ID in format '{post_type}_{numeric_id}'.
+    """
+    match = re.search(r'/(discussion|blog)/(\d+)', url)
+    if match:
+        return f"{post_type}_{match.group(2)}"
+    return f"{post_type}_{abs(hash(url))}"
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:

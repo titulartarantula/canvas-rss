@@ -1917,3 +1917,26 @@ class TestDeployNoteDataclasses:
         )
         assert page.beta_date is not None
         assert len(page.changes) == 1
+
+
+class TestExtractSourceId:
+    """Tests for extract_source_id helper."""
+
+    def test_extract_from_discussion_url(self):
+        """Test extracting ID from discussion URL."""
+        from scrapers.instructure_community import extract_source_id
+        url = "https://community.instructure.com/en/discussion/664587/test"
+        assert extract_source_id(url, "question") == "question_664587"
+
+    def test_extract_from_blog_url(self):
+        """Test extracting ID from blog URL."""
+        from scrapers.instructure_community import extract_source_id
+        url = "https://community.instructure.com/en/blog/664752/test"
+        assert extract_source_id(url, "blog") == "blog_664752"
+
+    def test_extract_fallback_to_hash(self):
+        """Test fallback to hash for non-matching URL."""
+        from scrapers.instructure_community import extract_source_id
+        url = "https://example.com/other/path"
+        result = extract_source_id(url, "question")
+        assert result.startswith("question_")
