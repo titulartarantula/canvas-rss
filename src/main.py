@@ -21,11 +21,21 @@ from scrapers.instructure_community import (
     CommunityPost,
     ReleaseNote,
     ChangeLogEntry,
+    DiscussionUpdate,
+    classify_discussion_posts,
+    classify_release_features,
+    classify_deploy_changes,
 )
 from scrapers.reddit_client import RedditMonitor, RedditPost
 from scrapers.status_page import StatusPageMonitor, Incident
 from processor.content_processor import ContentProcessor, ContentItem
-from generator.rss_builder import RSSBuilder
+from generator.rss_builder import (
+    RSSBuilder,
+    build_discussion_title,
+    format_discussion_description,
+    build_release_note_entry,
+    build_deploy_note_entry,
+)
 from __init__ import __version__
 
 
