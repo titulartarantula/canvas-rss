@@ -1163,6 +1163,47 @@ class InstructureScraper:
             logger.error(f"Error scraping comment from {url}: {e}")
             return None
 
+    def parse_release_note_page(self, url: str) -> Optional[ReleaseNotePage]:
+        """Parse a Release Notes page into structured data.
+
+        Args:
+            url: URL of the release notes page.
+
+        Returns:
+            ReleaseNotePage with features, or None on error.
+        """
+        if not self.page:
+            return None
+
+        try:
+            self._rate_limit()
+            self.page.goto(url, timeout=30000)
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+
+            title = self.page.title() or "Canvas Release Notes"
+
+            # Extract date from title
+            date_match = re.search(r'\((\d{4}-\d{2}-\d{2})\)', title)
+            if date_match:
+                release_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+            else:
+                release_date = datetime.now(timezone.utc)
+
+            # TODO: Implement full parsing of features
+            # For now, return empty features list
+            return ReleaseNotePage(
+                title=title,
+                url=url,
+                release_date=release_date,
+                upcoming_changes=[],
+                features=[],
+                sections={}
+            )
+
+        except Exception as e:
+            logger.error(f"Error parsing release notes from {url}: {e}")
+            return None
+
     def get_community_reactions(self, post_url: str) -> dict:
         """Extract likes, comments, views from a specific post.
 

@@ -1969,3 +1969,33 @@ class TestScrapeLatestComment:
 
         result = scraper.scrape_latest_comment("http://example.com/discussion/1")
         assert len(result) == 500
+
+
+class TestParseReleaseNotePage:
+    """Tests for parse_release_note_page method."""
+
+    def test_returns_none_without_browser(self):
+        """Test returns None when browser not available."""
+        from scrapers.instructure_community import InstructureScraper
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.page = None
+        assert scraper.parse_release_note_page("http://example.com") is None
+
+    def test_parses_page_title(self):
+        """Test that page title is extracted."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-21)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector_all.return_value = []
+        mock_page.query_selector.return_value = None
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+        assert result is not None
+        assert "2026-02-21" in result.title
