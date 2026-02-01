@@ -20,6 +20,26 @@ SOURCE_LABELS = {
 }
 
 
+def build_discussion_title(post_type: str, title: str, is_new: bool) -> str:
+    """Build title with [NEW]/[UPDATE] badge and optional source label.
+
+    Args:
+        post_type: 'question', 'blog', 'release_note', or 'deploy_note'.
+        title: Original post title.
+        is_new: True for [NEW], False for [UPDATE].
+
+    Returns:
+        Formatted title string.
+    """
+    badge = "[NEW]" if is_new else "[UPDATE]"
+
+    if post_type in ("question", "blog"):
+        source = SOURCE_LABELS.get(post_type, "")
+        return f"{badge} - {source} - {title}"
+    else:
+        return f"{badge} {title}"
+
+
 class RSSBuilder:
     """Generate RSS feed from processed content."""
 

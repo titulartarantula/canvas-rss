@@ -1072,3 +1072,28 @@ class TestSourceLabels:
         assert "blog" in SOURCE_LABELS
         assert SOURCE_LABELS["question"] == "Question Forum"
         assert SOURCE_LABELS["blog"] == "Blog"
+
+
+class TestBuildDiscussionTitle:
+    """Tests for build_discussion_title function."""
+
+    def test_new_question_title(self):
+        """Test [NEW] title for question."""
+        from generator.rss_builder import build_discussion_title
+
+        result = build_discussion_title("question", "How to configure SSO?", True)
+        assert result == "[NEW] - Question Forum - How to configure SSO?"
+
+    def test_update_blog_title(self):
+        """Test [UPDATE] title for blog."""
+        from generator.rss_builder import build_discussion_title
+
+        result = build_discussion_title("blog", "Studio Updates", False)
+        assert result == "[UPDATE] - Blog - Studio Updates"
+
+    def test_release_note_no_source_label(self):
+        """Test release notes don't get source label."""
+        from generator.rss_builder import build_discussion_title
+
+        result = build_discussion_title("release_note", "Canvas Release Notes (2026-02-21)", True)
+        assert result == "[NEW] Canvas Release Notes (2026-02-21)"
