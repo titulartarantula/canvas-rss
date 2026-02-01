@@ -1015,18 +1015,6 @@ class InstructureScraper:
             )
             all_posts.append(post)
 
-        # Scrape changelog and convert to CommunityPost
-        changelog = self.scrape_changelog(hours)
-        for entry in changelog:
-            post = CommunityPost(
-                title=entry.title,
-                url=entry.url,
-                content=entry.content,
-                published_date=entry.published_date,
-                post_type="changelog"
-            )
-            all_posts.append(post)
-
         # Scrape Q&A forum
         questions = self.scrape_question_forum(hours)
         all_posts.extend(questions)
@@ -1037,7 +1025,7 @@ class InstructureScraper:
 
         logger.info(
             f"Scraped {len(all_posts)} total community posts: "
-            f"{len(release_notes)} release notes, {len(changelog)} changelog, "
+            f"{len(release_notes)} release notes, "
             f"{len(questions)} questions, {len(blog_posts)} blog posts"
         )
         return all_posts
