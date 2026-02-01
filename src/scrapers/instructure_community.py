@@ -62,6 +62,17 @@ class FeatureTableData:
     affects_roles: List[str]
 
 
+@dataclass
+class Feature:
+    """A single feature from a Release/Deploy Notes page."""
+    category: str
+    name: str
+    anchor_id: str
+    added_date: Optional[datetime]
+    raw_content: str
+    table_data: Optional[FeatureTableData]
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:

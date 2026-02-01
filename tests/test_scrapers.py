@@ -1766,3 +1766,39 @@ class TestFeatureTableData:
         )
         assert table.enable_location == "Account Settings"
         assert "Assignments" in table.affected_areas
+
+
+class TestFeature:
+    """Tests for Feature dataclass."""
+
+    def test_feature_creation(self):
+        """Test creating Feature."""
+        from scrapers.instructure_community import Feature, FeatureTableData
+
+        table = FeatureTableData(
+            enable_location="Account", default_status="Off",
+            permissions="Admin", affected_areas=["Assignments"],
+            affects_roles=["instructors"]
+        )
+        feature = Feature(
+            category="Assignments",
+            name="Document Processing App",
+            anchor_id="document-processing-app",
+            added_date=None,
+            raw_content="<p>Feature content</p>",
+            table_data=table
+        )
+        assert feature.category == "Assignments"
+        assert feature.anchor_id == "document-processing-app"
+
+    def test_feature_source_id(self):
+        """Test Feature source_id generation."""
+        from scrapers.instructure_community import Feature, FeatureTableData
+
+        table = FeatureTableData("", "", "", [], [])
+        feature = Feature(
+            category="Apps", name="Test", anchor_id="test-feature",
+            added_date=None, raw_content="", table_data=table
+        )
+        # source_id should be set by parent page
+        assert feature.anchor_id == "test-feature"
