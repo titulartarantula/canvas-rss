@@ -1204,6 +1204,46 @@ class InstructureScraper:
             logger.error(f"Error parsing release notes from {url}: {e}")
             return None
 
+    def parse_deploy_note_page(self, url: str) -> Optional[DeployNotePage]:
+        """Parse a Deploy Notes page into structured data.
+
+        Args:
+            url: URL of the deploy notes page.
+
+        Returns:
+            DeployNotePage with changes, or None on error.
+        """
+        if not self.page:
+            return None
+
+        try:
+            self._rate_limit()
+            self.page.goto(url, timeout=30000)
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+
+            title = self.page.title() or "Canvas Deploy Notes"
+
+            # Extract date from title
+            date_match = re.search(r'\((\d{4}-\d{2}-\d{2})\)', title)
+            if date_match:
+                deploy_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+            else:
+                deploy_date = datetime.now(timezone.utc)
+
+            # TODO: Implement full parsing of changes
+            return DeployNotePage(
+                title=title,
+                url=url,
+                deploy_date=deploy_date,
+                beta_date=None,
+                changes=[],
+                sections={}
+            )
+
+        except Exception as e:
+            logger.error(f"Error parsing deploy notes from {url}: {e}")
+            return None
+
     def get_community_reactions(self, post_url: str) -> dict:
         """Extract likes, comments, views from a specific post.
 
