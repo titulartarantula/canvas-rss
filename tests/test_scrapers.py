@@ -2158,3 +2158,26 @@ class TestClassifyReleaseFeatures:
         # All should be tracked
         for i in range(5):
             assert temp_db.get_feature_tracking(f"release-2026-02-21#f{i}") is not None
+
+
+class TestClassifyDeployChanges:
+    """Tests for classify_deploy_changes function."""
+
+    def test_new_changes_detected(self, temp_db):
+        """Test new changes are detected."""
+        from scrapers.instructure_community import (
+            DeployNotePage, DeployChange, classify_deploy_changes
+        )
+        from datetime import datetime
+
+        change = DeployChange("Nav", "Fix", "fix-1", "Updates", "", None, None, None)
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-11)",
+            url="http://example.com/deploy",
+            deploy_date=datetime(2026, 2, 11),
+            beta_date=None, changes=[change], sections={}
+        )
+
+        is_new, new_anchors = classify_deploy_changes(page, temp_db, first_run_limit=3)
+        assert is_new is True
+        assert "fix-1" in new_anchors

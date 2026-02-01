@@ -1528,3 +1528,44 @@ def classify_release_features(
     is_new_page = len(existing_features) == len(page.features) and len(new_anchors) > 0
 
     return (is_new_page, new_anchors)
+
+
+def classify_deploy_changes(
+    page: DeployNotePage,
+    db: "Database",
+    first_run_limit: int = 3
+) -> Tuple[bool, List[str]]:
+    """Classify deploy note changes as new or existing.
+
+    Args:
+        page: DeployNotePage with parsed changes.
+        db: Database instance for tracking.
+        first_run_limit: Max new changes on first run.
+
+    Returns:
+        Tuple of (is_new_page, list_of_new_anchor_ids).
+    """
+    parent_id = page.deploy_date.strftime("deploy-%Y-%m-%d")
+    new_anchors = []
+    new_count = 0
+
+    for change in page.changes:
+        source_id = f"{parent_id}#{change.anchor_id}"
+        tracked = db.get_feature_tracking(source_id)
+
+        if tracked is None:
+            new_count += 1
+            if new_count <= first_run_limit:
+                new_anchors.append(change.anchor_id)
+
+            db.upsert_feature_tracking(
+                source_id=source_id,
+                parent_id=parent_id,
+                feature_type="deploy_note_change",
+                anchor_id=change.anchor_id
+            )
+
+    existing_changes = db.get_features_for_parent(parent_id)
+    is_new_page = len(existing_changes) == len(page.changes) and len(new_anchors) > 0
+
+    return (is_new_page, new_anchors)
