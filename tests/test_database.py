@@ -394,3 +394,35 @@ class TestFeatureTracking:
         columns = {row[1] for row in cursor.fetchall()}
         expected = {"source_id", "parent_id", "feature_type", "anchor_id", "first_seen", "last_checked"}
         assert expected == columns
+
+    def test_get_feature_tracking_returns_none_for_unknown(self, temp_db):
+        """Test get_feature_tracking returns None for unknown."""
+        result = temp_db.get_feature_tracking("unknown")
+        assert result is None
+
+    def test_upsert_feature_tracking_creates_record(self, temp_db):
+        """Test upsert creates feature tracking record."""
+        temp_db.upsert_feature_tracking(
+            source_id="release-2026-02-21#doc-app",
+            parent_id="release-2026-02-21",
+            feature_type="release_note_feature",
+            anchor_id="doc-app"
+        )
+        result = temp_db.get_feature_tracking("release-2026-02-21#doc-app")
+        assert result is not None
+        assert result["anchor_id"] == "doc-app"
+
+    def test_get_features_for_parent(self, temp_db):
+        """Test getting all features for a parent release/deploy."""
+        temp_db.upsert_feature_tracking("release-2026-02-21#f1", "release-2026-02-21", "release_note_feature", "f1")
+        temp_db.upsert_feature_tracking("release-2026-02-21#f2", "release-2026-02-21", "release_note_feature", "f2")
+        temp_db.upsert_feature_tracking("release-2026-02-22#f1", "release-2026-02-22", "release_note_feature", "f1")
+
+        features = temp_db.get_features_for_parent("release-2026-02-21")
+        assert len(features) == 2
+
+    def test_is_feature_tracking_empty(self, temp_db):
+        """Test first-run detection for features."""
+        assert temp_db.is_feature_tracking_empty() is True
+        temp_db.upsert_feature_tracking("r#f", "r", "release_note_feature", "f")
+        assert temp_db.is_feature_tracking_empty() is False

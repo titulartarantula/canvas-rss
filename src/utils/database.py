@@ -322,6 +322,58 @@ class Database:
         cursor.execute("SELECT COUNT(*) FROM discussion_tracking")
         return cursor.fetchone()[0] == 0
 
+    def get_feature_tracking(self, source_id: str) -> Optional[dict]:
+        """Get tracking data for a release/deploy feature."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT source_id, parent_id, feature_type, anchor_id, first_seen, last_checked "
+            "FROM feature_tracking WHERE source_id = ?",
+            (source_id,)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def upsert_feature_tracking(
+        self, source_id: str, parent_id: str, feature_type: str, anchor_id: str
+    ) -> None:
+        """Insert or update tracking data for a feature."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+
+        existing = self.get_feature_tracking(source_id)
+        if existing:
+            cursor.execute(
+                "UPDATE feature_tracking SET last_checked = ? WHERE source_id = ?",
+                (now, source_id)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO feature_tracking (source_id, parent_id, feature_type, anchor_id, first_seen, last_checked) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (source_id, parent_id, feature_type, anchor_id, now, now)
+            )
+        conn.commit()
+
+    def get_features_for_parent(self, parent_id: str) -> List[dict]:
+        """Get all tracked features for a parent release/deploy."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT source_id, parent_id, feature_type, anchor_id, first_seen, last_checked "
+            "FROM feature_tracking WHERE parent_id = ?",
+            (parent_id,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def is_feature_tracking_empty(self) -> bool:
+        """Check if feature_tracking table is empty (first run)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM feature_tracking")
+        return cursor.fetchone()[0] == 0
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:
