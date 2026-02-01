@@ -458,6 +458,190 @@ Example titles:
 </rss>
 ```
 
+## Release Notes Enhanced Parsing (v1.3.0)
+
+This section documents the enhanced parsing methodology for Canvas Release Notes and Deploy Notes, providing detailed feature-level summaries instead of a single 200-word summary for the entire page.
+
+### Overview
+
+Release Notes pages contain multiple features across categories (Assignments, Canvas Apps, Quizzes, etc.). The enhanced parser extracts each feature individually, generates targeted summaries, and tracks updates when new features are added post-publication.
+
+### Data Model
+
+Each release note page becomes multiple `content_items` entries:
+
+**Parent Entry** (`source_id: "release-2026-02-21"`)
+
+- Contains the "Upcoming Canvas Changes" section
+- Serves as the main RSS item linking to the full page
+- `content_type: "release_note"` or `"deploy_note"`
+
+**Feature Entries** (`source_id: "release-2026-02-21#document-processing-app"`)
+
+- One per feature, using the page's anchor IDs
+- Contains LLM-generated summary + availability summary
+- `content_type: "release_note_feature"` or `"deploy_note_feature"`
+- Stores `added_date` if the "[Added DATE]" annotation exists
+
+### RSS Output Structure
+
+**Post Titles (badges apply to title only):**
+- `[NEW] Canvas Release Notes (2026-02-21)` - first time scraped
+- `[UPDATE] Canvas Release Notes (2026-02-21)` - new features detected after initial scrape
+
+**Post Body Structure:**
+```
+[Link to full release notes page]
+
+━━━ UPCOMING CANVAS CHANGES ━━━
+⚠️ 2026-03-21: User-Agent Header Enforcement
+• 2026-03-25: Removal of Unauthenticated File Access
+• 2026-04-18: Improving Canvas Infrastructure with a CDN
+→ Full list: [link to deprecations page]
+
+━━━ NEW FEATURES ━━━
+
+▸ Assignments - [Document Processing App](anchor-link)
+[2-3 sentence LLM-generated summary of what the feature does]
+Availability: Admin-enabled at account level; affects instructors and students in Assignments, SpeedGrader
+
+▸ Canvas Apps - [Availability and Exceptions](anchor-link) [Added 2026-01-28]
+[2-3 sentence summary]
+Availability: Account-level setting; affects admins in App configuration
+
+▸ Course - [Accessibility Checker](anchor-link)
+[2-3 sentence summary]
+Availability: Enabled by default; affects instructors in Rich Content Editor
+
+━━━ OTHER UPDATES ━━━
+
+▸ Canvas Apps - [Updated Apps Page Text](anchor-link)
+[2-3 sentence summary]
+Availability: Automatic update; affects admins viewing Apps page
+```
+
+**Key formatting decisions:**
+
+- Single link to full release notes at top
+- Feature names are links to their anchor in the page
+- `[Added DATE]` annotations preserved on feature lines for update posts
+- Urgency flag (⚠️) for upcoming changes within 30 days
+- Same treatment for both "New Features" and "Other Updates" sections
+
+### Update Detection
+
+**Daily 6am run logic:**
+
+1. Fetch the release notes page
+2. Parse all feature anchor IDs
+3. For each anchor, check `item_exists(source_id)` in database
+4. New anchors = new features → create update RSS entry
+5. Store new features with current date as `first_seen_date`
+
+**Update RSS entry:**
+
+- Title: `[UPDATE] Canvas Release Notes (2026-02-21)`
+- Contains only the newly added features (not the full page)
+- Links to same release notes page
+
+### Parsing Logic
+
+**Extracted from each page:**
+
+1. **Page metadata**
+   - Title: "Canvas Release Notes (2026-02-21)"
+   - URL: full page URL
+   - Release date: parsed from title
+
+2. **Upcoming Canvas Changes section**
+   - Each dated item (date + description)
+   - Days until each date (for urgency flag calculation)
+   - Reference link to deprecations page
+
+3. **Feature sections** (under H2 headings like "New Features", "Other Updates")
+   - H3 = Category (e.g., "Assignments", "Canvas Apps")
+   - Feature name from heading/link text
+   - Anchor ID for `source_id` construction
+   - `[Added DATE]` annotation if present
+   - Full feature content for LLM summarization
+   - Configuration table data for availability summary
+
+**Parsing output structure:**
+```python
+@dataclass
+class UpcomingChange:
+    date: datetime
+    description: str
+    days_until: int  # For urgency flag (⚠️ if <= 30)
+
+@dataclass
+class FeatureTableData:
+    enable_location: str      # "Account Settings"
+    default_status: str       # "Off", "On"
+    permissions: str          # "Admin only", "Instructor"
+    affected_areas: List[str] # ["Assignments", "SpeedGrader"]
+    affects_roles: List[str]  # ["instructors", "students"]
+
+@dataclass
+class Feature:
+    category: str            # "Assignments"
+    name: str                # "Document Processing App"
+    anchor_id: str           # "document-processing-app"
+    added_date: Optional[datetime]  # From "[Added 2026-01-28]" if present
+    raw_content: str         # Full HTML for LLM summarization
+    table_data: FeatureTableData
+
+@dataclass
+class ReleaseNotePage:
+    title: str               # "Canvas Release Notes (2026-02-21)"
+    url: str
+    release_date: datetime
+    upcoming_changes: List[UpcomingChange]
+    features: List[Feature]
+    sections: Dict[str, List[Feature]]  # {"New Features": [...], "Other Updates": [...]}
+```
+
+### LLM Summarization
+
+**Feature summaries (2-3 sentences):**
+
+- LLM-generated from full feature content
+- Focus on: what it does, who it's for, key benefit
+- Prompt tailored for Canvas features
+
+**Availability summaries (role-focused, single line):**
+
+- Emphasize who can use/enable the feature
+- Derived from configuration table
+- Format: `"{Role}-enabled at {location}; affects {affected_roles} in {affected_areas}"`
+- Example: `"Admin-enabled at account level; affects instructors and students in Assignments, SpeedGrader"`
+
+### Content Type Badges
+
+Updated badge system for Release Notes and Deploy Notes:
+
+```python
+CONTENT_TYPE_BADGES = {
+    # Release/Deploy Notes use [NEW] and [UPDATE] on title only
+    "release_note": "[NEW]",
+    "release_note_update": "[UPDATE]",
+    "deploy_note": "[NEW]",
+    "deploy_note_update": "[UPDATE]",
+    # Other content types unchanged
+    "changelog": "[API]",
+    "blog": "[Blog]",
+    "blog_updated": "[Blog Update]",
+    "question": "[Q&A]",
+    "question_updated": "[Q&A Update]",
+    "reddit": "",
+    "status": "",
+}
+```
+
+Individual features within the post do not have badges - the category and feature name provide sufficient context.
+
+---
+
 ## Docker Configuration
 
 ### Directory Structure
