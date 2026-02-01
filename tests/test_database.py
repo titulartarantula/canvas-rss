@@ -343,3 +343,25 @@ class TestDiscussionTracking:
         columns = {row[1] for row in cursor.fetchall()}
         expected = {"source_id", "post_type", "comment_count", "first_seen", "last_checked"}
         assert expected == columns
+
+
+class TestFeatureTracking:
+    """Tests for release/deploy feature tracking."""
+
+    def test_feature_tracking_table_created(self, temp_db):
+        """Test that feature_tracking table is created."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_tracking'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_feature_tracking_schema(self, temp_db):
+        """Test feature_tracking columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_tracking)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {"source_id", "parent_id", "feature_type", "anchor_id", "first_seen", "last_checked"}
+        assert expected == columns

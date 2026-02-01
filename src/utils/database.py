@@ -100,6 +100,18 @@ class Database:
             )
         """)
 
+        # Feature tracking for Release/Deploy notes granular items
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS feature_tracking (
+                source_id TEXT PRIMARY KEY,
+                parent_id TEXT NOT NULL,
+                feature_type TEXT NOT NULL,
+                anchor_id TEXT NOT NULL,
+                first_seen TEXT NOT NULL,
+                last_checked TEXT NOT NULL
+            )
+        """)
+
         conn.commit()
 
     def item_exists(self, source_id: str) -> bool:
