@@ -1127,3 +1127,28 @@ class TestFormatDiscussionDescription:
         assert "+3 new comments" in desc
         assert "8 total" in desc
         assert "Latest reply" in desc
+
+
+class TestBuildReleaseNoteEntry:
+    """Tests for build_release_note_entry function."""
+
+    def test_new_release_note_format(self):
+        """Test [NEW] release note entry."""
+        from generator.rss_builder import build_release_note_entry
+        from scrapers.instructure_community import ReleaseNotePage, Feature, FeatureTableData
+        from datetime import datetime
+
+        table = FeatureTableData("Account", "Off", "Admin", ["Assignments"], ["instructors"])
+        feature = Feature("Assignments", "Doc App", "doc-app", None, "Content", table)
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]}
+        )
+
+        result = build_release_note_entry(page, is_update=False, new_features=None)
+        assert "NEW FEATURES" in result
+        assert "Doc App" in result

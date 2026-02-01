@@ -1,13 +1,16 @@
 """RSS feed generation using feedgen."""
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 from pathlib import Path
 
 from feedgen.feed import FeedGenerator
 
-from processor.content_processor import ContentItem
+from processor.content_processor import ContentItem, format_availability
+
+if TYPE_CHECKING:
+    from scrapers.instructure_community import ReleaseNotePage, DeployNotePage
 
 logger = logging.getLogger("canvas_rss")
 
@@ -88,6 +91,52 @@ def format_discussion_description(
         if len(content) > 200:
             truncated = truncated.rsplit(' ', 1)[0] + "..."
         parts.append(f"Original: {truncated}")
+
+    return "\n".join(parts)
+
+
+def build_release_note_entry(
+    page: "ReleaseNotePage",
+    is_update: bool,
+    new_features: Optional[List[str]] = None
+) -> str:
+    """Build RSS description for a release notes page.
+
+    Args:
+        page: ReleaseNotePage with parsed features.
+        is_update: True if this is an update (new features added).
+        new_features: List of anchor_ids for new features (updates only).
+
+    Returns:
+        Formatted description string.
+    """
+    parts = [f"[Full Release Notes]({page.url})", ""]
+
+    # Filter features if update
+    features_to_show = page.features
+    if is_update and new_features:
+        features_to_show = [f for f in page.features if f.anchor_id in new_features]
+
+    # Group by section
+    for section_name, section_features in page.sections.items():
+        if is_update and new_features:
+            section_features = [f for f in section_features if f.anchor_id in new_features]
+        if not section_features:
+            continue
+
+        parts.append(f"━━━ {section_name.upper()} ━━━")
+        parts.append("")
+
+        for feature in section_features:
+            anchor_link = f"{page.url}#{feature.anchor_id}"
+            added_tag = ""
+            if feature.added_date:
+                added_tag = f" [Added {feature.added_date.strftime('%Y-%m-%d')}]"
+
+            parts.append(f"▸ {feature.category} - [{feature.name}]({anchor_link}){added_tag}")
+            parts.append("[Summary placeholder]")  # Will be filled by LLM
+            parts.append(f"Availability: {format_availability(feature.table_data)}")
+            parts.append("")
 
     return "\n".join(parts)
 
