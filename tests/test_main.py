@@ -907,3 +907,138 @@ class TestMainIntegration:
 
         # Verify feed generation was recorded
         mock_db.record_feed_generation.assert_called_once_with(0, feed_xml)
+
+
+class TestV130Integration:
+    """Integration tests for v1.3.0 features."""
+
+    def test_discussion_tracking_flow(self, temp_db):
+        """Test full discussion tracking flow."""
+        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+
+        # First run - post should be marked as new
+        posts = [CommunityPost(
+            title="Question",
+            url="http://example.com/discussion/100/test",
+            content="Content",
+            published_date=datetime.now(),
+            comments=2,
+            post_type="question"
+        )]
+        results1 = classify_discussion_posts(posts, temp_db, first_run_limit=5)
+        assert len(results1) == 1
+        assert results1[0].is_new is True
+        assert results1[0].new_comment_count == 2
+
+        # Second run with more comments - should be marked as update
+        posts[0] = CommunityPost(
+            title="Question",
+            url="http://example.com/discussion/100/test",
+            content="Content",
+            published_date=datetime.now(),
+            comments=5,
+            post_type="question"
+        )
+        results2 = classify_discussion_posts(posts, temp_db, first_run_limit=5)
+        assert len(results2) == 1
+        assert results2[0].is_new is False
+        assert results2[0].new_comment_count == 3  # 5 - 2 = 3 new comments
+
+    def test_discussion_tracking_first_run_limit(self, temp_db):
+        """Test that first run limit prevents feed flooding."""
+        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+
+        # Create 10 new posts
+        posts = [
+            CommunityPost(
+                title=f"Question {i}",
+                url=f"http://example.com/discussion/{i}/test",
+                content="Content",
+                published_date=datetime.now(),
+                comments=1,
+                post_type="question"
+            )
+            for i in range(10)
+        ]
+
+        # With first_run_limit=5, only 5 should be returned
+        results = classify_discussion_posts(posts, temp_db, first_run_limit=5)
+        assert len(results) == 5
+
+    def test_release_note_classification(self, temp_db):
+        """Test release note feature classification."""
+        from scrapers.instructure_community import (
+            ReleaseNotePage, Feature, FeatureTableData, classify_release_features
+        )
+
+        # Create a release note page with features
+        page = ReleaseNotePage(
+            title="Canvas Release: 2026-01-15",
+            url="http://example.com/release/123",
+            release_date=datetime.now(),
+            upcoming_changes=[],
+            features=[
+                Feature(
+                    category="Gradebook",
+                    name="New Gradebook Feature",
+                    anchor_id="gradebook",
+                    added_date=datetime.now(),
+                    raw_content="A new gradebook feature description",
+                    table_data=FeatureTableData(
+                        enable_location="Account",
+                        default_status="On",
+                        permissions="Admin",
+                        affected_areas=["Gradebook"],
+                        affects_roles=["Teacher", "Admin"]
+                    )
+                )
+            ],
+            sections={"Gradebook": []}
+        )
+
+        # First run - feature should be new
+        is_new_page, new_anchors = classify_release_features(page, temp_db, first_run_limit=10)
+        assert is_new_page is True
+        assert len(new_anchors) == 1
+        assert "gradebook" in new_anchors
+
+        # Second run - same feature should not appear (no changes)
+        is_new_page2, new_anchors2 = classify_release_features(page, temp_db, first_run_limit=10)
+        assert len(new_anchors2) == 0
+
+    def test_deploy_note_classification(self, temp_db):
+        """Test deploy note change classification."""
+        from scrapers.instructure_community import (
+            DeployNotePage, DeployChange, classify_deploy_changes
+        )
+
+        # Create a deploy note page with changes
+        page = DeployNotePage(
+            title="Canvas Deploy: 2026-01-20",
+            url="http://example.com/deploy/456",
+            deploy_date=datetime.now(),
+            beta_date=None,
+            changes=[
+                DeployChange(
+                    category="Performance",
+                    name="Performance Improvement",
+                    anchor_id="perf-improvement",
+                    section="improvements",
+                    raw_content="Improved gradebook loading speed",
+                    table_data=None,
+                    status=None,
+                    status_date=None
+                )
+            ],
+            sections={"improvements": []}
+        )
+
+        # First run - change should be new
+        is_new_page, new_anchors = classify_deploy_changes(page, temp_db, first_run_limit=10)
+        assert is_new_page is True
+        assert len(new_anchors) == 1
+        assert "perf-improvement" in new_anchors
+
+        # Second run - same change should not appear
+        is_new_page2, new_anchors2 = classify_deploy_changes(page, temp_db, first_run_limit=10)
+        assert len(new_anchors2) == 0
