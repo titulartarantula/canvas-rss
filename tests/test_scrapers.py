@@ -1829,3 +1829,41 @@ class TestUpcomingChange:
 
         assert urgent.days_until <= 30
         assert not_urgent.days_until > 30
+
+
+class TestReleaseNotePage:
+    """Tests for ReleaseNotePage dataclass."""
+
+    def test_release_note_page_creation(self):
+        """Test creating ReleaseNotePage."""
+        from scrapers.instructure_community import ReleaseNotePage, Feature, FeatureTableData
+        from datetime import datetime
+
+        table = FeatureTableData("", "", "", [], [])
+        feature = Feature("Apps", "Test", "test", None, "", table)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://example.com/release",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]}
+        )
+        assert "2026-02-21" in page.title
+        assert len(page.features) == 1
+
+    def test_release_note_page_source_id(self):
+        """Test source_id format for release page."""
+        from scrapers.instructure_community import ReleaseNotePage
+        from datetime import datetime
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://example.com",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[], features=[], sections={}
+        )
+        # Parent source_id should be date-based
+        expected_id = "release-2026-02-21"
+        assert page.release_date.strftime("release-%Y-%m-%d") == expected_id

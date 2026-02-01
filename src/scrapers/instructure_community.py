@@ -3,7 +3,7 @@
 import logging
 import time
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -79,6 +79,17 @@ class UpcomingChange:
     date: datetime
     description: str
     days_until: int
+
+
+@dataclass
+class ReleaseNotePage:
+    """A parsed Release Notes page with all features."""
+    title: str
+    url: str
+    release_date: datetime
+    upcoming_changes: List[UpcomingChange]
+    features: List[Feature]
+    sections: Dict[str, List[Feature]]
 
 
 # Keep legacy classes for backwards compatibility
