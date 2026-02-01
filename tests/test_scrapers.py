@@ -1713,3 +1713,38 @@ class TestInstructureScraperCleanup:
         assert scraper.page is None
         assert scraper.context is None
         assert scraper.playwright is None
+
+
+class TestDiscussionUpdate:
+    """Tests for DiscussionUpdate dataclass."""
+
+    def test_discussion_update_new_post(self):
+        """Test DiscussionUpdate for new post."""
+        from scrapers.instructure_community import DiscussionUpdate, CommunityPost
+        from datetime import datetime
+
+        post = CommunityPost(
+            title="Test", url="http://example.com", content="Content",
+            published_date=datetime.now(), post_type="question"
+        )
+        update = DiscussionUpdate(
+            post=post, is_new=True, previous_comment_count=0,
+            new_comment_count=0, latest_comment=None
+        )
+        assert update.is_new is True
+
+    def test_discussion_update_with_new_comments(self):
+        """Test DiscussionUpdate for post with new comments."""
+        from scrapers.instructure_community import DiscussionUpdate, CommunityPost
+        from datetime import datetime
+
+        post = CommunityPost(
+            title="Test", url="http://example.com", content="Content",
+            published_date=datetime.now(), comments=8, post_type="question"
+        )
+        update = DiscussionUpdate(
+            post=post, is_new=False, previous_comment_count=5,
+            new_comment_count=3, latest_comment="Latest reply..."
+        )
+        assert update.is_new is False
+        assert update.new_comment_count == 3

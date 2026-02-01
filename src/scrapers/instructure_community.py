@@ -42,6 +42,16 @@ class CommunityPost:
         return f"{self.post_type}_{hash(self.url)}"
 
 
+@dataclass
+class DiscussionUpdate:
+    """Represents a discussion post that is new or has new comments."""
+    post: CommunityPost
+    is_new: bool
+    previous_comment_count: int
+    new_comment_count: int
+    latest_comment: Optional[str]
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:
