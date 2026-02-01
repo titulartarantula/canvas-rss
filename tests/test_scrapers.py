@@ -1748,3 +1748,21 @@ class TestDiscussionUpdate:
         )
         assert update.is_new is False
         assert update.new_comment_count == 3
+
+
+class TestFeatureTableData:
+    """Tests for FeatureTableData dataclass."""
+
+    def test_feature_table_data_creation(self):
+        """Test creating FeatureTableData."""
+        from scrapers.instructure_community import FeatureTableData
+
+        table = FeatureTableData(
+            enable_location="Account Settings",
+            default_status="Off",
+            permissions="Admin only",
+            affected_areas=["Assignments", "SpeedGrader"],
+            affects_roles=["instructors", "students"]
+        )
+        assert table.enable_location == "Account Settings"
+        assert "Assignments" in table.affected_areas

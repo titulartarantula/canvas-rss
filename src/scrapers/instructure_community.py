@@ -52,6 +52,16 @@ class DiscussionUpdate:
     latest_comment: Optional[str]
 
 
+@dataclass
+class FeatureTableData:
+    """Configuration table data for a release/deploy feature."""
+    enable_location: str
+    default_status: str
+    permissions: str
+    affected_areas: List[str]
+    affects_roles: List[str]
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:
