@@ -73,6 +73,14 @@ class Feature:
     table_data: Optional[FeatureTableData]
 
 
+@dataclass
+class UpcomingChange:
+    """An upcoming Canvas change/deprecation."""
+    date: datetime
+    description: str
+    days_until: int
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:

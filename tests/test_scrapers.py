@@ -1802,3 +1802,30 @@ class TestFeature:
         )
         # source_id should be set by parent page
         assert feature.anchor_id == "test-feature"
+
+
+class TestUpcomingChange:
+    """Tests for UpcomingChange dataclass."""
+
+    def test_upcoming_change_creation(self):
+        """Test creating UpcomingChange."""
+        from scrapers.instructure_community import UpcomingChange
+        from datetime import datetime
+
+        change = UpcomingChange(
+            date=datetime(2026, 3, 21),
+            description="User-Agent Header Enforcement",
+            days_until=48
+        )
+        assert change.description == "User-Agent Header Enforcement"
+
+    def test_upcoming_change_urgency(self):
+        """Test urgency detection (within 30 days)."""
+        from scrapers.instructure_community import UpcomingChange
+        from datetime import datetime
+
+        urgent = UpcomingChange(datetime(2026, 2, 15), "Urgent change", 14)
+        not_urgent = UpcomingChange(datetime(2026, 4, 1), "Later change", 60)
+
+        assert urgent.days_until <= 30
+        assert not_urgent.days_until > 30
