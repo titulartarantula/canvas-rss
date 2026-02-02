@@ -402,6 +402,44 @@ class Database:
 
         return cursor.fetchone()[0] == 0
 
+    def get_tracking_stats(self) -> dict:
+        """Get statistics from v1.3.0 tracking tables.
+
+        Returns:
+            Dictionary with counts from discussion_tracking and feature_tracking tables.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Discussion tracking stats
+        cursor.execute("SELECT COUNT(*) FROM discussion_tracking")
+        discussion_total = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM discussion_tracking WHERE post_type = 'question'")
+        question_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM discussion_tracking WHERE post_type = 'blog'")
+        blog_count = cursor.fetchone()[0]
+
+        # Feature tracking stats
+        cursor.execute("SELECT COUNT(*) FROM feature_tracking")
+        feature_total = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM feature_tracking WHERE feature_type = 'release_note_feature'")
+        release_feature_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM feature_tracking WHERE feature_type = 'deploy_note_change'")
+        deploy_change_count = cursor.fetchone()[0]
+
+        return {
+            "discussion_total": discussion_total,
+            "question_count": question_count,
+            "blog_count": blog_count,
+            "feature_total": feature_total,
+            "release_feature_count": release_feature_count,
+            "deploy_change_count": deploy_change_count,
+        }
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:

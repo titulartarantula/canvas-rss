@@ -442,3 +442,37 @@ class TestFeatureTracking:
         assert temp_db.is_feature_tracking_empty() is True
         temp_db.upsert_feature_tracking("r#f", "r", "release_note_feature", "f")
         assert temp_db.is_feature_tracking_empty() is False
+
+
+class TestTrackingStats:
+    """Tests for get_tracking_stats method."""
+
+    def test_get_tracking_stats_empty(self, temp_db):
+        """Test stats on empty database."""
+        stats = temp_db.get_tracking_stats()
+        assert stats["discussion_total"] == 0
+        assert stats["question_count"] == 0
+        assert stats["blog_count"] == 0
+        assert stats["feature_total"] == 0
+        assert stats["release_feature_count"] == 0
+        assert stats["deploy_change_count"] == 0
+
+    def test_get_tracking_stats_with_data(self, temp_db):
+        """Test stats with tracked items."""
+        # Add discussion tracking records
+        temp_db.upsert_discussion_tracking("q1", "question", 5)
+        temp_db.upsert_discussion_tracking("q2", "question", 3)
+        temp_db.upsert_discussion_tracking("b1", "blog", 10)
+
+        # Add feature tracking records
+        temp_db.upsert_feature_tracking("r1#f1", "r1", "release_note_feature", "f1")
+        temp_db.upsert_feature_tracking("r1#f2", "r1", "release_note_feature", "f2")
+        temp_db.upsert_feature_tracking("d1#c1", "d1", "deploy_note_change", "c1")
+
+        stats = temp_db.get_tracking_stats()
+        assert stats["discussion_total"] == 3
+        assert stats["question_count"] == 2
+        assert stats["blog_count"] == 1
+        assert stats["feature_total"] == 3
+        assert stats["release_feature_count"] == 2
+        assert stats["deploy_change_count"] == 1
