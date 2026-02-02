@@ -73,6 +73,7 @@ class ContentItem:
     comment_count: int = 0  # Track comments for detecting new activity
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
     has_v130_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
+    structured_description: str = ""  # v1.3.0+ formatted description (preserved through pipeline)
 
     def __post_init__(self):
         if self.topics is None:

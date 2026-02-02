@@ -782,6 +782,106 @@ class InstructureScraper:
             logger.debug(f"Error detecting latest badge: {e}")
             return False
 
+    def _get_next_sibling_content(self, heading) -> str:
+        """Extract content between this heading and the next heading.
+
+        Args:
+            heading: Playwright element handle for an h2/h3/h4 heading.
+
+        Returns:
+            HTML content string of all siblings until next heading.
+        """
+        try:
+            # Get all siblings until next heading
+            content = heading.evaluate("""
+                el => {
+                    let content = [];
+                    let sibling = el.nextElementSibling;
+                    while (sibling && !sibling.matches('h1, h2, h3, h4, h5, h6')) {
+                        content.push(sibling.outerHTML);
+                        sibling = sibling.nextElementSibling;
+                    }
+                    return content.join('');
+                }
+            """)
+            return content or ""
+        except Exception as e:
+            logger.debug(f"Error extracting sibling content: {e}")
+            return ""
+
+    def _parse_feature_table(self, raw_content: str) -> Optional[FeatureTableData]:
+        """Parse configuration table from feature content.
+
+        Args:
+            raw_content: HTML string that may contain a feature configuration table.
+
+        Returns:
+            FeatureTableData if a table is found and parsed, None otherwise.
+        """
+        if not raw_content or '<table' not in raw_content.lower():
+            return None
+
+        try:
+            # Use BeautifulSoup for table parsing
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(raw_content, 'html.parser')
+            table = soup.find('table')
+            if not table:
+                return None
+
+            data = {}
+            for row in table.find_all('tr'):
+                cells = row.find_all(['td', 'th'])
+                if len(cells) >= 2:
+                    key = cells[0].get_text().strip().lower()
+                    value = cells[1].get_text().strip()
+                    data[key] = value
+
+            return FeatureTableData(
+                enable_location=data.get('enabled', data.get('enable', data.get('enabled at', ''))),
+                default_status=data.get('default', data.get('default status', '')),
+                permissions=data.get('permissions', data.get('permission', '')),
+                affected_areas=self._extract_areas(data.get('affects', data.get('affected areas', ''))),
+                affects_roles=self._extract_roles(data.get('affects', data.get('roles', '')))
+            )
+        except Exception as e:
+            logger.debug(f"Error parsing feature table: {e}")
+            return None
+
+    def _extract_areas(self, text: str) -> List[str]:
+        """Extract affected areas from text.
+
+        Args:
+            text: String like "Gradebook, Assignments, Quizzes".
+
+        Returns:
+            List of area names.
+        """
+        if not text:
+            return []
+        # Split by comma and clean up
+        return [area.strip() for area in text.split(',') if area.strip()]
+
+    def _extract_roles(self, text: str) -> List[str]:
+        """Extract affected roles from text.
+
+        Args:
+            text: String like "Instructors, Admins".
+
+        Returns:
+            List of role names.
+        """
+        if not text:
+            return []
+        # Common role keywords to look for
+        role_keywords = ['instructor', 'student', 'admin', 'teacher', 'ta', 'observer', 'designer']
+        text_lower = text.lower()
+        found_roles = []
+        for role in role_keywords:
+            if role in text_lower:
+                found_roles.append(role.capitalize())
+        return found_roles if found_roles else [r.strip() for r in text.split(',') if r.strip()]
+
     def _scrape_notes_from_current_view(
         self, hours: int, post_type: str, skip_date_filter: bool = False
     ) -> List[ReleaseNote]:
@@ -1194,8 +1294,46 @@ class InstructureScraper:
 
             features = []
             sections: Dict[str, List[Feature]] = {}
+            upcoming_changes: List[UpcomingChange] = []
             current_section = "New Features"
             current_category = "General"
+
+            # Task 11: Parse Upcoming Canvas Changes section
+            upcoming_section = self.page.query_selector("[data-id='upcoming-canvas-changes'], h2[data-id*='upcoming']")
+            if upcoming_section:
+                try:
+                    # Get list items within or after the upcoming changes section
+                    list_items = upcoming_section.evaluate("""
+                        el => {
+                            // Try to find list items after this heading
+                            let items = [];
+                            let sibling = el.nextElementSibling;
+                            while (sibling && !sibling.matches('h1, h2')) {
+                                if (sibling.tagName === 'UL' || sibling.tagName === 'OL') {
+                                    const lis = sibling.querySelectorAll('li');
+                                    lis.forEach(li => items.push(li.innerText));
+                                }
+                                sibling = sibling.nextElementSibling;
+                            }
+                            return items;
+                        }
+                    """)
+                    for item_text in list_items:
+                        if item_text:
+                            # Parse date from text (e.g., "2026-02-15: Feature deprecation")
+                            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', item_text)
+                            if date_match:
+                                change_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+                                days_until = (change_date - datetime.now()).days
+                                # Remove date prefix from description
+                                description = re.sub(r'\d{4}-\d{2}-\d{2}[:\s]*', '', item_text).strip()
+                                upcoming_changes.append(UpcomingChange(
+                                    date=change_date,
+                                    description=description,
+                                    days_until=max(0, days_until)
+                                ))
+                except Exception as e:
+                    logger.debug(f"Error parsing upcoming changes: {e}")
 
             # Parse H2 (sections), H3 (categories), H4 (features)
             headings = self.page.query_selector_all("h2[data-id], h3[data-id], h4[data-id]")
@@ -1220,16 +1358,11 @@ class InstructureScraper:
                             added_date = datetime.strptime(added_match.group(1), "%Y-%m-%d")
                             text = re.sub(r'\s*\[Added \d{4}-\d{2}-\d{2}\]', '', text)
 
-                        # Get content after heading (simplified)
-                        raw_content = ""
-                        try:
-                            next_sibling = heading.evaluate(
-                                "el => { let s = el.nextElementSibling; return s ? s.outerHTML : ''; }"
-                            )
-                            if next_sibling:
-                                raw_content = next_sibling
-                        except Exception:
-                            pass
+                        # Task 12: Use _get_next_sibling_content for full content extraction
+                        raw_content = self._get_next_sibling_content(heading)
+
+                        # Task 12: Parse table data from raw content
+                        table_data = self._parse_feature_table(raw_content)
 
                         feature = Feature(
                             category=current_category,
@@ -1237,7 +1370,7 @@ class InstructureScraper:
                             anchor_id=data_id,
                             added_date=added_date,
                             raw_content=raw_content,
-                            table_data=None
+                            table_data=table_data
                         )
                         features.append(feature)
 
@@ -1252,7 +1385,7 @@ class InstructureScraper:
                 title=title,
                 url=url,
                 release_date=release_date,
-                upcoming_changes=[],
+                upcoming_changes=upcoming_changes,
                 features=features,
                 sections=sections
             )
@@ -1280,21 +1413,90 @@ class InstructureScraper:
 
             title = self.page.title() or "Canvas Deploy Notes"
 
-            # Extract date from title
+            # Extract production date from title
             date_match = re.search(r'\((\d{4}-\d{2}-\d{2})\)', title)
             if date_match:
                 deploy_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
             else:
                 deploy_date = datetime.now(timezone.utc)
 
-            # TODO: Implement full parsing of changes
+            # Try to find beta/production dates in page content
+            beta_date = None
+            date_info = self.page.query_selector("[class*='date-info'], [class*='deploy-dates'], [class*='schedule']")
+            if date_info:
+                try:
+                    date_text = date_info.inner_text()
+                    beta_match = re.search(r'Beta:\s*(\d{4}-\d{2}-\d{2})', date_text)
+                    prod_match = re.search(r'Production:\s*(\d{4}-\d{2}-\d{2})', date_text)
+                    if beta_match:
+                        beta_date = datetime.strptime(beta_match.group(1), "%Y-%m-%d")
+                    if prod_match:
+                        deploy_date = datetime.strptime(prod_match.group(1), "%Y-%m-%d")
+                except Exception as e:
+                    logger.debug(f"Error parsing date info: {e}")
+
+            # Parse changes from headings
+            changes = []
+            sections: Dict[str, List[DeployChange]] = {}
+            current_section = "Updated Features"
+            current_category = "General"
+
+            headings = self.page.query_selector_all("h2[data-id], h3[data-id], h4[data-id]")
+
+            for heading in headings:
+                try:
+                    tag = heading.evaluate("el => el.tagName.toLowerCase()")
+                    data_id = heading.get_attribute("data-id") or ""
+                    text = heading.inner_text().strip()
+
+                    if tag == "h2":
+                        current_section = text
+                        if current_section not in sections:
+                            sections[current_section] = []
+                    elif tag == "h3":
+                        current_category = text
+                    elif tag == "h4":
+                        # Parse [Delayed as of DATE] annotation
+                        status = None
+                        status_date = None
+                        delayed_match = re.search(r'\[Delayed as of (\d{4}-\d{2}-\d{2})\]', text)
+                        if delayed_match:
+                            status = "delayed"
+                            status_date = datetime.strptime(delayed_match.group(1), "%Y-%m-%d")
+                            text = re.sub(r'\s*\[Delayed as of \d{4}-\d{2}-\d{2}\]', '', text)
+
+                        # Get content after heading
+                        raw_content = self._get_next_sibling_content(heading)
+
+                        # Parse table data if present
+                        table_data = self._parse_feature_table(raw_content)
+
+                        change = DeployChange(
+                            category=current_category,
+                            name=text,
+                            anchor_id=data_id,
+                            section=current_section,
+                            raw_content=raw_content,
+                            table_data=table_data,
+                            status=status,
+                            status_date=status_date
+                        )
+                        changes.append(change)
+
+                        if current_section not in sections:
+                            sections[current_section] = []
+                        sections[current_section].append(change)
+                except Exception as e:
+                    logger.debug(f"Error parsing deploy heading: {e}")
+                    continue
+
             return DeployNotePage(
                 title=title,
                 url=url,
                 deploy_date=deploy_date,
-                beta_date=None,
-                changes=[],
-                sections={}
+                beta_date=beta_date,
+                changes=changes,
+                sections=sections
             )
 
         except Exception as e:

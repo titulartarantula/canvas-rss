@@ -95,6 +95,37 @@ def format_discussion_description(
     return "\n".join(parts)
 
 
+def _extract_text_from_html(html_content: str, max_length: int = 200) -> str:
+    """Extract plain text from HTML and truncate.
+
+    Args:
+        html_content: Raw HTML string.
+        max_length: Maximum length for the output text.
+
+    Returns:
+        Plain text, truncated at word boundary if needed.
+    """
+    if not html_content:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+        text = BeautifulSoup(html_content, 'html.parser').get_text(separator=' ', strip=True)
+        if len(text) > max_length:
+            # Truncate at word boundary
+            truncated = text[:max_length].rsplit(' ', 1)[0]
+            return truncated + "..."
+        return text
+    except Exception:
+        # Fallback: basic HTML stripping
+        import re
+        text = re.sub(r'<[^>]+>', ' ', html_content)
+        text = ' '.join(text.split())  # Normalize whitespace
+        if len(text) > max_length:
+            truncated = text[:max_length].rsplit(' ', 1)[0]
+            return truncated + "..."
+        return text
+
+
 def build_release_note_entry(
     page: "ReleaseNotePage",
     is_update: bool,
@@ -134,7 +165,18 @@ def build_release_note_entry(
                 added_tag = f" [Added {feature.added_date.strftime('%Y-%m-%d')}]"
 
             parts.append(f"▸ {feature.category} - [{feature.name}]({anchor_link}){added_tag}")
-            parts.append("[Summary placeholder]")  # Will be filled by LLM
+
+            # Task 14: Use feature.summary if available, otherwise extract text from raw_content
+            if hasattr(feature, 'summary') and feature.summary:
+                parts.append(feature.summary)
+            else:
+                # Fallback: extract and truncate text from raw HTML content
+                summary_text = _extract_text_from_html(feature.raw_content)
+                if summary_text:
+                    parts.append(summary_text)
+                else:
+                    parts.append("See link for details.")
+
             parts.append(f"Availability: {format_availability(feature.table_data)}")
             parts.append("")
 
@@ -182,7 +224,18 @@ def build_deploy_note_entry(
             status_flag = STATUS_FLAGS.get(change.status, "▸")
 
             parts.append(f"{status_flag} {change.category} - [{change.name}]({anchor_link})")
-            parts.append("[Summary placeholder]")
+
+            # Use change.summary if available, otherwise extract text from raw_content
+            if hasattr(change, 'summary') and change.summary:
+                parts.append(change.summary)
+            else:
+                # Fallback: extract and truncate text from raw HTML content
+                summary_text = _extract_text_from_html(change.raw_content)
+                if summary_text:
+                    parts.append(summary_text)
+                else:
+                    parts.append("See link for details.")
+
             parts.append(f"Availability: {format_availability(change.table_data)}")
 
             if change.status == "delayed" and change.status_date:
@@ -347,9 +400,9 @@ class RSSBuilder:
         # Get primary topic (fallback to General)
         primary_topic = getattr(item, 'primary_topic', '') or "General"
 
-        # v1.3.0 items already have [NEW]/[UPDATE] badges in title
+        # v1.3.0 items already have complete titles with [NEW]/[UPDATE] badges
         if getattr(item, 'has_v130_badge', False):
-            return f"{primary_topic} - {item.title}"
+            return item.title  # Use as-is, no modification
 
         # Check for "Latest" badge (only for release/deploy notes)
         is_latest = getattr(item, 'is_latest', False)
@@ -379,12 +432,20 @@ class RSSBuilder:
     def _format_description(self, item: ContentItem) -> str:
         """Format item description with summary, sentiment, topics, and source.
 
+        Uses structured_description if available (v1.3.0+ items),
+        otherwise falls back to legacy HTML format.
+
         Args:
             item: ContentItem to format
 
         Returns:
             HTML-formatted description string for CDATA
         """
+        # v1.3.0+ items have pre-formatted structured descriptions
+        if item.structured_description:
+            return item.structured_description
+
+        # Legacy format for non-v1.3.0 items (Reddit, Status, etc.)
         parts = []
 
         # Summary section

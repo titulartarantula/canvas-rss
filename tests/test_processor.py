@@ -997,6 +997,30 @@ class TestEnrichWithLLM:
             assert item.summary != ""
             assert item.sentiment == "neutral"
 
+    @patch('processor.content_processor.time')
+    def test_enrich_preserves_structured_description(self, mock_time):
+        """Test that enrich_with_llm does not overwrite structured_description."""
+        from processor.content_processor import ContentProcessor, ContentItem
+
+        mock_time.sleep = Mock()
+
+        processor = ContentProcessor()
+        processor.model = None  # Use fallback behavior
+
+        item = ContentItem(
+            source="community",
+            source_id="test",
+            title="Test",
+            url="https://example.com",
+            content="raw content",
+            structured_description="━━━ PRESERVED ━━━\n▸ This should not change"
+        )
+
+        result = processor.enrich_with_llm([item])
+
+        assert len(result) == 1
+        assert result[0].structured_description == "━━━ PRESERVED ━━━\n▸ This should not change"
+
 
 class TestContentProcessorConstants:
     """Tests for ContentProcessor class constants."""
@@ -1113,6 +1137,93 @@ class TestSummarizeFeature:
         result = processor.summarize_feature(feature)
         assert "document processing" in result.lower() or result == ""
 
+    def test_summarize_feature_empty_content(self):
+        """Test summarize_feature with empty raw_content returns empty string."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import Feature
+
+        processor = ContentProcessor(gemini_api_key=None)
+        feature = Feature(
+            category="Gradebook",
+            name="Empty Feature",
+            anchor_id="empty",
+            added_date=None,
+            raw_content="",
+            table_data=None
+        )
+
+        result = processor.summarize_feature(feature)
+        assert result == ""
+
+    def test_summarize_feature_truncates_long_content(self):
+        """Test that long content is truncated to ~300 chars when client is None."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import Feature
+
+        processor = ContentProcessor(gemini_api_key=None)
+        processor.client = None
+
+        long_content = "word " * 100  # About 500 chars
+        feature = Feature(
+            category="Gradebook",
+            name="Long Content Feature",
+            anchor_id="long-content",
+            added_date=None,
+            raw_content=long_content,
+            table_data=None
+        )
+
+        result = processor.summarize_feature(feature)
+        assert len(result) <= 300
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_summarize_feature_with_llm(self, mock_genai):
+        """Test feature summarization with LLM model."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import Feature
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This feature improves gradebook functionality for instructors."
+        mock_client.models.generate_content.return_value = mock_response
+
+        processor = ContentProcessor(gemini_api_key="test-key")
+        processor.client = mock_client
+
+        feature = Feature(
+            category="Gradebook",
+            name="Status Icons",
+            anchor_id="status-icons",
+            added_date=None,
+            raw_content="<p>The Gradebook now shows status icons for submissions.</p>",
+            table_data=None
+        )
+
+        result = processor.summarize_feature(feature)
+        assert result == "This feature improves gradebook functionality for instructors."
+        mock_client.models.generate_content.assert_called_once()
+
+    def test_summarize_feature_length_limit(self):
+        """Test per-feature summarization returns max ~300 chars."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import Feature
+
+        processor = ContentProcessor(gemini_api_key=None)
+        processor.client = None
+
+        feature = Feature(
+            category="Gradebook",
+            name="Status Icons",
+            anchor_id="status-icons",
+            added_date=None,
+            raw_content="<p>The Gradebook now shows status icons...</p>",
+            table_data=None
+        )
+
+        result = processor.summarize_feature(feature)
+        assert len(result) <= 300
+
 
 class TestSummarizeDeployChange:
     """Tests for deploy change summarization."""
@@ -1137,6 +1248,101 @@ class TestSummarizeDeployChange:
 
         result = processor.summarize_deploy_change(change)
         assert "branding" in result.lower() or "mobile" in result.lower() or result == ""
+
+    def test_summarize_deploy_change_empty_content(self):
+        """Test summarize_deploy_change with empty raw_content returns empty string."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import DeployChange
+
+        processor = ContentProcessor(gemini_api_key=None)
+        change = DeployChange(
+            category="Navigation",
+            name="Empty Change",
+            anchor_id="empty",
+            section="Updated Features",
+            raw_content="",
+            table_data=None,
+            status=None,
+            status_date=None
+        )
+
+        result = processor.summarize_deploy_change(change)
+        assert result == ""
+
+    def test_summarize_deploy_change_truncates_long_content(self):
+        """Test that long content is truncated to ~300 chars when client is None."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import DeployChange
+
+        processor = ContentProcessor(gemini_api_key=None)
+        processor.client = None
+
+        long_content = "word " * 100  # About 500 chars
+        change = DeployChange(
+            category="Navigation",
+            name="Long Content Change",
+            anchor_id="long-content",
+            section="Updated Features",
+            raw_content=long_content,
+            table_data=None,
+            status=None,
+            status_date=None
+        )
+
+        result = processor.summarize_deploy_change(change)
+        assert len(result) <= 300
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_summarize_deploy_change_with_llm(self, mock_genai):
+        """Test deploy change summarization with LLM model."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import DeployChange
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This fix resolves branding issues on mobile devices."
+        mock_client.models.generate_content.return_value = mock_response
+
+        processor = ContentProcessor(gemini_api_key="test-key")
+        processor.client = mock_client
+
+        change = DeployChange(
+            category="Navigation",
+            name="Small Screen Branding Fix",
+            anchor_id="small-screen-fix",
+            section="Updated Features",
+            raw_content="<p>Fixed branding display issues on small screens.</p>",
+            table_data=None,
+            status=None,
+            status_date=None
+        )
+
+        result = processor.summarize_deploy_change(change)
+        assert result == "This fix resolves branding issues on mobile devices."
+        mock_client.models.generate_content.assert_called_once()
+
+    def test_summarize_deploy_change_length_limit(self):
+        """Test per-change summarization returns max ~300 chars."""
+        from processor.content_processor import ContentProcessor
+        from scrapers.instructure_community import DeployChange
+
+        processor = ContentProcessor(gemini_api_key=None)
+        processor.client = None
+
+        change = DeployChange(
+            category="Navigation",
+            name="Small Screen Branding Fix",
+            anchor_id="small-screen-fix",
+            section="Updated Features",
+            raw_content="Fixed branding display on mobile devices.",
+            table_data=None,
+            status=None,
+            status_date=None
+        )
+
+        result = processor.summarize_deploy_change(change)
+        assert len(result) <= 300
 
 
 class TestContentItemDataclass:
@@ -1217,3 +1423,30 @@ class TestContentItemDataclass:
         )
 
         assert item.topics == []
+
+    def test_content_item_structured_description(self):
+        """Test ContentItem has structured_description field."""
+        from processor.content_processor import ContentItem
+
+        item = ContentItem(
+            source="community",
+            source_id="test_123",
+            title="Test",
+            url="https://example.com",
+            content="raw content",
+            structured_description="━━━ NEW FEATURES ━━━\n▸ Test Feature"
+        )
+        assert item.structured_description == "━━━ NEW FEATURES ━━━\n▸ Test Feature"
+
+    def test_content_item_structured_description_default(self):
+        """Test structured_description defaults to empty string."""
+        from processor.content_processor import ContentItem
+
+        item = ContentItem(
+            source="community",
+            source_id="test_123",
+            title="Test",
+            url="https://example.com",
+            content="raw content"
+        )
+        assert item.structured_description == ""

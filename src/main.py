@@ -178,13 +178,14 @@ def process_discussion_posts(
             source_id=post.source_id,
             title=title,
             url=post.url,
-            content=description,
+            content=post.content,  # Keep original for LLM enrichment
+            structured_description=description,  # Store formatted version for RSS
             content_type=post.post_type,
             published_date=post.published_date,
             engagement_score=post.likes + post.comments,
             comment_count=post.comments,
+            has_v130_badge=True,
         )
-        item.has_v130_badge = True
         items.append(item)
 
     logger.debug(f"Processed {len(items)} discussion posts with v1.3.0 tracking")
@@ -194,7 +195,8 @@ def process_discussion_posts(
 def process_release_notes(
     notes: List[ReleaseNote],
     db: "Database",
-    scraper: InstructureScraper
+    scraper: InstructureScraper,
+    processor: ContentProcessor = None
 ) -> List[ContentItem]:
     """Process release notes with feature-level [NEW]/[UPDATE] tracking.
 
@@ -202,6 +204,7 @@ def process_release_notes(
         notes: List of release note posts (post_type='release_note').
         db: Database for feature tracking.
         scraper: Scraper instance for parsing pages.
+        processor: ContentProcessor for generating per-feature summaries.
 
     Returns:
         List of ContentItems with [NEW]/[UPDATE] badges.
@@ -224,10 +227,19 @@ def process_release_notes(
         if not is_new_page and not new_anchors:
             continue
 
+        # Generate summaries for each feature (Task 17)
+        if processor is not None:
+            for feature in page.features:
+                try:
+                    feature.summary = processor.summarize_feature(feature)
+                except Exception as e:
+                    logger.warning(f"Failed to summarize feature '{feature.name}': {e}")
+                    feature.summary = ""
+
         # Determine badge: [NEW] if page is new, [UPDATE] if features added
         badge = "[NEW]" if is_new_page else "[UPDATE]"
 
-        # Build description with feature details
+        # Build description with feature details (now uses feature.summary)
         description = build_release_note_entry(
             page=page,
             is_update=not is_new_page,
@@ -239,13 +251,14 @@ def process_release_notes(
             source_id=note.source_id,
             title=f"{badge} {note.title}",
             url=note.url,
-            content=description,
+            content=note.content,  # Keep original for LLM enrichment
+            structured_description=description,  # Store formatted version for RSS
             content_type="release_note",
             published_date=note.published_date,
             engagement_score=note.likes + note.comments,
             is_latest=note.is_latest,
+            has_v130_badge=True,
         )
-        item.has_v130_badge = True
         items.append(item)
 
     logger.debug(f"Processed {len(items)} release notes with v1.3.0 tracking")
@@ -255,7 +268,8 @@ def process_release_notes(
 def process_deploy_notes(
     notes: List[ReleaseNote],
     db: "Database",
-    scraper: InstructureScraper
+    scraper: InstructureScraper,
+    processor: ContentProcessor = None
 ) -> List[ContentItem]:
     """Process deploy notes with change-level [NEW]/[UPDATE] tracking.
 
@@ -263,6 +277,7 @@ def process_deploy_notes(
         notes: List of deploy note posts (post_type='deploy_note').
         db: Database for change tracking.
         scraper: Scraper instance for parsing pages.
+        processor: ContentProcessor for generating per-change summaries.
 
     Returns:
         List of ContentItems with [NEW]/[UPDATE] badges.
@@ -285,10 +300,19 @@ def process_deploy_notes(
         if not is_new_page and not new_anchors:
             continue
 
+        # Generate summaries for each change (Task 17)
+        if processor is not None:
+            for change in page.changes:
+                try:
+                    change.summary = processor.summarize_deploy_change(change)
+                except Exception as e:
+                    logger.warning(f"Failed to summarize change '{change.name}': {e}")
+                    change.summary = ""
+
         # Determine badge: [NEW] if page is new, [UPDATE] if changes added
         badge = "[NEW]" if is_new_page else "[UPDATE]"
 
-        # Build description with change details
+        # Build description with change details (now uses change.summary)
         description = build_deploy_note_entry(
             page=page,
             is_update=not is_new_page,
@@ -300,13 +324,14 @@ def process_deploy_notes(
             source_id=note.source_id,
             title=f"{badge} {note.title}",
             url=note.url,
-            content=description,
+            content=note.content,  # Keep original for LLM enrichment
+            structured_description=description,  # Store formatted version for RSS
             content_type="deploy_note",
             published_date=note.published_date,
             engagement_score=note.likes + note.comments,
             is_latest=note.is_latest,
+            has_v130_badge=True,
         )
-        item.has_v130_badge = True
         items.append(item)
 
     logger.debug(f"Processed {len(items)} deploy notes with v1.3.0 tracking")
@@ -349,16 +374,16 @@ def main():
             all_items.extend(discussion_items)
             logger.info(f"  -> {len(discussion_items)} discussion items (Q&A + Blog)")
 
-            # 1b. Release notes - v1.3.0 feature tracking
+            # 1b. Release notes - v1.3.0 feature tracking with per-feature summaries
             all_notes = scraper.scrape_release_notes(hours=24, skip_date_filter=is_first_run)
             release_notes = [n for n in all_notes if n.post_type == "release_note"]
-            release_items = process_release_notes(release_notes, db, scraper)
+            release_items = process_release_notes(release_notes, db, scraper, processor)
             all_items.extend(release_items)
             logger.info(f"  -> {len(release_items)} release note items")
 
-            # 1c. Deploy notes - v1.3.0 change tracking
+            # 1c. Deploy notes - v1.3.0 change tracking with per-change summaries
             deploy_notes = [n for n in all_notes if n.post_type == "deploy_note"]
-            deploy_items = process_deploy_notes(deploy_notes, db, scraper)
+            deploy_items = process_deploy_notes(deploy_notes, db, scraper, processor)
             all_items.extend(deploy_items)
             logger.info(f"  -> {len(deploy_items)} deploy note items")
 

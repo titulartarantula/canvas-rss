@@ -2181,3 +2181,545 @@ class TestClassifyDeployChanges:
         is_new, new_anchors = classify_deploy_changes(page, temp_db, first_run_limit=3)
         assert is_new is True
         assert "fix-1" in new_anchors
+
+
+class TestGetNextSiblingContent:
+    """Tests for _get_next_sibling_content helper method."""
+
+    def test_extracts_sibling_content(self):
+        """Test helper extracts content after heading."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        mock_heading = MagicMock()
+        mock_heading.evaluate.return_value = "<p>Feature description</p><ul><li>Item 1</li></ul>"
+
+        content = scraper._get_next_sibling_content(mock_heading)
+
+        assert "<p>Feature description</p>" in content
+        assert "<ul>" in content
+
+    def test_returns_empty_on_error(self):
+        """Test returns empty string on error."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        mock_heading = MagicMock()
+        mock_heading.evaluate.side_effect = Exception("Test error")
+
+        content = scraper._get_next_sibling_content(mock_heading)
+
+        assert content == ""
+
+    def test_returns_empty_when_no_siblings(self):
+        """Test returns empty when no siblings found."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        mock_heading = MagicMock()
+        mock_heading.evaluate.return_value = ""
+
+        content = scraper._get_next_sibling_content(mock_heading)
+
+        assert content == ""
+
+
+class TestParseFeatureTable:
+    """Tests for _parse_feature_table helper method."""
+
+    def test_parses_configuration_table(self):
+        """Test configuration table parsing."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        table_html = """
+        <table>
+            <tr><td>Enabled</td><td>Account Settings</td></tr>
+            <tr><td>Default</td><td>Off</td></tr>
+            <tr><td>Permissions</td><td>Admin only</td></tr>
+        </table>
+        """
+        table_data = scraper._parse_feature_table(table_html)
+
+        assert table_data is not None
+        assert table_data.enable_location == "Account Settings"
+        assert table_data.default_status == "Off"
+        assert table_data.permissions == "Admin only"
+
+    def test_returns_none_when_no_table(self):
+        """Test returns None when no table in content."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        content = "<p>Just some text without a table.</p>"
+        table_data = scraper._parse_feature_table(content)
+
+        assert table_data is None
+
+    def test_returns_none_for_empty_content(self):
+        """Test returns None for empty or None content."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        assert scraper._parse_feature_table("") is None
+        assert scraper._parse_feature_table(None) is None
+
+    def test_handles_alternate_column_names(self):
+        """Test handles alternate column naming conventions."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        table_html = """
+        <table>
+            <tr><td>Enabled at</td><td>Course Settings</td></tr>
+            <tr><td>Default Status</td><td>On</td></tr>
+            <tr><td>Permission</td><td>Instructor</td></tr>
+        </table>
+        """
+        table_data = scraper._parse_feature_table(table_html)
+
+        assert table_data is not None
+        assert table_data.enable_location == "Course Settings"
+        assert table_data.default_status == "On"
+
+    def test_extracts_affected_areas(self):
+        """Test extraction of affected areas from table."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        table_html = """
+        <table>
+            <tr><td>Affects</td><td>Gradebook, Assignments, Quizzes</td></tr>
+        </table>
+        """
+        table_data = scraper._parse_feature_table(table_html)
+
+        assert table_data is not None
+        assert "Gradebook" in table_data.affected_areas
+        assert "Assignments" in table_data.affected_areas
+        assert "Quizzes" in table_data.affected_areas
+
+
+class TestExtractAreas:
+    """Tests for _extract_areas helper method."""
+
+    def test_splits_comma_separated_areas(self):
+        """Test splitting comma-separated area list."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        areas = scraper._extract_areas("Gradebook, Assignments, Quizzes")
+        assert areas == ["Gradebook", "Assignments", "Quizzes"]
+
+    def test_returns_empty_for_empty_input(self):
+        """Test returns empty list for empty input."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        assert scraper._extract_areas("") == []
+        assert scraper._extract_areas(None) == []
+
+
+class TestExtractRoles:
+    """Tests for _extract_roles helper method."""
+
+    def test_extracts_known_roles(self):
+        """Test extraction of known role keywords."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        roles = scraper._extract_roles("Instructors and Students")
+        assert "Instructor" in roles
+        assert "Student" in roles
+
+    def test_returns_empty_for_empty_input(self):
+        """Test returns empty list for empty input."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        assert scraper._extract_roles("") == []
+        assert scraper._extract_roles(None) == []
+
+    def test_falls_back_to_comma_split(self):
+        """Test falls back to comma splitting for unknown roles."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+
+        roles = scraper._extract_roles("Custom Role 1, Custom Role 2")
+        assert "Custom Role 1" in roles
+        assert "Custom Role 2" in roles
+
+
+class TestParseDeployNotePageFull:
+    """Tests for full parse_deploy_note_page implementation."""
+
+    def test_parses_changes_from_headings(self):
+        """Test that changes are extracted from deploy notes page."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Deploy Notes (2026-02-11)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector.return_value = None
+
+        # Mock H2, H3, H4 headings for deploy note structure
+        mock_h2 = MagicMock()
+        mock_h2.evaluate.side_effect = lambda js: "h2" if "tagName" in js else ""
+        mock_h2.get_attribute.return_value = "updated-features"
+        mock_h2.inner_text.return_value = "Updated Features"
+
+        mock_h3 = MagicMock()
+        mock_h3.evaluate.side_effect = lambda js: "h3" if "tagName" in js else ""
+        mock_h3.get_attribute.return_value = "gradebook"
+        mock_h3.inner_text.return_value = "Gradebook"
+
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: "h4" if "tagName" in js else "<p>desc</p>"
+        mock_h4.get_attribute.return_value = "status-icons"
+        mock_h4.inner_text.return_value = "Status Icons Added"
+
+        mock_page.query_selector_all.return_value = [mock_h2, mock_h3, mock_h4]
+        scraper.page = mock_page
+
+        result = scraper.parse_deploy_note_page("http://example.com/deploy-notes")
+
+        assert result is not None
+        assert len(result.changes) == 1
+        assert result.changes[0].name == "Status Icons Added"
+        assert result.changes[0].category == "Gradebook"
+        assert result.changes[0].section == "Updated Features"
+
+    def test_parses_delayed_status(self):
+        """Test parsing [Delayed as of DATE] annotation."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Deploy Notes (2026-02-11)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector.return_value = None
+
+        # Mock H4 with delayed annotation
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: "h4" if "tagName" in js else ""
+        mock_h4.get_attribute.return_value = "delayed-feature"
+        mock_h4.inner_text.return_value = "Some Feature [Delayed as of 2026-02-01]"
+
+        mock_page.query_selector_all.return_value = [mock_h4]
+        scraper.page = mock_page
+
+        result = scraper.parse_deploy_note_page("http://example.com/deploy-notes")
+
+        assert result is not None
+        assert len(result.changes) == 1
+        assert result.changes[0].name == "Some Feature"
+        assert result.changes[0].status == "delayed"
+        assert result.changes[0].status_date == datetime(2026, 2, 1)
+
+    def test_parses_beta_and_production_dates(self):
+        """Test that beta and production dates are extracted."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Deploy Notes (2026-02-11)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector_all.return_value = []
+
+        # Mock date info element
+        mock_date_info = MagicMock()
+        mock_date_info.inner_text.return_value = "Beta: 2026-01-29 | Production: 2026-02-11"
+        mock_page.query_selector.return_value = mock_date_info
+
+        scraper.page = mock_page
+
+        result = scraper.parse_deploy_note_page("http://example.com/deploy-notes")
+
+        assert result is not None
+        assert result.beta_date == datetime(2026, 1, 29)
+        assert result.deploy_date == datetime(2026, 2, 11)
+
+    def test_populates_sections_dictionary(self):
+        """Test that sections dictionary is populated correctly."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Deploy Notes (2026-02-11)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector.return_value = None
+
+        # Mock H2 section and H4 change
+        mock_h2 = MagicMock()
+        mock_h2.evaluate.side_effect = lambda js: "h2" if "tagName" in js else ""
+        mock_h2.get_attribute.return_value = "bug-fixes"
+        mock_h2.inner_text.return_value = "Bug Fixes"
+
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: "h4" if "tagName" in js else ""
+        mock_h4.get_attribute.return_value = "fix-1"
+        mock_h4.inner_text.return_value = "Fixed Navigation"
+
+        mock_page.query_selector_all.return_value = [mock_h2, mock_h4]
+        scraper.page = mock_page
+
+        result = scraper.parse_deploy_note_page("http://example.com/deploy-notes")
+
+        assert result is not None
+        assert "Bug Fixes" in result.sections
+        assert len(result.sections["Bug Fixes"]) == 1
+        assert result.sections["Bug Fixes"][0].name == "Fixed Navigation"
+
+    def test_extracts_table_data_from_changes(self):
+        """Test that table_data is extracted for changes with tables."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Deploy Notes (2026-02-11)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector.return_value = None
+
+        # Mock H4 with table content in sibling
+        table_html = """<table><tr><td>Enabled</td><td>Account</td></tr></table>"""
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: "h4" if "tagName" in js else table_html
+        mock_h4.get_attribute.return_value = "feature-with-table"
+        mock_h4.inner_text.return_value = "Feature With Config"
+
+        mock_page.query_selector_all.return_value = [mock_h4]
+        scraper.page = mock_page
+
+        result = scraper.parse_deploy_note_page("http://example.com/deploy-notes")
+
+        assert result is not None
+        assert len(result.changes) == 1
+        assert result.changes[0].table_data is not None
+        assert result.changes[0].table_data.enable_location == "Account"
+
+
+class TestParseReleaseNoteUpcomingChanges:
+    """Tests for upcoming_changes parsing in parse_release_note_page (Task 11)."""
+
+    def test_parses_upcoming_changes_section(self):
+        """Test that upcoming changes section is parsed."""
+        from scrapers.instructure_community import InstructureScraper, UpcomingChange
+        from datetime import datetime, timedelta
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-01)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+
+        # Mock upcoming changes section
+        mock_upcoming_section = MagicMock()
+        # Simulate list items with dates
+        future_date = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
+        mock_upcoming_section.evaluate.return_value = [
+            f"{future_date}: Feature X will be deprecated",
+            f"{future_date}: API endpoint Y will change"
+        ]
+        mock_page.query_selector.return_value = mock_upcoming_section
+        mock_page.query_selector_all.return_value = []
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+
+        assert result is not None
+        assert len(result.upcoming_changes) == 2
+        assert result.upcoming_changes[0].description == "Feature X will be deprecated"
+        assert result.upcoming_changes[0].days_until >= 0
+        assert result.upcoming_changes[0].date is not None
+
+    def test_parses_upcoming_changes_empty_when_no_section(self):
+        """Test that upcoming_changes is empty when no section found."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-01)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+        mock_page.query_selector.return_value = None
+        mock_page.query_selector_all.return_value = []
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+
+        assert result is not None
+        assert result.upcoming_changes == []
+
+    def test_parses_upcoming_changes_days_until_calculated(self):
+        """Test that days_until is calculated correctly."""
+        from scrapers.instructure_community import InstructureScraper
+        from datetime import datetime, timedelta
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-01)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+
+        # Mock upcoming changes section with future date
+        mock_upcoming_section = MagicMock()
+        future_date = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+        mock_upcoming_section.evaluate.return_value = [
+            f"{future_date}: Upcoming deprecation"
+        ]
+        mock_page.query_selector.return_value = mock_upcoming_section
+        mock_page.query_selector_all.return_value = []
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+
+        assert result is not None
+        assert len(result.upcoming_changes) == 1
+        # days_until should be close to 30 (allowing for execution time)
+        assert 28 <= result.upcoming_changes[0].days_until <= 31
+
+
+class TestParseReleaseNoteTableData:
+    """Tests for table_data parsing in parse_release_note_page (Task 12)."""
+
+    def test_parses_feature_table_data(self):
+        """Test that table_data is populated for features with tables."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-01)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+
+        # Mock H4 feature heading
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: {
+            True: "h4",
+            False: """<p>Description</p>
+            <table>
+                <tr><td>Enabled</td><td>Account Settings</td></tr>
+                <tr><td>Default</td><td>Off</td></tr>
+                <tr><td>Permissions</td><td>Admin only</td></tr>
+            </table>"""
+        }["tagName" in js]
+        mock_h4.get_attribute.return_value = "new-gradebook-feature"
+        mock_h4.inner_text.return_value = "New Gradebook Feature"
+
+        mock_page.query_selector_all.return_value = [mock_h4]
+        mock_page.query_selector.return_value = None
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+
+        assert result is not None
+        assert len(result.features) == 1
+        assert result.features[0].table_data is not None
+        assert result.features[0].table_data.enable_location == "Account Settings"
+        assert result.features[0].table_data.default_status == "Off"
+        assert result.features[0].table_data.permissions == "Admin only"
+
+    def test_feature_without_table_has_none_table_data(self):
+        """Test that features without tables have table_data=None."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-01)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+
+        # Mock H4 feature heading without table
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: {
+            True: "h4",
+            False: "<p>Just a description without a table.</p>"
+        }["tagName" in js]
+        mock_h4.get_attribute.return_value = "simple-feature"
+        mock_h4.inner_text.return_value = "Simple Feature"
+
+        mock_page.query_selector_all.return_value = [mock_h4]
+        mock_page.query_selector.return_value = None
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+
+        assert result is not None
+        assert len(result.features) == 1
+        assert result.features[0].table_data is None
+
+    def test_feature_uses_get_next_sibling_content(self):
+        """Test that features use _get_next_sibling_content for full content extraction."""
+        from scrapers.instructure_community import InstructureScraper
+
+        scraper = InstructureScraper.__new__(InstructureScraper)
+        scraper.rate_limit_seconds = 0
+
+        mock_page = MagicMock()
+        mock_page.title.return_value = "Canvas Release Notes (2026-02-01)"
+        mock_page.goto = MagicMock()
+        mock_page.wait_for_load_state = MagicMock()
+
+        # Mock H4 feature heading with full sibling content
+        full_content = "<p>First paragraph</p><p>Second paragraph</p><table><tr><td>Enabled</td><td>Course</td></tr></table>"
+        mock_h4 = MagicMock()
+        mock_h4.evaluate.side_effect = lambda js: {
+            True: "h4",
+            False: full_content
+        }["tagName" in js]
+        mock_h4.get_attribute.return_value = "multi-content-feature"
+        mock_h4.inner_text.return_value = "Multi Content Feature"
+
+        mock_page.query_selector_all.return_value = [mock_h4]
+        mock_page.query_selector.return_value = None
+        scraper.page = mock_page
+
+        result = scraper.parse_release_note_page("http://example.com/release")
+
+        assert result is not None
+        assert len(result.features) == 1
+        # raw_content should contain the full content including multiple paragraphs
+        assert "First paragraph" in result.features[0].raw_content
+        assert "Second paragraph" in result.features[0].raw_content
+        # table_data should be parsed from the content
+        assert result.features[0].table_data is not None
+        assert result.features[0].table_data.enable_location == "Course"

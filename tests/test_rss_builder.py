@@ -302,6 +302,114 @@ class TestRSSBuilderFormatDescription:
         assert "<h3>Source</h3>" in description
         assert "<h3>Related Topics</h3>" in description
 
+    def test_format_description_uses_structured_when_present(self):
+        """Test that structured_description is used when available."""
+        from generator.rss_builder import RSSBuilder
+        from processor.content_processor import ContentItem
+
+        builder = RSSBuilder()
+        item = ContentItem(
+            source="community",
+            source_id="test",
+            title="Test",
+            url="https://example.com",
+            content="raw content",
+            structured_description="━━━ NEW FEATURES ━━━\n▸ Test Feature\nAvailability: Admin-enabled"
+        )
+        description = builder._format_description(item)
+        assert "━━━ NEW FEATURES ━━━" in description
+        assert "<h3>Summary</h3>" not in description
+
+    def test_format_description_fallback_to_legacy(self):
+        """Test fallback to HTML format when no structured_description."""
+        from generator.rss_builder import RSSBuilder
+        from processor.content_processor import ContentItem
+
+        builder = RSSBuilder()
+        item = ContentItem(
+            source="community",
+            source_id="test",
+            title="Test",
+            url="https://example.com",
+            content="raw content",
+            summary="A summary"
+        )
+        description = builder._format_description(item)
+        assert "<h3>Summary</h3>" in description
+
+
+class TestRSSBuilderTitleFormatting:
+    """Tests for title formatting with v1.3.0 badges."""
+
+    def test_format_title_v130_no_topic_prefix(self):
+        """v1.3.0 items should not get topic prefix - badge is enough."""
+        from generator.rss_builder import RSSBuilder
+        from processor.content_processor import ContentItem
+
+        builder = RSSBuilder()
+        item = ContentItem(
+            source="community",
+            source_id="release_123",
+            title="[NEW] Canvas Release Notes (2026-02-01)",
+            url="https://example.com",
+            content="raw",
+            content_type="release_note",
+            primary_topic="Gradebook"
+        )
+        item.has_v130_badge = True
+
+        title = builder._format_title_with_badge(item)
+        assert title == "[NEW] Canvas Release Notes (2026-02-01)"
+        assert "Gradebook -" not in title
+
+    def test_format_title_legacy_gets_topic_prefix(self):
+        """Legacy items should still get topic prefix."""
+        from generator.rss_builder import RSSBuilder
+        from processor.content_processor import ContentItem
+
+        builder = RSSBuilder()
+        item = ContentItem(
+            source="community",
+            source_id="community_123",
+            title="Some Community Post",
+            url="https://example.com",
+            content="raw",
+            primary_topic="Gradebook"
+        )
+        # Not a v1.3.0 item - no badge
+
+        title = builder._format_title_with_badge(item)
+        assert "Gradebook -" in title
+
+
+class TestRSSBuilderCDATAHandling:
+    """Tests for CDATA handling with structured content."""
+
+    def test_structured_content_unicode_in_cdata(self):
+        """Test that structured content with unicode renders correctly in RSS."""
+        from generator.rss_builder import RSSBuilder
+        from processor.content_processor import ContentItem
+
+        builder = RSSBuilder()
+        item = ContentItem(
+            source="community",
+            source_id="release_123",
+            title="[NEW] Canvas Release Notes",
+            url="https://example.com",
+            content="raw",
+            content_type="release_note",
+            structured_description="━━━ NEW FEATURES ━━━\n▸ Feature One\n⚠️ Warning\n⏸️ Delayed"
+        )
+        item.has_v130_badge = True
+        builder.add_item(item)
+
+        feed = builder.create_feed()
+        # Unicode section dividers should appear in feed
+        assert "━━━ NEW FEATURES ━━━" in feed
+        assert "▸ Feature One" in feed
+        assert "⚠️ Warning" in feed
+        assert "⏸️ Delayed" in feed
+
 
 class TestRSSBuilderAddItem:
     """Tests for add_item method."""
@@ -1181,3 +1289,185 @@ class TestBuildDeployNoteEntry:
         result = build_deploy_note_entry(page, is_update=False, new_changes=None)
         assert "⏸️" in result  # Delayed flag
         assert "2026-01-30" in result
+
+
+class TestBuildReleaseNoteEntrySummaryFallback:
+    """Tests for build_release_note_entry summary fallback (Task 14)."""
+
+    def test_uses_feature_summary_when_available(self):
+        """Test that feature.summary is used when present."""
+        from generator.rss_builder import build_release_note_entry
+        from scrapers.instructure_community import ReleaseNotePage, Feature
+        from datetime import datetime
+
+        feature = Feature(
+            category="Gradebook",
+            name="Status Icons",
+            anchor_id="status-icons",
+            added_date=None,
+            raw_content="<p>Raw HTML content here.</p>",
+            table_data=None
+        )
+        # Manually add summary attribute (as LLM would)
+        feature.summary = "Status icons improve accessibility for instructors."
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-01)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 1),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]}
+        )
+
+        result = build_release_note_entry(page, is_update=False, new_features=None)
+        assert "Status icons improve accessibility" in result
+        assert "[Summary placeholder]" not in result
+
+    def test_extracts_text_from_raw_content_when_no_summary(self):
+        """Test that text is extracted from raw_content when no summary."""
+        from generator.rss_builder import build_release_note_entry
+        from scrapers.instructure_community import ReleaseNotePage, Feature
+        from datetime import datetime
+
+        feature = Feature(
+            category="Assignments",
+            name="Assignment Enhancements",
+            anchor_id="assignment-enhancements",
+            added_date=None,
+            raw_content="<p>This feature adds new capabilities to assignments.</p><p>Students will benefit.</p>",
+            table_data=None
+        )
+        # No summary attribute
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-01)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 1),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]}
+        )
+
+        result = build_release_note_entry(page, is_update=False, new_features=None)
+        # Should contain extracted text, not placeholder
+        assert "This feature adds new capabilities" in result
+        assert "[Summary placeholder]" not in result
+
+    def test_truncates_long_raw_content(self):
+        """Test that long raw_content is truncated to ~200 chars."""
+        from generator.rss_builder import build_release_note_entry
+        from scrapers.instructure_community import ReleaseNotePage, Feature
+        from datetime import datetime
+
+        long_content = "<p>" + "This is a long sentence that keeps repeating. " * 20 + "</p>"
+        feature = Feature(
+            category="Quizzes",
+            name="Quiz Feature",
+            anchor_id="quiz-feature",
+            added_date=None,
+            raw_content=long_content,
+            table_data=None
+        )
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-01)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 1),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]}
+        )
+
+        result = build_release_note_entry(page, is_update=False, new_features=None)
+        # Should be truncated with ellipsis
+        assert "..." in result
+        # The content should be present but truncated
+        assert "This is a long sentence" in result
+
+    def test_fallback_when_no_raw_content(self):
+        """Test fallback message when no raw_content available."""
+        from generator.rss_builder import build_release_note_entry
+        from scrapers.instructure_community import ReleaseNotePage, Feature
+        from datetime import datetime
+
+        feature = Feature(
+            category="General",
+            name="Empty Feature",
+            anchor_id="empty-feature",
+            added_date=None,
+            raw_content="",  # Empty content
+            table_data=None
+        )
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-01)",
+            url="http://example.com/release",
+            release_date=datetime(2026, 2, 1),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]}
+        )
+
+        result = build_release_note_entry(page, is_update=False, new_features=None)
+        # Should have fallback message
+        assert "See link for details" in result
+        assert "[Summary placeholder]" not in result
+
+
+class TestExtractTextFromHtml:
+    """Tests for _extract_text_from_html helper function."""
+
+    def test_extracts_plain_text(self):
+        """Test basic HTML text extraction."""
+        from generator.rss_builder import _extract_text_from_html
+
+        result = _extract_text_from_html("<p>Hello World</p>")
+        assert result == "Hello World"
+
+    def test_handles_multiple_tags(self):
+        """Test extraction from multiple HTML tags."""
+        from generator.rss_builder import _extract_text_from_html
+
+        result = _extract_text_from_html("<p>First</p><p>Second</p>")
+        assert "First" in result
+        assert "Second" in result
+
+    def test_strips_table_content(self):
+        """Test extraction includes table text."""
+        from generator.rss_builder import _extract_text_from_html
+
+        html = "<p>Description</p><table><tr><td>Key</td><td>Value</td></tr></table>"
+        result = _extract_text_from_html(html)
+        assert "Description" in result
+        assert "Key" in result
+        assert "Value" in result
+
+    def test_truncates_at_word_boundary(self):
+        """Test truncation happens at word boundary."""
+        from generator.rss_builder import _extract_text_from_html
+
+        long_text = "<p>" + "word " * 100 + "</p>"  # Many words
+        result = _extract_text_from_html(long_text, max_length=50)
+        # Should be truncated with ellipsis and not cut mid-word
+        assert len(result) <= 60  # Allow for ellipsis
+        assert "..." in result
+        # Should end at a word boundary (before the "...")
+        text_before_ellipsis = result.replace("...", "").strip()
+        assert text_before_ellipsis.endswith("word")
+
+    def test_returns_empty_for_empty_input(self):
+        """Test returns empty string for empty input."""
+        from generator.rss_builder import _extract_text_from_html
+
+        assert _extract_text_from_html("") == ""
+        assert _extract_text_from_html(None) == ""
+
+    def test_handles_nested_html(self):
+        """Test extraction from nested HTML."""
+        from generator.rss_builder import _extract_text_from_html
+
+        html = "<div><p><strong>Bold</strong> and <em>italic</em></p></div>"
+        result = _extract_text_from_html(html)
+        assert "Bold" in result
+        assert "italic" in result
