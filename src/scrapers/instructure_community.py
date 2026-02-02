@@ -976,8 +976,12 @@ class InstructureScraper:
             all_notes.extend(release_notes)
             logger.info(f"Scraped {len(release_notes)} release notes")
 
-            # 2. Click Deploys tab and scrape deploy notes
+            # 2. Navigate back to category page (scraping navigates to each post for content)
             logger.info("Switching to Deploy Notes view...")
+            self.page.goto(self.RELEASE_NOTES_URL, timeout=30000)
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+            self._dismiss_cookie_consent()
+            self.page.wait_for_timeout(2000)
             if self._click_deploys_tab():
                 # Wait for the deploy notes to load
                 self.page.wait_for_load_state("networkidle", timeout=15000)
