@@ -964,10 +964,10 @@ class InstructureScraper:
         try:
             # 1. Navigate to release notes page and scrape release notes (default view)
             logger.info(f"Scraping release notes from {self.RELEASE_NOTES_URL}")
-            self.page.goto(self.RELEASE_NOTES_URL, timeout=30000)
+            self.page.goto(self.RELEASE_NOTES_URL, timeout=60000)
 
-            # Wait for page to load
-            self.page.wait_for_load_state("networkidle", timeout=15000)
+            # Wait for page to load (increased timeout for slow networks)
+            self.page.wait_for_load_state("networkidle", timeout=45000)
             self._dismiss_cookie_consent()
             self.page.wait_for_timeout(2000)
 
@@ -978,13 +978,13 @@ class InstructureScraper:
 
             # 2. Navigate back to category page (scraping navigates to each post for content)
             logger.info("Switching to Deploy Notes view...")
-            self.page.goto(self.RELEASE_NOTES_URL, timeout=30000)
-            self.page.wait_for_load_state("networkidle", timeout=15000)
+            self.page.goto(self.RELEASE_NOTES_URL, timeout=60000)
+            self.page.wait_for_load_state("networkidle", timeout=45000)
             self._dismiss_cookie_consent()
             self.page.wait_for_timeout(2000)
             if self._click_deploys_tab():
                 # Wait for the deploy notes to load
-                self.page.wait_for_load_state("networkidle", timeout=15000)
+                self.page.wait_for_load_state("networkidle", timeout=45000)
                 self.page.wait_for_timeout(2000)
 
                 deploy_notes = self._scrape_notes_from_current_view(hours, "deploy_note", skip_date_filter)

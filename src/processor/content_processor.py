@@ -74,6 +74,11 @@ class ContentItem:
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
     has_v130_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
     structured_description: str = ""  # v1.3.0+ formatted description (preserved through pipeline)
+    # v1.3.0 discussion metadata (for building description after LLM enrichment)
+    is_new_post: bool = False  # True if new post, False if update
+    previous_comment_count: int = 0  # Comment count before this update
+    new_comment_count: int = 0  # Number of new comments since last check
+    latest_comment_preview: str = ""  # Preview of the latest comment (for updates)
 
     def __post_init__(self):
         if self.topics is None:

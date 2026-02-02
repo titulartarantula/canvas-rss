@@ -163,30 +163,23 @@ def process_discussion_posts(
         # Build title with [NEW]/[UPDATE] badge
         title = build_discussion_title(post.post_type, post.title, update.is_new)
 
-        # Build description with comment info
-        description = format_discussion_description(
-            post_type=post.post_type,
-            is_new=update.is_new,
-            content=post.content,
-            comment_count=post.comments,
-            previous_comment_count=update.previous_comment_count,
-            new_comment_count=update.new_comment_count,
-            latest_comment=update.latest_comment
-        )
-
-        # Create ContentItem with v1.3.0 badge flag
+        # Create ContentItem with v1.3.0 metadata (description built after LLM enrichment)
         item = ContentItem(
             source="community",
             source_id=post.source_id,
             title=title,
             url=post.url,
             content=post.content,  # Keep original for LLM enrichment
-            structured_description=description,  # Store formatted version for RSS
             content_type=post.post_type,
             published_date=post.published_date,
             engagement_score=post.likes + post.comments,
             comment_count=post.comments,
             has_v130_badge=True,
+            # v1.3.0 metadata for building description after enrichment
+            is_new_post=update.is_new,
+            previous_comment_count=update.previous_comment_count,
+            new_comment_count=update.new_comment_count,
+            latest_comment_preview=update.latest_comment or "",
         )
         items.append(item)
 
@@ -370,11 +363,16 @@ def main():
         logger.info("Scraping Instructure Community...")
         with InstructureScraper() as scraper:
             # 1a. Discussion posts (Q&A + Blog) - v1.3.0 tracking
+            # Process Q&A and Blog separately to apply 5-item limit to each
             questions = scraper.scrape_question_forum(hours=24)
+            question_items = process_discussion_posts(questions, db, scraper)
+            all_items.extend(question_items)
+            logger.info(f"  -> {len(question_items)} Q&A items")
+
             blogs = scraper.scrape_blog(hours=24)
-            discussion_items = process_discussion_posts(questions + blogs, db, scraper)
-            all_items.extend(discussion_items)
-            logger.info(f"  -> {len(discussion_items)} discussion items (Q&A + Blog)")
+            blog_items = process_discussion_posts(blogs, db, scraper)
+            all_items.extend(blog_items)
+            logger.info(f"  -> {len(blog_items)} blog items")
 
             # 1b. Release notes - v1.3.0 feature tracking with per-feature summaries
             all_notes = scraper.scrape_release_notes(hours=24, skip_date_filter=is_first_run)

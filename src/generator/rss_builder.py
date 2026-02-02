@@ -451,8 +451,8 @@ class RSSBuilder:
     def _format_description(self, item: ContentItem) -> str:
         """Format item description with summary, sentiment, topics, and source.
 
-        Uses structured_description if available (v1.3.0+ items),
-        otherwise falls back to legacy HTML format.
+        For v1.3.0+ discussion items (has_v130_badge=True), builds description
+        from LLM summary + metadata. Otherwise falls back to legacy HTML format.
 
         Args:
             item: ContentItem to format
@@ -460,7 +460,13 @@ class RSSBuilder:
         Returns:
             HTML-formatted description string for CDATA
         """
-        # v1.3.0+ items have pre-formatted structured descriptions
+        from html import escape
+
+        # v1.3.0+ discussion items: build description from metadata + LLM summary
+        if item.has_v130_badge and item.content_type in ("question", "blog"):
+            return self._format_v130_discussion_description(item)
+
+        # v1.3.0+ items with pre-formatted structured descriptions (release/deploy notes)
         if item.structured_description:
             return item.structured_description
 
@@ -470,23 +476,70 @@ class RSSBuilder:
         # Summary section
         summary = item.summary if item.summary else item.content[:500] if item.content else ""
         if summary:
-            parts.append(f"<h3>Summary</h3>\n<p>{summary}</p>")
+            parts.append(f"<h3>Summary</h3>\n<p>{escape(summary)}</p>")
 
         # Sentiment section
         if item.sentiment:
-            parts.append(f"<h3>Sentiment</h3>\n<p>{item.sentiment}</p>")
+            parts.append(f"<h3>Sentiment</h3>\n<p>{escape(item.sentiment)}</p>")
 
         # Source section - use content_type for accurate labeling
         content_type = getattr(item, 'content_type', '') or ''
         source_name = self.CONTENT_TYPE_NAMES.get(content_type, item.source.title())
-        parts.append(f"<h3>Source</h3>\n<p>{source_name}</p>")
+        parts.append(f"<h3>Source</h3>\n<p>{escape(source_name)}</p>")
 
         # Topics section (secondary topics)
         if item.topics:
             topic_tags = " ".join(f"#{topic}" for topic in item.topics)
-            parts.append(f"<h3>Related Topics</h3>\n<p>Tags: {topic_tags}</p>")
+            parts.append(f"<h3>Related Topics</h3>\n<p>Tags: {escape(topic_tags)}</p>")
 
         return "\n\n".join(parts) if parts else ""
+
+    def _format_v130_discussion_description(self, item: ContentItem) -> str:
+        """Format description for v1.3.0 discussion posts using LLM summary.
+
+        Args:
+            item: ContentItem with v1.3.0 metadata
+
+        Returns:
+            HTML-formatted description string
+        """
+        from html import escape
+
+        key = f"{item.content_type}_{'new' if item.is_new_post else 'update'}"
+        header = SECTION_HEADERS.get(key, "UPDATE")
+
+        parts = [f"<h3>{escape(header)}</h3>"]
+
+        # Use LLM summary if available, otherwise truncate raw content
+        if item.summary:
+            summary_text = item.summary
+        else:
+            summary_text = item.content[:300] if item.content else ""
+            if len(item.content or "") > 300:
+                summary_text = summary_text.rsplit(' ', 1)[0] + "..."
+
+        if item.is_new_post:
+            parts.append(f"<p>{escape(summary_text)}</p>")
+            parts.append(f"<p><em>Posted: {item.comment_count} comments</em></p>")
+        else:
+            parts.append(f"<p><strong>+{item.new_comment_count} new comments</strong> ({item.comment_count} total)</p>")
+
+            if item.latest_comment_preview:
+                preview = item.latest_comment_preview[:300]
+                if len(item.latest_comment_preview) > 300:
+                    preview = preview.rsplit(' ', 1)[0] + "..."
+                parts.append("<p><strong>Latest reply:</strong></p>")
+                parts.append(f'<blockquote>{escape(preview)}</blockquote>')
+
+            parts.append("<hr/>")
+            # For updates, show summary of original post
+            parts.append(f"<p><em>Summary:</em> {escape(summary_text)}</p>")
+
+        # Add sentiment if available
+        if item.sentiment and item.sentiment != "neutral":
+            parts.append(f"<p><em>Sentiment: {escape(item.sentiment)}</em></p>")
+
+        return "\n".join(parts)
 
     def add_item(self, item: ContentItem) -> None:
         """Add individual item to feed.

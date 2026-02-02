@@ -3,6 +3,23 @@ services:
     build: .
     container_name: canvas-rss-aggregator
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     environment:
       - TZ=${TZ:-America/Toronto}
       - CRON_SCHEDULE=${CRON_SCHEDULE:-0 6 * * *}
@@ -20,11 +37,31 @@ services:
       - ./config:/app/config:ro
     networks:
       - canvas-rss-net
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /app/output/feed.xml || exit 1"]
+      interval: 1h
+      timeout: 10s
+      retries: 3
+      start_period: 10m
 
   feed-server:
     image: python:3.11-alpine
     container_name: canvas-rss-server
     restart: unless-stopped
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
     command: python -m http.server 8080 --directory /app/output
     ports:
       - "${FEED_HOST:-127.0.0.1}:${FEED_PORT:-8986}:8080"
@@ -34,6 +71,12 @@ services:
       - canvas-rss-net
     depends_on:
       - canvas-rss-aggregator
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
   canvas-rss-net:

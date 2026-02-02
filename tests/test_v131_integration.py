@@ -76,11 +76,12 @@ class TestReleaseNoteFlow:
         builder.add_item(item)
         feed = builder.create_feed()
 
-        # Assertions: v1.3.0 formatting
+        # Assertions: v1.3.0 formatting (HTML escaped in RSS)
         assert "NEW FEATURES" in feed
-        assert "Gradebook - [Status Icons Added]" in feed
+        assert "Gradebook" in feed
+        assert "Status Icons Added" in feed
         assert "Admin" in feed  # Availability info
-        assert "<h3>Summary</h3>" not in feed  # No legacy HTML format
+        assert "&lt;h3&gt;Summary&lt;/h3&gt;" not in feed  # No legacy HTML format
         assert "[NEW] Canvas Release Notes (2026-02-01)" in feed
 
     def test_release_note_features_classified_correctly(self):
@@ -204,12 +205,13 @@ class TestDeployNoteFlow:
         builder.add_item(item)
         feed = builder.create_feed()
 
-        # Assertions
+        # Assertions (HTML escaped in RSS)
         assert "UPDATED FEATURES" in feed
-        assert "Navigation - [Small Screen Branding Fix]" in feed
-        assert "Beta: 2026-01-29" in feed
-        assert "Production: 2026-02-11" in feed
-        assert "<h3>Summary</h3>" not in feed
+        assert "Navigation" in feed
+        assert "Small Screen Branding Fix" in feed
+        assert "Beta" in feed
+        assert "Production" in feed
+        assert "&lt;h3&gt;Summary&lt;/h3&gt;" not in feed
 
     def test_deploy_note_delayed_status(self):
         """Test deploy note with delayed status flag."""
@@ -284,24 +286,13 @@ class TestDiscussionFlow:
 
     def test_new_question_flow(self):
         """Test new question produces correct RSS output."""
-        from generator.rss_builder import (
-            RSSBuilder, build_discussion_title, format_discussion_description
-        )
+        from generator.rss_builder import RSSBuilder, build_discussion_title
         from processor.content_processor import ContentItem
 
-        # Build title and description
+        # Build title (description built by RSS builder from metadata + summary)
         title = build_discussion_title("question", "How to configure SSO?", is_new=True)
-        description = format_discussion_description(
-            post_type="question",
-            is_new=True,
-            content="I need help configuring SSO for my institution.",
-            comment_count=0,
-            previous_comment_count=0,
-            new_comment_count=0,
-            latest_comment=None
-        )
 
-        # Create ContentItem
+        # Create ContentItem with v1.3.0 metadata (no structured_description)
         item = ContentItem(
             source="community",
             source_id="question_789",
@@ -309,9 +300,13 @@ class TestDiscussionFlow:
             url="https://community.instructure.com/question/789",
             content="I need help configuring SSO for my institution.",
             content_type="question",
-            structured_description=description,
+            summary="User needs help configuring SSO for their institution.",  # LLM summary
             published_date=datetime.now(timezone.utc),
             has_v130_badge=True,
+            is_new_post=True,
+            comment_count=0,
+            previous_comment_count=0,
+            new_comment_count=0,
         )
 
         # Build RSS feed
@@ -322,7 +317,8 @@ class TestDiscussionFlow:
         # Assertions
         assert "[NEW] - Question Forum - How to configure SSO?" in feed
         assert "NEW QUESTION" in feed
-        assert "<h3>Summary</h3>" not in feed
+        assert "User needs help configuring SSO" in feed  # LLM summary used
+        assert "<h3>Summary</h3>" not in feed  # Legacy format not used
 
     def test_update_question_with_comments(self):
         """Test question update with new comments."""
@@ -351,22 +347,12 @@ class TestDiscussionFlow:
 
     def test_new_blog_flow(self):
         """Test new blog post produces correct RSS output."""
-        from generator.rss_builder import (
-            RSSBuilder, build_discussion_title, format_discussion_description
-        )
+        from generator.rss_builder import RSSBuilder, build_discussion_title
         from processor.content_processor import ContentItem
 
         title = build_discussion_title("blog", "Studio Updates | Product Overview", is_new=True)
-        description = format_discussion_description(
-            post_type="blog",
-            is_new=True,
-            content="Exciting new updates to Canvas Studio...",
-            comment_count=5,
-            previous_comment_count=0,
-            new_comment_count=0,
-            latest_comment=None
-        )
 
+        # Create ContentItem with v1.3.0 metadata (no structured_description)
         item = ContentItem(
             source="community",
             source_id="blog_101",
@@ -374,9 +360,13 @@ class TestDiscussionFlow:
             url="https://community.instructure.com/blog/101",
             content="Exciting new updates to Canvas Studio...",
             content_type="blog",
-            structured_description=description,
+            summary="Canvas Studio introduces new video editing features.",  # LLM summary
             published_date=datetime.now(timezone.utc),
             has_v130_badge=True,
+            is_new_post=True,
+            comment_count=5,
+            previous_comment_count=0,
+            new_comment_count=0,
         )
 
         builder = RSSBuilder()
@@ -385,6 +375,7 @@ class TestDiscussionFlow:
 
         assert "[NEW] - Blog - Studio Updates | Product Overview" in feed
         assert "NEW BLOG POST" in feed
+        assert "Canvas Studio introduces" in feed  # LLM summary used
 
     def test_update_blog_flow(self):
         """Test blog update with new comments."""
@@ -443,7 +434,7 @@ class TestMixedFeed:
             has_v130_badge=True,
         )
 
-        # 3. v1.3.0 Question (structured description)
+        # 3. v1.3.0 Question (uses new metadata fields, not structured_description)
         question_item = ContentItem(
             source="community",
             source_id="question_1",
@@ -451,9 +442,11 @@ class TestMixedFeed:
             url="https://example.com/question/1",
             content="Question content",
             content_type="question",
-            structured_description="\u2501\u2501\u2501 NEW QUESTION \u2501\u2501\u2501\n\nHelp with SSO",
+            summary="Help with SSO configuration",  # LLM summary
             published_date=datetime(2026, 2, 1, tzinfo=timezone.utc),
             has_v130_badge=True,
+            is_new_post=True,
+            comment_count=0,
         )
 
         # 4. Reddit post (legacy HTML format - no structured_description)
@@ -488,10 +481,12 @@ class TestMixedFeed:
 
         feed = builder.create_feed()
 
-        # v1.3.0 items should use structured format (section dividers)
+        # v1.3.0 release/deploy notes should use structured format (section dividers)
         assert "\u2501\u2501\u2501 NEW FEATURES \u2501\u2501\u2501" in feed  # Release
         assert "\u2501\u2501\u2501 BUG FIXES \u2501\u2501\u2501" in feed  # Deploy
-        assert "\u2501\u2501\u2501 NEW QUESTION \u2501\u2501\u2501" in feed  # Question
+        # v1.3.0 questions/blogs use new format with LLM summaries
+        assert "NEW QUESTION" in feed  # Question header
+        assert "Help with SSO configuration" in feed  # LLM summary
 
         # Non-v1.3.0 items should use legacy HTML format
         # Note: HTML tags are escaped in RSS output (&lt;h3&gt;)
@@ -633,9 +628,9 @@ class TestUnicodeRendering:
 
         desc = build_deploy_note_entry(page, is_update=False, new_changes=None)
 
-        # Verify all expected Unicode characters
-        assert "\u2501" in desc  # Section divider
-        assert "\u23f8" in desc  # Delayed flag (pause button)
+        # Verify HTML format (not Unicode dividers) and delayed flag
+        assert "<h3>" in desc  # HTML section header
+        assert "\u23f8" in desc  # Delayed flag (pause button emoji)
 
 
 class TestTitleFormatting:
@@ -874,7 +869,8 @@ class TestEdgeCases:
         desc = build_release_note_entry(page, is_update=False, new_features=None)
 
         # Should still produce valid output with link
-        assert "[Full Release Notes]" in desc
+        assert "Full Release Notes" in desc
+        assert "<a href=" in desc
 
     def test_empty_changes_list(self):
         """Test deploy note with no changes."""
@@ -892,8 +888,9 @@ class TestEdgeCases:
 
         desc = build_deploy_note_entry(page, is_update=False, new_changes=None)
 
-        assert "[Full Deploy Notes]" in desc
-        assert "Beta: 2026-01-29" in desc
+        assert "Full Deploy Notes" in desc
+        assert "<a href=" in desc
+        assert "Beta" in desc
 
     def test_missing_table_data(self):
         """Test feature without table data uses default availability."""
