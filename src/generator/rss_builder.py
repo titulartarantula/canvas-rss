@@ -61,36 +61,39 @@ def format_discussion_description(
     new_comment_count: int,
     latest_comment: Optional[str]
 ) -> str:
-    """Format RSS description for a discussion post."""
+    """Format RSS description for a discussion post.
+
+    Returns:
+        HTML-formatted description string.
+    """
+    from html import escape
+
     key = f"{post_type}_{'new' if is_new else 'update'}"
     header = SECTION_HEADERS.get(key, "UPDATE")
 
-    parts = [f"━━━ {header} ━━━", ""]
+    parts = [f"<h3>{escape(header)}</h3>"]
 
     if is_new:
         truncated = content[:300] if len(content) > 300 else content
         if len(content) > 300:
             truncated = truncated.rsplit(' ', 1)[0] + "..."
-        parts.append(truncated)
-        parts.append("")
-        parts.append(f"Posted: {comment_count} comments")
+        parts.append(f"<p>{escape(truncated)}</p>")
+        parts.append(f"<p><em>Posted: {comment_count} comments</em></p>")
     else:
-        parts.append(f"+{new_comment_count} new comments ({comment_count} total)")
-        parts.append("")
+        parts.append(f"<p><strong>+{new_comment_count} new comments</strong> ({comment_count} total)</p>")
 
         if latest_comment:
             preview = latest_comment[:300]
             if len(latest_comment) > 300:
                 preview = preview.rsplit(' ', 1)[0] + "..."
-            parts.append("▸ Latest reply:")
-            parts.append(f'"{preview}"')
-            parts.append("")
+            parts.append("<p><strong>Latest reply:</strong></p>")
+            parts.append(f'<blockquote>{escape(preview)}</blockquote>')
 
-        parts.append("───")
+        parts.append("<hr/>")
         truncated = content[:200] if len(content) > 200 else content
         if len(content) > 200:
             truncated = truncated.rsplit(' ', 1)[0] + "..."
-        parts.append(f"Original: {truncated}")
+        parts.append(f"<p><em>Original:</em> {escape(truncated)}</p>")
 
     return "\n".join(parts)
 
@@ -139,9 +142,11 @@ def build_release_note_entry(
         new_features: List of anchor_ids for new features (updates only).
 
     Returns:
-        Formatted description string.
+        HTML-formatted description string.
     """
-    parts = [f"[Full Release Notes]({page.url})", ""]
+    from html import escape
+
+    parts = [f'<p><a href="{escape(page.url)}">Full Release Notes</a></p>']
 
     # Filter features if update
     features_to_show = page.features
@@ -155,30 +160,37 @@ def build_release_note_entry(
         if not section_features:
             continue
 
-        parts.append(f"━━━ {section_name.upper()} ━━━")
-        parts.append("")
+        parts.append(f"<h3>{escape(section_name.upper())}</h3>")
+        parts.append("<ul>")
 
         for feature in section_features:
             anchor_link = f"{page.url}#{feature.anchor_id}"
             added_tag = ""
             if feature.added_date:
-                added_tag = f" [Added {feature.added_date.strftime('%Y-%m-%d')}]"
+                added_tag = f' <em>[Added {feature.added_date.strftime("%Y-%m-%d")}]</em>'
 
-            parts.append(f"▸ {feature.category} - [{feature.name}]({anchor_link}){added_tag}")
+            # Build feature list item
+            feature_html = f'<li><strong>{escape(feature.category)}</strong> - '
+            feature_html += f'<a href="{escape(anchor_link)}">{escape(feature.name)}</a>{added_tag}'
 
             # Task 14: Use feature.summary if available, otherwise extract text from raw_content
             if hasattr(feature, 'summary') and feature.summary:
-                parts.append(feature.summary)
+                feature_html += f'<br/>{escape(feature.summary)}'
             else:
                 # Fallback: extract and truncate text from raw HTML content
                 summary_text = _extract_text_from_html(feature.raw_content)
                 if summary_text:
-                    parts.append(summary_text)
+                    feature_html += f'<br/>{escape(summary_text)}'
                 else:
-                    parts.append("See link for details.")
+                    feature_html += '<br/>See link for details.'
 
-            parts.append(f"Availability: {format_availability(feature.table_data)}")
-            parts.append("")
+            availability = format_availability(feature.table_data)
+            feature_html += f'<br/><small><em>Availability: {escape(availability)}</em></small>'
+            feature_html += '</li>'
+
+            parts.append(feature_html)
+
+        parts.append("</ul>")
 
     return "\n".join(parts)
 
@@ -202,13 +214,14 @@ def build_deploy_note_entry(
         new_changes: List of anchor_ids for new changes (updates only).
 
     Returns:
-        Formatted description string.
+        HTML-formatted description string.
     """
-    parts = [f"[Full Deploy Notes]({page.url})", ""]
+    from html import escape
+
+    parts = [f'<p><a href="{escape(page.url)}">Full Deploy Notes</a></p>']
 
     if page.beta_date:
-        parts.append(f"Beta: {page.beta_date.strftime('%Y-%m-%d')} | Production: {page.deploy_date.strftime('%Y-%m-%d')}")
-        parts.append("")
+        parts.append(f'<p><strong>Beta:</strong> {page.beta_date.strftime("%Y-%m-%d")} | <strong>Production:</strong> {page.deploy_date.strftime("%Y-%m-%d")}</p>')
 
     for section_name, section_changes in page.sections.items():
         if is_update and new_changes:
@@ -216,32 +229,38 @@ def build_deploy_note_entry(
         if not section_changes:
             continue
 
-        parts.append(f"━━━ {section_name.upper()} ━━━")
-        parts.append("")
+        parts.append(f"<h3>{escape(section_name.upper())}</h3>")
+        parts.append("<ul>")
 
         for change in section_changes:
             anchor_link = f"{page.url}#{change.anchor_id}"
-            status_flag = STATUS_FLAGS.get(change.status, "▸")
+            status_icon = "⏸️ " if change.status == "delayed" else ""
 
-            parts.append(f"{status_flag} {change.category} - [{change.name}]({anchor_link})")
+            # Build change list item
+            change_html = f'<li>{status_icon}<strong>{escape(change.category)}</strong> - '
+            change_html += f'<a href="{escape(anchor_link)}">{escape(change.name)}</a>'
 
             # Use change.summary if available, otherwise extract text from raw_content
             if hasattr(change, 'summary') and change.summary:
-                parts.append(change.summary)
+                change_html += f'<br/>{escape(change.summary)}'
             else:
                 # Fallback: extract and truncate text from raw HTML content
                 summary_text = _extract_text_from_html(change.raw_content)
                 if summary_text:
-                    parts.append(summary_text)
+                    change_html += f'<br/>{escape(summary_text)}'
                 else:
-                    parts.append("See link for details.")
+                    change_html += '<br/>See link for details.'
 
-            parts.append(f"Availability: {format_availability(change.table_data)}")
+            availability = format_availability(change.table_data)
+            change_html += f'<br/><small><em>Availability: {escape(availability)}</em></small>'
 
             if change.status == "delayed" and change.status_date:
-                parts.append(f"Delayed: {change.status_date.strftime('%Y-%m-%d')}")
+                change_html += f'<br/><small><strong>Delayed:</strong> {change.status_date.strftime("%Y-%m-%d")}</small>'
 
-            parts.append("")
+            change_html += '</li>'
+            parts.append(change_html)
+
+        parts.append("</ul>")
 
     return "\n".join(parts)
 

@@ -349,7 +349,10 @@ Keep it concise and jargon-free."""
             return ""
 
         if self.client is None:
-            return feature.raw_content[:300] if len(feature.raw_content) > 300 else feature.raw_content
+            # Fallback: strip HTML and return plain text
+            from bs4 import BeautifulSoup
+            text = BeautifulSoup(feature.raw_content, 'html.parser').get_text(separator=' ', strip=True)
+            return text[:300] if len(text) > 300 else text
 
         try:
             prompt = self.FEATURE_SUMMARIZATION_PROMPT.format(
@@ -380,7 +383,10 @@ Keep it concise and jargon-free."""
             return ""
 
         if self.client is None:
-            return change.raw_content[:300] if len(change.raw_content) > 300 else change.raw_content
+            # Fallback: strip HTML and return plain text
+            from bs4 import BeautifulSoup
+            text = BeautifulSoup(change.raw_content, 'html.parser').get_text(separator=' ', strip=True)
+            return text[:300] if len(text) > 300 else text
 
         try:
             prompt = self.DEPLOY_CHANGE_PROMPT.format(
