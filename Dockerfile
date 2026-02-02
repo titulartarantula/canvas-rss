@@ -1,13 +1,18 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright/Chromium, gosu, and cron
+# Install system dependencies for Playwright/Chromium and supercronic
+# Using supercronic instead of cron - runs as non-root user
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
     ca-certificates \
     gosu \
-    cron \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && SUPERCRONIC_URL="https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64" \
+    && SUPERCRONIC_SHA1SUM="cd48d45c4b10f3f0bfdd3a57d054cd05ac96812b" \
+    && wget -q "$SUPERCRONIC_URL" -O /usr/local/bin/supercronic \
+    && echo "${SUPERCRONIC_SHA1SUM}  /usr/local/bin/supercronic" | sha1sum -c - \
+    && chmod +x /usr/local/bin/supercronic
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -38,6 +43,7 @@ USER root
 # Copy application code
 COPY src/ ./src/
 COPY config/ ./config/
+COPY VERSION .
 RUN chown -R appuser:appuser /app
 
 # Copy and set up entrypoint (handles volume permissions and cron)
