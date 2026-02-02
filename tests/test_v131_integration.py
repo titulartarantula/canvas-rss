@@ -68,7 +68,7 @@ class TestReleaseNoteFlow:
             content_type="release_note",
             structured_description=description,
             published_date=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         # Build RSS feed
@@ -197,7 +197,7 @@ class TestDeployNoteFlow:
             content_type="deploy_note",
             structured_description=description,
             published_date=datetime(2026, 2, 11, tzinfo=timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         # Build RSS feed
@@ -302,7 +302,7 @@ class TestDiscussionFlow:
             content_type="question",
             summary="User needs help configuring SSO for their institution.",  # LLM summary
             published_date=datetime.now(timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
             is_new_post=True,
             comment_count=0,
             previous_comment_count=0,
@@ -362,7 +362,7 @@ class TestDiscussionFlow:
             content_type="blog",
             summary="Canvas Studio introduces new video editing features.",  # LLM summary
             published_date=datetime.now(timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
             is_new_post=True,
             comment_count=5,
             previous_comment_count=0,
@@ -418,7 +418,7 @@ class TestMixedFeed:
             content_type="release_note",
             structured_description="\u2501\u2501\u2501 NEW FEATURES \u2501\u2501\u2501\n\u25b8 Gradebook - [Feature]\nSummary text",
             published_date=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         # 2. v1.3.0 Deploy Note (structured description)
@@ -431,7 +431,7 @@ class TestMixedFeed:
             content_type="deploy_note",
             structured_description="\u2501\u2501\u2501 BUG FIXES \u2501\u2501\u2501\n\u25b8 Navigation - [Fix]",
             published_date=datetime(2026, 2, 11, tzinfo=timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         # 3. v1.3.0 Question (uses new metadata fields, not structured_description)
@@ -444,7 +444,7 @@ class TestMixedFeed:
             content_type="question",
             summary="Help with SSO configuration",  # LLM summary
             published_date=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            has_v130_badge=True,
+            has_tracking_badge=True,
             is_new_post=True,
             comment_count=0,
         )
@@ -565,7 +565,7 @@ class TestUnicodeRendering:
             url="https://example.com/1",
             content="Raw",
             structured_description="\u2501\u2501\u2501 NEW FEATURES \u2501\u2501\u2501\n\u25b8 Feature One\n\u2500\u2500\u2500",
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         builder = RSSBuilder()
@@ -589,7 +589,7 @@ class TestUnicodeRendering:
             url="https://example.com/1",
             content="Raw",
             structured_description="\u26a0\ufe0f Warning message\n\u23f8\ufe0f Delayed status",
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         builder = RSSBuilder()
@@ -649,7 +649,7 @@ class TestTitleFormatting:
             content="Content",
             content_type="release_note",
             primary_topic="Gradebook",
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
 
         builder = RSSBuilder()
@@ -797,7 +797,7 @@ class TestRSSOutputValidation:
             url="https://example.com/1",
             content="Content",
             structured_description="\u2501\u2501\u2501 SECTION \u2501\u2501\u2501",
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
         builder.add_item(item)
 
@@ -838,7 +838,7 @@ class TestRSSOutputValidation:
             url="https://example.com/1",
             content="Content with <special> chars & entities",
             structured_description="\u2501 Section \u2501\n\u25b8 Item with <angle brackets> & ampersand",
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
         builder.add_item(item)
 

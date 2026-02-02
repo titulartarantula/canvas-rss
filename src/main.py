@@ -174,7 +174,7 @@ def process_discussion_posts(
             published_date=post.published_date,
             engagement_score=post.likes + post.comments,
             comment_count=post.comments,
-            has_v130_badge=True,
+            has_tracking_badge=True,
             # v1.3.0 metadata for building description after enrichment
             is_new_post=update.is_new,
             previous_comment_count=update.previous_comment_count,
@@ -263,7 +263,7 @@ def process_release_notes(
             published_date=note.published_date,
             engagement_score=note.likes + note.comments,
             is_latest=note.is_latest,
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
         items.append(item)
 
@@ -347,7 +347,7 @@ def process_deploy_notes(
             published_date=note.published_date,
             engagement_score=note.likes + note.comments,
             is_latest=note.is_latest,
-            has_v130_badge=True,
+            has_tracking_badge=True,
         )
         items.append(item)
 
@@ -462,7 +462,7 @@ def main():
         stored_count = 0
         for item in enriched_items:
             # Only store Reddit/Status items in content_items table
-            if not getattr(item, 'has_v130_badge', False):
+            if not getattr(item, 'has_tracking_badge', False):
                 item_id = db.insert_item(item)
                 if item_id > 0:
                     stored_count += 1

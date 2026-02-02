@@ -356,7 +356,7 @@ class TestRSSBuilderTitleFormatting:
             content_type="release_note",
             primary_topic="Gradebook"
         )
-        item.has_v130_badge = True
+        item.has_tracking_badge = True
 
         title = builder._format_title_with_badge(item)
         assert title == "[NEW] Canvas Release Notes (2026-02-01)"
@@ -400,7 +400,7 @@ class TestRSSBuilderCDATAHandling:
             content_type="release_note",
             structured_description="━━━ NEW FEATURES ━━━\n▸ Feature One\n⚠️ Warning\n⏸️ Delayed"
         )
-        item.has_v130_badge = True
+        item.has_tracking_badge = True
         builder.add_item(item)
 
         feed = builder.create_feed()

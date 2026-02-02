@@ -72,7 +72,7 @@ class ContentItem:
     engagement_score: int = 0
     comment_count: int = 0  # Track comments for detecting new activity
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
-    has_v130_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
+    has_tracking_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
     structured_description: str = ""  # v1.3.0+ formatted description (preserved through pipeline)
     # v1.3.0 discussion metadata (for building description after LLM enrichment)
     is_new_post: bool = False  # True if new post, False if update
@@ -613,16 +613,17 @@ Keep it concise and jargon-free."""
                 item.title = self.redact_pii(item.title)
 
                 # Step 3: Generate summary (with retry for rate limits)
-                # Use content-type-specific prompt for summarization
-                item_content_type = item.content_type or "default"
-                item.summary = self._call_with_retry(
-                    lambda ct=item_content_type: self.summarize_with_llm(redacted_content, ct),
-                    fallback=""
-                )
+                # Skip for release_note/deploy_note - they have per-feature/per-change summaries
+                if item.content_type not in {"release_note", "deploy_note"}:
+                    item_content_type = item.content_type or "default"
+                    item.summary = self._call_with_retry(
+                        lambda ct=item_content_type: self.summarize_with_llm(redacted_content, ct),
+                        fallback=""
+                    )
 
-                # Rate limiting between API calls (2s to avoid 429s)
-                if self.client is not None:
-                    time.sleep(2)
+                    # Rate limiting between API calls (2s to avoid 429s)
+                    if self.client is not None:
+                        time.sleep(2)
 
                 # Step 4: Analyze sentiment (only for community discussion content)
                 if item.content_type not in self.SKIP_SENTIMENT_TYPES:

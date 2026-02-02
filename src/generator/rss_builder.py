@@ -419,8 +419,8 @@ class RSSBuilder:
         # Get primary topic (fallback to General)
         primary_topic = getattr(item, 'primary_topic', '') or "General"
 
-        # v1.3.0 items already have complete titles with [NEW]/[UPDATE] badges
-        if getattr(item, 'has_v130_badge', False):
+        # Tracked items already have complete titles with [NEW]/[UPDATE] badges
+        if getattr(item, 'has_tracking_badge', False):
             return item.title  # Use as-is, no modification
 
         # Check for "Latest" badge (only for release/deploy notes)
@@ -451,7 +451,7 @@ class RSSBuilder:
     def _format_description(self, item: ContentItem) -> str:
         """Format item description with summary, sentiment, topics, and source.
 
-        For v1.3.0+ discussion items (has_v130_badge=True), builds description
+        For Tracked discussion items (has_tracking_badge=True), builds description
         from LLM summary + metadata. Otherwise falls back to legacy HTML format.
 
         Args:
@@ -462,15 +462,15 @@ class RSSBuilder:
         """
         from html import escape
 
-        # v1.3.0+ discussion items: build description from metadata + LLM summary
-        if item.has_v130_badge and item.content_type in ("question", "blog"):
-            return self._format_v130_discussion_description(item)
+        # Tracked discussion items: build description from metadata + LLM summary
+        if item.has_tracking_badge and item.content_type in ("question", "blog"):
+            return self._format_tracked_discussion_description(item)
 
-        # v1.3.0+ items with pre-formatted structured descriptions (release/deploy notes)
+        # Tracked items with pre-formatted structured descriptions (release/deploy notes)
         if item.structured_description:
             return item.structured_description
 
-        # Legacy format for non-v1.3.0 items (Reddit, Status, etc.)
+        # Legacy format for non-tracked items (Reddit, Status, etc.)
         parts = []
 
         # Summary section
@@ -494,11 +494,11 @@ class RSSBuilder:
 
         return "\n\n".join(parts) if parts else ""
 
-    def _format_v130_discussion_description(self, item: ContentItem) -> str:
-        """Format description for v1.3.0 discussion posts using LLM summary.
+    def _format_tracked_discussion_description(self, item: ContentItem) -> str:
+        """Format description for tracked discussion posts using LLM summary.
 
         Args:
-            item: ContentItem with v1.3.0 metadata
+            item: ContentItem with tracking metadata
 
         Returns:
             HTML-formatted description string
