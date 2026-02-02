@@ -38,7 +38,9 @@ from generator.rss_builder import (
     build_release_note_entry,
     build_deploy_note_entry,
 )
-from __init__ import __version__
+# Read version from VERSION file (avoid import issues when running as script)
+_version_file = Path(__file__).parent.parent / "VERSION"
+__version__ = _version_file.read_text().strip() if _version_file.exists() else "0.0.0"
 
 
 def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, ChangeLogEntry]) -> ContentItem:
