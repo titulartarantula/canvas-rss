@@ -71,6 +71,9 @@ CANVAS_FEATURES = {
     'blueprint_courses': 'Blueprint Courses',
     'sis_import': 'SIS Import',
     'external_apps_lti': 'External Apps (LTI)',
+    'canvas_apps': 'Canvas Apps',  # LTI management UI (Admin > Apps)
+    'developer_keys': 'Developer Keys',  # API key management
+    'reports': 'Reports',  # Admin reports
     'api': 'Web Services / API',
     'account_settings': 'Account Settings',
     'themes_branding': 'Themes/Branding',
@@ -79,7 +82,10 @@ CANVAS_FEATURES = {
     # Specialized
     'canvas_elementary': 'Canvas for Elementary',
 
-    # Catch-all
+    # Generic/Catch-all (for H3 categories that don't map to specific features)
+    'courses': 'Courses',  # Generic course-level changes
+    'settings': 'Settings',  # Generic settings changes
+    'navigation': 'Navigation',  # Navigation changes (alias for global_navigation)
     'general': 'General',
 }
 
@@ -96,4 +102,5 @@ MENTION_TYPES = {
     'discusses',   # Content discusses/explains
     'questions',   # Content asks about
     'feedback',    # Content provides feedback/complaints
+    'mentions',    # Weak signal - content-only match or LLM extraction
 }
