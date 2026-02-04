@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-**Phase 9: v1.3.0 - Unified Tracking** - Complete. [NEW]/[UPDATE] badges with granular tracking.
+**Phase 10: v2.0 - Database Schema Redesign** - In Progress. Feature-centric data model.
 
 ## Active Tasks
 
@@ -21,6 +21,37 @@
 | Release v1.3.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, README     |
 
 ## Completed
+
+### Phase 10: v2.0 - Database Schema Redesign (In Progress)
+
+**Schema changes complete:**
+- [x] Added `feature_id` column to `feature_announcements` table (links H3 categories to canonical features)
+- [x] Added `user_group_url` column to `feature_options` table (Feature Preview community groups)
+- [x] Expanded `CANVAS_FEATURES` in constants.py with missing entries:
+  - `canvas_apps`, `developer_keys`, `reports` (Administration)
+  - `courses`, `settings`, `navigation` (Generic catch-all categories)
+- [x] Updated `upsert_feature_option()` and `insert_feature_announcement()` functions
+- [x] Added migrations for existing databases
+- [x] Documentation updated in `docs/database-schema.md`
+- [x] All 313 tests pass
+
+**Key design decisions documented:**
+- Three-tier data model: `features` → `feature_options` → `feature_announcements`
+- H2 sections map to `feature_announcements.section` ("New Features", "Updated Features", "Feature Preview Change Log updates")
+- H3 categories map to `feature_announcements.feature_id` via canonical feature lookup
+- H4 headlines stored in `feature_announcements.h4_title` with `anchor_id` for deep linking
+- Feature Preview user groups stored in `feature_options.user_group_url` (persists beyond preview stage)
+
+**Next: Community post scraping**
+- [ ] Map Q&A and Blog posts to features/feature_options via `content_feature_refs`
+- [ ] Implement H3 → `feature_id` mapping logic in scraper
+- [ ] Parse "Feature Preview to Enable" vs "Feature Option Name to Enable" table labels
+- [ ] Extract `user_group_url` from Feature Preview tables
+
+**Reference docs:**
+- `docs/database-schema.md` - Full schema with mermaid diagram
+- `docs/plans/2026-02-03-database-schema-redesign.md` - Original design plan
+- `src/constants.py` - `CANVAS_FEATURES`, `FEATURE_OPTION_STATUSES`, `MENTION_TYPES`
 
 ### Phase 9: v1.3.0 - Unified Tracking (Complete)
 
