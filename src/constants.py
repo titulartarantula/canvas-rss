@@ -24,6 +24,7 @@ CANVAS_FEATURES = {
 
     # Grading & Assessment
     'gradebook': 'Gradebook',
+    'roll_call_attendance': 'Roll Call Attendance',
     'speedgrader': 'SpeedGrader',
     'rubrics': 'Rubrics',
     'outcomes': 'Outcomes',
