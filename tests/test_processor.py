@@ -996,31 +996,6 @@ class TestEnrichWithLLM:
             assert item.summary != ""
             assert item.sentiment == "neutral"
 
-    @patch('processor.content_processor.time')
-    def test_enrich_preserves_structured_description(self, mock_time):
-        """Test that enrich_with_llm does not overwrite structured_description."""
-        from processor.content_processor import ContentProcessor, ContentItem
-
-        mock_time.sleep = Mock()
-
-        processor = ContentProcessor()
-        processor.model = None  # Use fallback behavior
-
-        item = ContentItem(
-            source="community",
-            source_id="test",
-            title="Test",
-            url="https://example.com",
-            content="raw content",
-            structured_description="━━━ PRESERVED ━━━\n▸ This should not change"
-        )
-
-        result = processor.enrich_with_llm([item])
-
-        assert len(result) == 1
-        assert result[0].structured_description == "━━━ PRESERVED ━━━\n▸ This should not change"
-
-
 class TestContentProcessorConstants:
     """Tests for ContentProcessor class constants."""
 
@@ -1423,29 +1398,111 @@ class TestContentItemDataclass:
 
         assert item.topics == []
 
-    def test_content_item_structured_description(self):
-        """Test ContentItem has structured_description field."""
-        from processor.content_processor import ContentItem
 
-        item = ContentItem(
-            source="community",
-            source_id="test_123",
-            title="Test",
-            url="https://example.com",
-            content="raw content",
-            structured_description="━━━ NEW FEATURES ━━━\n▸ Test Feature"
+class TestExtractFeaturesWithLLM:
+    """Tests for LLM-based feature extraction."""
+
+    def test_extract_features_with_llm_no_client_returns_empty(self):
+        """Test that extract_features_with_llm returns empty list when no client."""
+        from processor.content_processor import ContentProcessor
+        processor = ContentProcessor(gemini_api_key=None)
+
+        result = processor.extract_features_with_llm(
+            title="Help with something",
+            content="I need help with my course"
         )
-        assert item.structured_description == "━━━ NEW FEATURES ━━━\n▸ Test Feature"
 
-    def test_content_item_structured_description_default(self):
-        """Test structured_description defaults to empty string."""
-        from processor.content_processor import ContentItem
+        assert result == []
 
-        item = ContentItem(
-            source="community",
-            source_id="test_123",
-            title="Test",
-            url="https://example.com",
-            content="raw content"
+    def test_extract_features_with_llm_empty_content_returns_empty(self):
+        """Test that empty content returns empty list."""
+        from processor.content_processor import ContentProcessor
+        processor = ContentProcessor(gemini_api_key=None)
+
+        result = processor.extract_features_with_llm(title="", content="")
+        assert result == []
+
+        result = processor.extract_features_with_llm(title=None, content=None)
+        assert result == []
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_extract_features_with_llm_parses_response(self, mock_genai):
+        """Test that LLM response is parsed into feature list."""
+        from processor.content_processor import ContentProcessor
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "Gradebook\nSpeedGrader\nAssignments"
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
+
+        processor = ContentProcessor(gemini_api_key="fake-key")
+
+        result = processor.extract_features_with_llm(
+            title="Grading issues",
+            content="I'm having trouble with grades in SpeedGrader"
         )
-        assert item.structured_description == ""
+
+        assert result == ["Gradebook", "Speedgrader", "Assignments"]
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_extract_features_with_llm_handles_none_response(self, mock_genai):
+        """Test that 'none' response returns empty list."""
+        from processor.content_processor import ContentProcessor
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "none"
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
+
+        processor = ContentProcessor(gemini_api_key="fake-key")
+
+        result = processor.extract_features_with_llm(
+            title="General question",
+            content="How do I use Canvas?"
+        )
+
+        assert result == []
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_extract_features_with_llm_handles_api_error(self, mock_genai):
+        """Test that API errors return empty list."""
+        from processor.content_processor import ContentProcessor
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_genai.Client.return_value = mock_client
+
+        processor = ContentProcessor(gemini_api_key="fake-key")
+
+        result = processor.extract_features_with_llm(
+            title="Test",
+            content="Test content"
+        )
+
+        assert result == []
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_extract_features_with_llm_filters_empty_lines(self, mock_genai):
+        """Test that empty lines in response are filtered out."""
+        from processor.content_processor import ContentProcessor
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "Gradebook\n\n  \nAssignments\n"
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
+
+        processor = ContentProcessor(gemini_api_key="fake-key")
+
+        result = processor.extract_features_with_llm(
+            title="Test",
+            content="Test content"
+        )
+
+        assert result == ["Gradebook", "Assignments"]

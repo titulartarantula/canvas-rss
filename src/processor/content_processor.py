@@ -57,7 +57,7 @@ def format_availability(table: Optional["FeatureTableData"]) -> str:
 
 @dataclass
 class ContentItem:
-    """A processed content item ready for RSS feed."""
+    """A processed content item ready for database storage."""
 
     # Identity
     source: str  # 'community', 'reddit', 'status'
@@ -84,15 +84,6 @@ class ContentItem:
     sentiment: str = ""  # Not used
     primary_topic: str = ""  # Replaced by feature refs
     topics: List[str] = None  # Replaced by feature refs
-
-    # RSS-only fields (not stored in DB)
-    is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
-    has_tracking_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
-    structured_description: str = ""  # v1.3.0+ formatted description (preserved through pipeline)
-    is_new_post: bool = False  # True if new post, False if update
-    previous_comment_count: int = 0  # Comment count before this update
-    new_comment_count: int = 0  # Number of new comments since last check
-    latest_comment_preview: str = ""  # Preview of the latest comment (for updates)
 
     def __post_init__(self):
         if self.topics is None:
@@ -640,6 +631,55 @@ Keep it concise and jargon-free."""
                 return feature_id
 
         return 'general'
+
+    def extract_features_with_llm(self, title: str, content: str) -> List[str]:
+        """Use LLM to extract Canvas feature names from content.
+
+        Args:
+            title: Post title.
+            content: Post content.
+
+        Returns:
+            List of feature names mentioned (may not be canonical).
+        """
+        if not title and not content:
+            return []
+
+        if not self.client:
+            return []
+
+        combined = f"{title or ''}\n{content or ''}"[:1500]
+
+        prompt = """Extract Canvas LMS feature names mentioned in this post.
+Return only feature names, one per line. Examples: Gradebook, New Quizzes, SpeedGrader, Assignments, Modules, Pages, Discussions, Rubrics, Calendar, Inbox.
+If no Canvas features are mentioned, return "none".
+
+Post:
+""" + combined
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
+            text = response.text.strip().lower()
+
+            if text == "none":
+                return []
+
+            # Parse lines, filter empty, strip whitespace
+            features = [
+                line.strip().title()
+                for line in response.text.strip().split('\n')
+                if line.strip() and line.strip().lower() != "none"
+            ]
+
+            return features
+
+        except Exception as e:
+            logger.warning(f"LLM feature extraction failed: {e}")
+            return []
 
     def sanitize_html(self, content: str) -> str:
         """Remove potentially malicious HTML/scripts.
