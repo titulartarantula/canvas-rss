@@ -59,6 +59,11 @@ class DiscussionUpdate:
     previous_comment_count: int
     new_comment_count: int
     latest_comment: Optional[str]
+    feature_refs: List[Tuple[str, Optional[str], str]] = None  # (feature_id, option_id, mention_type)
+
+    def __post_init__(self):
+        if self.feature_refs is None:
+            self.feature_refs = []
 
 
 @dataclass
@@ -1921,7 +1926,8 @@ def classify_discussion_posts(
     posts: List[CommunityPost],
     db: "Database",
     first_run_limit: int = 5,
-    scraper: Optional["InstructureScraper"] = None
+    scraper: Optional["InstructureScraper"] = None,
+    processor: Optional["ContentProcessor"] = None,
 ) -> List[DiscussionUpdate]:
     """Classify posts as new or updated based on comment tracking.
 
@@ -1935,6 +1941,7 @@ def classify_discussion_posts(
         db: Database instance for checking existing posts.
         first_run_limit: Max posts to include on first run (when db is empty).
         scraper: Optional scraper to fetch latest comment text.
+        processor: Optional ContentProcessor for LLM feature extraction fallback.
 
     Returns:
         List of DiscussionUpdate objects for new/updated posts.
@@ -1966,12 +1973,23 @@ def classify_discussion_posts(
             if scraper and current_comment_count > 0:
                 latest_comment = scraper.scrape_latest_comment(post.url)
 
+            # Extract feature refs
+            feature_refs = extract_feature_refs(
+                title=post.title,
+                content=post.content,
+                db=db,
+                post_type=post.post_type,
+                is_new=True,
+                processor=processor,
+            )
+
             updates.append(DiscussionUpdate(
                 post=post,
                 is_new=True,
                 previous_comment_count=0,
                 new_comment_count=current_comment_count,
                 latest_comment=latest_comment,
+                feature_refs=feature_refs,
             ))
             new_posts_count += 1
         else:
@@ -1984,12 +2002,23 @@ def classify_discussion_posts(
                 if scraper:
                     latest_comment = scraper.scrape_latest_comment(post.url)
 
+                # Extract feature refs (is_new=False for updates)
+                feature_refs = extract_feature_refs(
+                    title=post.title,
+                    content=post.content,
+                    db=db,
+                    post_type=post.post_type,
+                    is_new=False,
+                    processor=processor,
+                )
+
                 updates.append(DiscussionUpdate(
                     post=post,
                     is_new=False,
                     previous_comment_count=stored_count,
                     new_comment_count=current_comment_count,
                     latest_comment=latest_comment,
+                    feature_refs=feature_refs,
                 ))
 
                 # Update stored comment count

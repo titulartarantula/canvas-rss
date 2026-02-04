@@ -2917,3 +2917,117 @@ class TestExtractFeatureRefs:
         # Should have refs to both features
         assert "speedgrader" in feature_ids
         assert "rubrics" in feature_ids
+
+
+class TestClassifyDiscussionPostsWithRefs:
+    """Tests for classify_discussion_posts with feature ref extraction."""
+
+    def test_classify_discussion_posts_extracts_refs_for_new_post(self, temp_db):
+        """Test that new posts get feature refs extracted."""
+        from scrapers.instructure_community import (
+            classify_discussion_posts,
+            CommunityPost,
+        )
+        from datetime import datetime, timezone
+
+        temp_db.seed_features()
+
+        post = CommunityPost(
+            title="SpeedGrader not loading",
+            url="https://community.instructure.com/discussion/12345",
+            content="SpeedGrader is giving me an error when I try to grade.",
+            published_date=datetime.now(timezone.utc),
+            post_type="question",
+            comment_count=5,
+        )
+
+        updates = classify_discussion_posts([post], temp_db, first_run_limit=10)
+
+        assert len(updates) == 1
+        update = updates[0]
+        assert update.is_new is True
+
+        # Check that feature_refs were extracted
+        assert hasattr(update, 'feature_refs')
+        assert len(update.feature_refs) >= 1
+
+        # Should have ref to speedgrader
+        feature_ids = [r[0] for r in update.feature_refs]
+        assert "speedgrader" in feature_ids
+
+    def test_classify_discussion_posts_extracts_refs_for_updated_post(self, temp_db):
+        """Test that updated posts get feature refs extracted."""
+        from scrapers.instructure_community import (
+            classify_discussion_posts,
+            CommunityPost,
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime, timezone
+
+        temp_db.seed_features()
+
+        # Insert existing item with comment count
+        existing_item = ContentItem(
+            source="community",
+            source_id="question_12345",
+            title="Gradebook question",
+            url="https://community.instructure.com/discussion/12345",
+            content="Original content",
+            content_type="question",
+            published_date=datetime.now(timezone.utc),
+            comment_count=5,
+        )
+        temp_db.insert_item(existing_item)
+
+        # Post now has more comments
+        post = CommunityPost(
+            title="Gradebook question",
+            url="https://community.instructure.com/discussion/12345",
+            content="Still having Gradebook issues.",
+            published_date=datetime.now(timezone.utc),
+            post_type="question",
+            comment_count=10,  # More comments than before
+        )
+
+        updates = classify_discussion_posts([post], temp_db, first_run_limit=10)
+
+        assert len(updates) == 1
+        update = updates[0]
+        assert update.is_new is False
+
+        # Check that feature_refs were extracted
+        assert hasattr(update, 'feature_refs')
+        assert len(update.feature_refs) >= 1
+
+        # Should have ref to gradebook
+        feature_ids = [r[0] for r in update.feature_refs]
+        assert "gradebook" in feature_ids
+
+    def test_classify_discussion_posts_blog_new_uses_announces(self, temp_db):
+        """Test that new blog posts use 'announces' mention type."""
+        from scrapers.instructure_community import (
+            classify_discussion_posts,
+            CommunityPost,
+        )
+        from datetime import datetime, timezone
+
+        temp_db.seed_features()
+
+        post = CommunityPost(
+            title="New Quizzes improvements",
+            url="https://community.instructure.com/blog/54321",
+            content="We are excited to share New Quizzes updates.",
+            published_date=datetime.now(timezone.utc),
+            post_type="blog",
+            comment_count=0,
+        )
+
+        updates = classify_discussion_posts([post], temp_db, first_run_limit=10)
+
+        assert len(updates) == 1
+        update = updates[0]
+
+        # Should have feature_refs with 'announces' mention type
+        assert hasattr(update, 'feature_refs')
+        assert len(update.feature_refs) >= 1
+        assert any(r[2] == "announces" for r in update.feature_refs)
