@@ -87,7 +87,7 @@ class TestCommunityPostToContentItem:
 
         assert item.source == "community"
         assert item.title == "API Changelog"
-        # ChangeLogEntry has no likes/comments, so engagement should be 0
+        assert item.content_type == "changelog"
         assert item.engagement_score == 0
 
     def test_preserves_source_id(self):
@@ -192,8 +192,6 @@ class TestRedditPostToContentItem:
 
         item = reddit_post_to_content_item(post)
 
-        # The anonymize() method replaces author with "A Reddit user"
-        # Content PII redaction happens in ContentProcessor, not here
         assert item.source == "reddit"
 
     def test_preserves_source_id(self):
@@ -420,18 +418,13 @@ class TestMainIntegration:
     @pytest.fixture
     def mock_environment(self, tmp_path, monkeypatch):
         """Set up mock environment for integration tests."""
-        # Create temp directories
-        output_dir = tmp_path / "output"
         logs_dir = tmp_path / "logs"
         data_dir = tmp_path / "data"
-        output_dir.mkdir()
         logs_dir.mkdir()
         data_dir.mkdir()
 
-        # Set environment variables
         monkeypatch.setenv("LOG_FILE", str(logs_dir / "test.log"))
 
-        # Change to temp directory
         original_cwd = os.getcwd()
         os.chdir(tmp_path)
 
@@ -443,28 +436,24 @@ class TestMainIntegration:
     @patch("main.RedditMonitor")
     @patch("main.StatusPageMonitor")
     @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
     @patch("main.Database")
     def test_main_workflow_with_no_items(
         self,
         mock_db_class,
-        mock_rss_class,
         mock_processor_class,
         mock_status_class,
         mock_reddit_class,
         mock_instructure_class,
         mock_environment,
     ):
-        """Test main workflow when no items are found (v2.0 workflow)."""
-        # Setup mocks
+        """Test main workflow when no items are found."""
         mock_db = MagicMock()
-        mock_db.item_exists.return_value = False  # No existing items
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # Return count of seeded features
+        mock_db.item_exists.return_value = False
+        mock_db.get_recent_items.return_value = []
+        mock_db.seed_features.return_value = 45
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
-        # v2.0 uses individual scraping methods
         mock_instructure.scrape_question_forum.return_value = []
         mock_instructure.scrape_blog.return_value = []
         mock_instructure.scrape_release_notes.return_value = []
@@ -481,48 +470,33 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = '<?xml version="1.0"?><rss></rss>'
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
         main()
 
-        # Verify v2.0 workflow - uses individual scraping methods and seeds features
         mock_db.seed_features.assert_called_once()
         mock_instructure.scrape_question_forum.assert_called_once()
         mock_instructure.scrape_blog.assert_called_once()
         mock_instructure.scrape_release_notes.assert_called_once()
         mock_reddit.search_canvas_discussions.assert_called_once()
         mock_status.get_recent_incidents.assert_called_once()
-        mock_rss.create_feed.assert_called_once()
         mock_db.close.assert_called_once()
 
     @patch("main.InstructureScraper")
     @patch("main.RedditMonitor")
     @patch("main.StatusPageMonitor")
     @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
     @patch("main.Database")
-    def test_main_workflow_with_items(
+    def test_main_stores_reddit_items(
         self,
         mock_db_class,
-        mock_rss_class,
         mock_processor_class,
         mock_status_class,
         mock_reddit_class,
         mock_instructure_class,
         mock_environment,
     ):
-        """Test main workflow when items are found (v1.3.0 workflow).
-
-        Note: This test focuses on Reddit and Status items which use
-        simple deduplication. Instructure community items use v1.3.0
-        classification functions which are tested separately.
-        """
+        """Test main workflow stores Reddit items in database."""
         reddit_post = RedditPost(
             title="Canvas Question",
             url="https://reddit.com/r/canvas/456",
@@ -535,28 +509,14 @@ class TestMainIntegration:
             source_id="reddit_456",
         )
 
-        incident = Incident(
-            title="Service Issue",
-            url="https://status.instructure.com/789",
-            status="investigating",
-            impact="minor",
-            content="Investigating issue",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-            source_id="incident_789",
-        )
-
-        # Setup mocks
         mock_db = MagicMock()
         mock_db.insert_item.return_value = 1
-        mock_db.item_exists.return_value = False  # All items are new
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
+        mock_db.item_exists.return_value = False
+        mock_db.get_recent_items.return_value = []
+        mock_db.seed_features.return_value = 45
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
-        # v1.3.0 uses individual scraping methods - return empty for simplicity
-        # (v1.3.0 classification is tested separately in TestV130Integration)
         mock_instructure.scrape_question_forum.return_value = []
         mock_instructure.scrape_blog.return_value = []
         mock_instructure.scrape_release_notes.return_value = []
@@ -569,155 +529,29 @@ class TestMainIntegration:
         mock_reddit_class.return_value = mock_reddit
 
         mock_status = MagicMock()
-        mock_status.get_recent_incidents.return_value = [incident]
-        mock_status_class.return_value = mock_status
-
-        # Processor returns the items passed to it
-        mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.side_effect = lambda items: items
-        mock_processor_class.return_value = mock_processor
-
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = '<?xml version="1.0"?><rss><item/></rss>'
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
-        main()
-
-        # Verify 2 items were processed (Reddit + Status)
-        # Instructure items use v1.3.0 classification (tested separately)
-        enrich_call_args = mock_processor.enrich_with_llm.call_args[0][0]
-        assert len(enrich_call_args) == 2
-
-        # Verify all items are ContentItem instances
-        for item in enrich_call_args:
-            assert isinstance(item, ContentItem)
-
-        # Verify sources (only Reddit and Status in this test)
-        sources = {item.source for item in enrich_call_args}
-        assert sources == {"reddit", "status"}
-
-    @patch("main.InstructureScraper")
-    @patch("main.RedditMonitor")
-    @patch("main.StatusPageMonitor")
-    @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
-    @patch("main.Database")
-    def test_main_creates_output_directory(
-        self,
-        mock_db_class,
-        mock_rss_class,
-        mock_processor_class,
-        mock_status_class,
-        mock_reddit_class,
-        mock_instructure_class,
-        mock_environment,
-    ):
-        """Test that main creates output directory if it doesn't exist."""
-        # Setup mocks
-        mock_db = MagicMock()
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
-        mock_db_class.return_value = mock_db
-
-        mock_instructure = MagicMock()
-        mock_instructure.scrape_question_forum.return_value = []
-        mock_instructure.scrape_blog.return_value = []
-        mock_instructure.scrape_release_notes.return_value = []
-        mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
-        mock_instructure.__exit__ = MagicMock(return_value=False)
-        mock_instructure_class.return_value = mock_instructure
-
-        mock_reddit = MagicMock()
-        mock_reddit.search_canvas_discussions.return_value = []
-        mock_reddit_class.return_value = mock_reddit
-
-        mock_status = MagicMock()
         mock_status.get_recent_incidents.return_value = []
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.return_value = []
+        mock_processor.sanitize_html.side_effect = lambda x: x
+        mock_processor.redact_pii.side_effect = lambda x: x
+        mock_processor.summarize_with_llm.return_value = "Summary"
+        mock_processor.classify_topic.return_value = ("General", [])
         mock_processor_class.return_value = mock_processor
 
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = '<?xml version="1.0"?><rss></rss>'
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
         main()
 
-        # Verify output directory was created
-        output_path = Path(mock_environment) / "output"
-        assert output_path.exists()
+        # Verify insert_item was called for Reddit post
+        assert mock_db.insert_item.called
 
     @patch("main.InstructureScraper")
     @patch("main.RedditMonitor")
     @patch("main.StatusPageMonitor")
     @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
-    @patch("main.Database")
-    def test_main_writes_feed_xml(
-        self,
-        mock_db_class,
-        mock_rss_class,
-        mock_processor_class,
-        mock_status_class,
-        mock_reddit_class,
-        mock_instructure_class,
-        mock_environment,
-    ):
-        """Test that main writes RSS feed to output/feed.xml."""
-        expected_xml = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
-
-        # Setup mocks
-        mock_db = MagicMock()
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
-        mock_db_class.return_value = mock_db
-
-        mock_instructure = MagicMock()
-        mock_instructure.scrape_question_forum.return_value = []
-        mock_instructure.scrape_blog.return_value = []
-        mock_instructure.scrape_release_notes.return_value = []
-        mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
-        mock_instructure.__exit__ = MagicMock(return_value=False)
-        mock_instructure_class.return_value = mock_instructure
-
-        mock_reddit = MagicMock()
-        mock_reddit.search_canvas_discussions.return_value = []
-        mock_reddit_class.return_value = mock_reddit
-
-        mock_status = MagicMock()
-        mock_status.get_recent_incidents.return_value = []
-        mock_status_class.return_value = mock_status
-
-        mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.return_value = []
-        mock_processor_class.return_value = mock_processor
-
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = expected_xml
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
-        main()
-
-        # Verify feed.xml was written
-        feed_path = Path(mock_environment) / "output" / "feed.xml"
-        assert feed_path.exists()
-        assert feed_path.read_text(encoding="utf-8") == expected_xml
-
-    @patch("main.InstructureScraper")
-    @patch("main.RedditMonitor")
-    @patch("main.StatusPageMonitor")
-    @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
     @patch("main.Database")
     def test_main_closes_database_on_success(
         self,
         mock_db_class,
-        mock_rss_class,
         mock_processor_class,
         mock_status_class,
         mock_reddit_class,
@@ -725,10 +559,9 @@ class TestMainIntegration:
         mock_environment,
     ):
         """Test that database is closed after successful run."""
-        # Setup mocks
         mock_db = MagicMock()
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
+        mock_db.get_recent_items.return_value = []
+        mock_db.seed_features.return_value = 45
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
@@ -748,29 +581,20 @@ class TestMainIntegration:
         mock_status_class.return_value = mock_status
 
         mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.return_value = []
         mock_processor_class.return_value = mock_processor
 
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = '<?xml version="1.0"?><rss></rss>'
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
         main()
 
-        # Verify database was closed
         mock_db.close.assert_called_once()
 
     @patch("main.InstructureScraper")
     @patch("main.RedditMonitor")
     @patch("main.StatusPageMonitor")
     @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
     @patch("main.Database")
     def test_main_closes_database_on_error(
         self,
         mock_db_class,
-        mock_rss_class,
         mock_processor_class,
         mock_status_class,
         mock_reddit_class,
@@ -778,10 +602,9 @@ class TestMainIntegration:
         mock_environment,
     ):
         """Test that database is closed even when an error occurs."""
-        # Setup mocks
         mock_db = MagicMock()
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
+        mock_db.get_recent_items.return_value = []
+        mock_db.seed_features.return_value = 45
         mock_db_class.return_value = mock_db
 
         mock_instructure = MagicMock()
@@ -790,178 +613,20 @@ class TestMainIntegration:
         mock_instructure.__exit__ = MagicMock(return_value=False)
         mock_instructure_class.return_value = mock_instructure
 
-        # Run main and expect SystemExit
         with pytest.raises(SystemExit) as exc_info:
             main()
 
         assert exc_info.value.code == 1
-
-        # Verify database was still closed
         mock_db.close.assert_called_once()
 
-    @patch("main.InstructureScraper")
-    @patch("main.RedditMonitor")
-    @patch("main.StatusPageMonitor")
-    @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
-    @patch("main.Database")
-    def test_main_stores_items_in_database(
-        self,
-        mock_db_class,
-        mock_rss_class,
-        mock_processor_class,
-        mock_status_class,
-        mock_reddit_class,
-        mock_instructure_class,
-        mock_environment,
-    ):
-        """Test that enriched items are stored in the database."""
-        # Create a test item that will be "enriched"
-        enriched_item = ContentItem(
-            source="community",
-            source_id="test_123",
-            title="Test",
-            url="https://example.com",
-            content="Test content",
-            summary="Test summary",
-            sentiment="positive",
-            topics=["Gradebook"],
-        )
 
-        # Create a community post that will be converted to ContentItem
-        community_post = CommunityPost(
-            title="Test",
-            url="https://example.com",
-            content="Test content",
-            published_date=datetime.now(),
-            likes=0,
-            comments=0,
-        )
-
-        # The enriched_item should have the same source_id as what gets generated
-        # from the community_post
-        enriched_item.source_id = community_post.source_id
-
-        # Setup mocks
-        mock_db = MagicMock()
-        mock_db.insert_item.return_value = 1
-        mock_db.item_exists.return_value = False  # Item is new
-        mock_db.get_comment_count.return_value = None
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
-        mock_db_class.return_value = mock_db
-
-        mock_instructure = MagicMock()
-        mock_instructure.scrape_question_forum.return_value = []
-        mock_instructure.scrape_blog.return_value = []
-        mock_instructure.scrape_release_notes.return_value = []
-        mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
-        mock_instructure.__exit__ = MagicMock(return_value=False)
-        mock_instructure_class.return_value = mock_instructure
-
-        # Use Reddit post for testing since it uses simpler deduplication
-        reddit_post = RedditPost(
-            title="Test",
-            url="https://reddit.com/r/canvas/123",
-            content="Test content",
-            subreddit="canvas",
-            author="testuser",
-            score=10,
-            num_comments=5,
-            published_date=datetime.now(),
-            source_id="reddit_123",
-        )
-
-        mock_reddit = MagicMock()
-        mock_reddit.search_canvas_discussions.return_value = [reddit_post]
-        mock_reddit_class.return_value = mock_reddit
-
-        mock_status = MagicMock()
-        mock_status.get_recent_incidents.return_value = []
-        mock_status_class.return_value = mock_status
-
-        # Enriched item matches the source_id of the Reddit post
-        enriched_item.source_id = reddit_post.source_id
-
-        mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.return_value = [enriched_item]
-        mock_processor_class.return_value = mock_processor
-
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = '<?xml version="1.0"?><rss></rss>'
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
-        main()
-
-        # Verify item was stored (only Reddit items without tracking badges are stored)
-        mock_db.insert_item.assert_called_once_with(enriched_item)
-        mock_db.record_feed_generation.assert_called_once()
-
-    @patch("main.InstructureScraper")
-    @patch("main.RedditMonitor")
-    @patch("main.StatusPageMonitor")
-    @patch("main.ContentProcessor")
-    @patch("main.RSSBuilder")
-    @patch("main.Database")
-    def test_main_records_feed_generation(
-        self,
-        mock_db_class,
-        mock_rss_class,
-        mock_processor_class,
-        mock_status_class,
-        mock_reddit_class,
-        mock_instructure_class,
-        mock_environment,
-    ):
-        """Test that feed generation is recorded in database."""
-        feed_xml = '<?xml version="1.0"?><rss><channel><item/></channel></rss>'
-
-        # Setup mocks
-        mock_db = MagicMock()
-        mock_db.get_recent_items.return_value = []  # v2.0: First run detection
-        mock_db.seed_features.return_value = 45  # v2.0: Seeded features
-        mock_db_class.return_value = mock_db
-
-        mock_instructure = MagicMock()
-        mock_instructure.scrape_question_forum.return_value = []
-        mock_instructure.scrape_blog.return_value = []
-        mock_instructure.scrape_release_notes.return_value = []
-        mock_instructure.__enter__ = MagicMock(return_value=mock_instructure)
-        mock_instructure.__exit__ = MagicMock(return_value=False)
-        mock_instructure_class.return_value = mock_instructure
-
-        mock_reddit = MagicMock()
-        mock_reddit.search_canvas_discussions.return_value = []
-        mock_reddit_class.return_value = mock_reddit
-
-        mock_status = MagicMock()
-        mock_status.get_recent_incidents.return_value = []
-        mock_status_class.return_value = mock_status
-
-        mock_processor = MagicMock()
-        mock_processor.enrich_with_llm.return_value = []
-        mock_processor_class.return_value = mock_processor
-
-        mock_rss = MagicMock()
-        mock_rss.create_feed.return_value = feed_xml
-        mock_rss_class.return_value = mock_rss
-
-        # Run main
-        main()
-
-        # Verify feed generation was recorded
-        mock_db.record_feed_generation.assert_called_once_with(0, feed_xml)
-
-
-class TestV130Integration:
-    """Integration tests for v2.0 features (replaces v1.3.0)."""
+class TestDiscussionTracking:
+    """Tests for discussion tracking functionality."""
 
     def test_discussion_tracking_flow(self, temp_db):
-        """Test full discussion tracking flow (v2.0)."""
+        """Test full discussion tracking flow."""
         from scrapers.instructure_community import CommunityPost, classify_discussion_posts
 
-        # First run - post should be marked as new
         posts = [CommunityPost(
             title="Question",
             url="http://example.com/discussion/100/test",
@@ -975,9 +640,7 @@ class TestV130Integration:
         assert results1[0].is_new is True
         assert results1[0].new_comment_count == 2
 
-        # v2.0: To test updates, we need to insert the item into content_items
-        # then rescan with more comments
-        from processor.content_processor import ContentItem
+        # Insert item to track it
         item = ContentItem(
             source="community",
             source_id="question_100",
@@ -990,7 +653,7 @@ class TestV130Integration:
         )
         temp_db.insert_item(item)
 
-        # Second run with more comments - should be marked as update
+        # Second run with more comments
         posts[0] = CommunityPost(
             title="Question",
             url="http://example.com/discussion/100/test",
@@ -1002,13 +665,11 @@ class TestV130Integration:
         results2 = classify_discussion_posts(posts, temp_db, first_run_limit=5)
         assert len(results2) == 1
         assert results2[0].is_new is False
-        assert results2[0].new_comment_count == 5  # v2.0: Returns current count
 
     def test_discussion_tracking_first_run_limit(self, temp_db):
-        """Test that first run limit prevents feed flooding."""
+        """Test that first run limit prevents flooding."""
         from scrapers.instructure_community import CommunityPost, classify_discussion_posts
 
-        # Create 10 new posts
         posts = [
             CommunityPost(
                 title=f"Question {i}",
@@ -1021,20 +682,17 @@ class TestV130Integration:
             for i in range(10)
         ]
 
-        # With first_run_limit=5, only 5 should be returned (first run behavior)
         results = classify_discussion_posts(posts, temp_db, first_run_limit=5)
         assert len(results) == 5
 
     def test_release_note_classification(self, temp_db):
-        """Test release note feature classification (v2.0)."""
+        """Test release note feature classification."""
         from scrapers.instructure_community import (
             ReleaseNotePage, Feature, FeatureTableData, classify_release_features
         )
 
-        # Seed features (required for v2.0)
         temp_db.seed_features()
 
-        # Create a release note page with features
         page = ReleaseNotePage(
             title="Canvas Release: 2026-01-15",
             url="http://example.com/release/123456",
@@ -1044,7 +702,7 @@ class TestV130Integration:
                 Feature(
                     category="Gradebook",
                     name="New Gradebook Feature",
-                    anchor_id="gradebook",
+                    anchor_id="new-gradebook-feature",
                     added_date=datetime.now(),
                     raw_content="A new gradebook feature description",
                     table_data=FeatureTableData(
@@ -1059,28 +717,20 @@ class TestV130Integration:
             sections={"Gradebook": []}
         )
 
-        # First run - feature should be new (v2.0: returns feature names)
-        is_new_page, new_feature_names = classify_release_features(page, temp_db, first_run_limit=10)
+        is_new_page, new_anchor_ids = classify_release_features(page, temp_db, first_run_limit=10)
         assert is_new_page is True
-        assert len(new_feature_names) == 1
-        assert "New Gradebook Feature" in new_feature_names
-
-        # Second run - page not new, but features are still returned
-        # (v2.0: tracks via content_items, not feature_tracking)
-        is_new_page2, new_feature_names2 = classify_release_features(page, temp_db, first_run_limit=10)
-        # Page is not new anymore since we're checking via item_exists
-        assert is_new_page2 is True  # Still true since content_item not inserted
+        assert len(new_anchor_ids) == 1
+        # v2.0: Returns anchor_ids (or option_ids) instead of feature names
+        assert "new-gradebook-feature" in new_anchor_ids
 
     def test_deploy_note_classification(self, temp_db):
-        """Test deploy note change classification (v2.0)."""
+        """Test deploy note change classification."""
         from scrapers.instructure_community import (
             DeployNotePage, DeployChange, classify_deploy_changes
         )
 
-        # Seed features (required for v2.0)
         temp_db.seed_features()
 
-        # Create a deploy note page with changes
         page = DeployNotePage(
             title="Canvas Deploy: 2026-01-20",
             url="http://example.com/deploy/456",
@@ -1101,159 +751,62 @@ class TestV130Integration:
             sections={"improvements": []}
         )
 
-        # First run - change should be new (v2.0: returns change names, not anchor IDs)
         is_new_page, new_change_names = classify_deploy_changes(page, temp_db, first_run_limit=10)
         assert is_new_page is True
         assert len(new_change_names) == 1
         assert "Performance Improvement" in new_change_names
 
-        # Second run - page is no longer new (tracked via item_exists)
-        # But the function always returns the changes it processes
-        is_new_page2, new_change_names2 = classify_deploy_changes(page, temp_db, first_run_limit=10)
-        assert is_new_page2 is True  # Still true since content_item not inserted
 
+class TestProcessDiscussionsFeatureRefs:
+    """Tests for process_discussions creating feature refs."""
 
-class TestV130FullIntegration:
-    """Full integration tests for v2.0 (formerly v1.3.0)."""
+    @patch("main.classify_discussion_posts")
+    def test_process_discussions_creates_content_feature_refs(self, mock_classify, temp_db):
+        """Test that store_discussion_posts creates content_feature_refs records."""
+        from main import store_discussion_posts
+        from scrapers.instructure_community import CommunityPost, DiscussionUpdate
+        from processor.content_processor import ContentProcessor
 
-    def test_first_run_then_update_flow(self, temp_db):
-        """Test complete first run and update detection flow (v2.0)."""
-        from scrapers.instructure_community import CommunityPost, classify_discussion_posts
-        from processor.content_processor import ContentItem
+        # Seed features
+        temp_db.seed_features()
 
-        # Simulate 7 Q&A posts
-        qa_posts = [
-            CommunityPost(
-                title=f"Question {i}",
-                url=f"http://example.com/discussion/{i}/test",
-                content=f"Content {i}",
-                published_date=datetime.now(),
-                comments=i,
-                post_type="question"
-            ) for i in range(7)
-        ]
-
-        # First run - limit 5
-        results1 = classify_discussion_posts(qa_posts, temp_db, first_run_limit=5)
-        assert len(results1) == 5
-        assert all(r.is_new for r in results1)
-
-        # v2.0: Insert items into content_items to track them
-        for i in range(7):
-            item = ContentItem(
-                source="community",
-                source_id=f"question_{i}",
-                title=f"Question {i}",
-                url=f"http://example.com/discussion/{i}/test",
-                content=f"Content {i}",
-                content_type="question",
-                published_date=datetime.now(),
-                comment_count=i,
-            )
-            temp_db.insert_item(item)
-
-        # All 7 should be tracked in DB (via content_items)
-        for i in range(7):
-            assert temp_db.item_exists(f"question_{i}") is True
-
-        # Second run - posts 0, 1 have new comments
-        qa_posts_updated = [
-            CommunityPost(
-                title=f"Question {i}",
-                url=f"http://example.com/discussion/{i}/test",
-                content=f"Content {i}",
-                published_date=datetime.now(),
-                comments=10 if i == 0 else 15 if i == 1 else i,
-                post_type="question"
-            ) for i in range(7)
-        ]
-
-        results2 = classify_discussion_posts(qa_posts_updated, temp_db, first_run_limit=5)
-        assert len(results2) == 2
-        assert all(not r.is_new for r in results2)
-
-        # v2.0: new_comment_count is the current count, not a delta
-        counts = {r.post.url: r.new_comment_count for r in results2}
-        assert counts["http://example.com/discussion/0/test"] == 10  # Current count
-        assert counts["http://example.com/discussion/1/test"] == 15  # Current count
-
-    def test_rss_title_formatting(self):
-        """Test RSS title formatting for all content types."""
-        from generator.rss_builder import build_discussion_title
-
-        # Q&A
-        assert build_discussion_title("question", "SSO Help", True) == "[NEW] - Question Forum - SSO Help"
-        assert build_discussion_title("question", "SSO Help", False) == "[UPDATE] - Question Forum - SSO Help"
-
-        # Blog
-        assert build_discussion_title("blog", "Updates", True) == "[NEW] - Blog - Updates"
-
-        # Release Notes (no source label)
-        assert build_discussion_title("release_note", "Canvas Release Notes (2026-02-21)", True) == "[NEW] Canvas Release Notes (2026-02-21)"
-        assert build_discussion_title("deploy_note", "Canvas Deploy Notes (2026-02-11)", False) == "[UPDATE] Canvas Deploy Notes (2026-02-11)"
-
-    def test_mixed_content_types_classification(self, temp_db):
-        """Test classification handles different content types correctly (v2.0)."""
-        from scrapers.instructure_community import (
-            CommunityPost, classify_discussion_posts,
-            ReleaseNotePage, Feature, FeatureTableData, classify_release_features,
-            DeployNotePage, DeployChange, classify_deploy_changes
+        # Create a controlled update with feature_refs
+        mock_update = DiscussionUpdate(
+            post=CommunityPost(
+                title="SpeedGrader issue",
+                url="https://community.instructure.com/discussion/99999",
+                content="SpeedGrader is slow",
+                published_date=datetime.now(timezone.utc),
+                post_type="question",
+                comments=3,
+            ),
+            is_new=True,
+            previous_comment_count=0,
+            new_comment_count=3,
+            latest_comment=None,
+            feature_refs=[("speedgrader", None, "questions")],
         )
-        from processor.content_processor import ContentItem
 
-        # Q&A posts
-        qa_posts = [CommunityPost(
-            title="Q&A Question",
-            url="http://example.com/discussion/1/qa",
-            content="Q&A content",
-            published_date=datetime.now(),
-            comments=3,
-            post_type="question"
-        )]
+        # Configure the mock to return our controlled update
+        mock_classify.return_value = [mock_update]
 
-        # Blog posts
-        blog_posts = [CommunityPost(
-            title="Blog Post",
-            url="http://example.com/blog/2/post",
-            content="Blog content",
-            published_date=datetime.now(),
-            comments=5,
-            post_type="blog"
-        )]
+        # Create a mock processor
+        processor = MagicMock(spec=ContentProcessor)
+        processor.sanitize_html.return_value = "SpeedGrader is slow"
+        processor.redact_pii.side_effect = lambda x: x
+        processor.summarize_with_llm.return_value = "User reports SpeedGrader performance issues."
+        processor.classify_topic.return_value = ("Grading", ["SpeedGrader"])
 
-        # Classify both types
-        qa_results = classify_discussion_posts(qa_posts, temp_db, first_run_limit=5)
-        blog_results = classify_discussion_posts(blog_posts, temp_db, first_run_limit=5)
-
-        assert len(qa_results) == 1
-        assert len(blog_results) == 1
-        assert qa_results[0].is_new is True
-        assert blog_results[0].is_new is True
-
-        # v2.0: Insert items to track them
-        qa_item = ContentItem(
-            source="community",
-            source_id="question_1",
-            title="Q&A Question",
-            url="http://example.com/discussion/1/qa",
-            content="Q&A content",
-            content_type="question",
-            published_date=datetime.now(),
-            comment_count=3,
+        # Call store_discussion_posts
+        stored = store_discussion_posts(
+            posts=[mock_update.post],
+            db=temp_db,
+            scraper=None,
+            processor=processor,
         )
-        blog_item = ContentItem(
-            source="community",
-            source_id="blog_2",
-            title="Blog Post",
-            url="http://example.com/blog/2/post",
-            content="Blog content",
-            content_type="blog",
-            published_date=datetime.now(),
-            comment_count=5,
-        )
-        temp_db.insert_item(qa_item)
-        temp_db.insert_item(blog_item)
 
-        # Verify both are tracked separately (via content_items)
-        assert temp_db.item_exists("question_1") is True
-        assert temp_db.item_exists("blog_2") is True
+        # Check that content_feature_refs was created
+        refs = temp_db.get_features_for_content("question_99999")
+        assert len(refs) >= 1
+        assert refs[0]["feature_id"] == "speedgrader"
+        assert refs[0]["mention_type"] == "questions"

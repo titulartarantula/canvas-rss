@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Canvas RSS Aggregator - Main Entry Point."""
+"""Canvas RSS Aggregator - Main Entry Point.
+
+Scrapes Canvas LMS sources and stores content in the database.
+Website presentation is handled separately.
+"""
 
 import os
 import sys
@@ -21,9 +25,6 @@ from scrapers.instructure_community import (
     CommunityPost,
     ReleaseNote,
     ChangeLogEntry,
-    DiscussionUpdate,
-    ReleaseNotePage,
-    DeployNotePage,
     classify_discussion_posts,
     classify_release_features,
     classify_deploy_changes,
@@ -31,14 +32,8 @@ from scrapers.instructure_community import (
 from scrapers.reddit_client import RedditMonitor, RedditPost
 from scrapers.status_page import StatusPageMonitor, Incident
 from processor.content_processor import ContentProcessor, ContentItem
-from generator.rss_builder import (
-    RSSBuilder,
-    build_discussion_title,
-    format_discussion_description,
-    build_release_note_entry,
-    build_deploy_note_entry,
-)
-# Read version from VERSION file (avoid import issues when running as script)
+
+# Read version from VERSION file
 _version_file = Path(__file__).parent.parent / "VERSION"
 __version__ = _version_file.read_text().strip() if _version_file.exists() else "0.0.0"
 
@@ -50,9 +45,8 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
         post: A CommunityPost, ReleaseNote, or ChangeLogEntry from Instructure scraper.
 
     Returns:
-        ContentItem ready for processing.
+        ContentItem ready for database storage.
     """
-    # Calculate engagement score from likes + comments (if available)
     engagement = 0
     comment_count = 0
     if hasattr(post, 'likes'):
@@ -61,15 +55,9 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
         engagement += post.comments
         comment_count = post.comments
 
-    # Map post_type to content_type for content-specific summarization
-    # post_type values: 'release_note', 'deploy_note', 'changelog', 'blog', 'question'
     content_type = getattr(post, 'post_type', 'release_note')
-    # ChangeLogEntry doesn't have post_type, so detect it by class
     if isinstance(post, ChangeLogEntry):
         content_type = 'changelog'
-
-    # Check for is_latest flag (for release/deploy notes)
-    is_latest = getattr(post, 'is_latest', False)
 
     return ContentItem(
         source=post.source,
@@ -81,7 +69,9 @@ def community_post_to_content_item(post: Union[CommunityPost, ReleaseNote, Chang
         published_date=post.published_date,
         engagement_score=engagement,
         comment_count=comment_count,
-        is_latest=is_latest,
+        first_posted=getattr(post, 'first_posted', None),
+        last_edited=getattr(post, 'last_edited', None),
+        last_comment_at=getattr(post, 'last_comment_at', None),
     )
 
 
@@ -92,9 +82,8 @@ def reddit_post_to_content_item(post: RedditPost) -> ContentItem:
         post: A RedditPost from Reddit monitor.
 
     Returns:
-        ContentItem ready for processing.
+        ContentItem ready for database storage.
     """
-    # Anonymize Reddit posts before converting
     anonymized = post.anonymize()
 
     return ContentItem(
@@ -116,9 +105,8 @@ def incident_to_content_item(incident: Incident) -> ContentItem:
         incident: An Incident from status page monitor.
 
     Returns:
-        ContentItem ready for processing.
+        ContentItem ready for database storage.
     """
-    # Prefix title with impact level for visibility
     title = incident.title
     if incident.impact and incident.impact != "none":
         title = f"[{incident.impact.upper()}] {title}"
@@ -131,297 +119,273 @@ def incident_to_content_item(incident: Incident) -> ContentItem:
         content=incident.content,
         content_type="status",
         published_date=incident.created_at,
-        engagement_score=0,  # Status incidents don't have engagement metrics
+        engagement_score=0,
     )
 
 
-def process_discussion_posts(
+def store_discussion_posts(
     posts: List[CommunityPost],
-    db: "Database",
-    scraper: InstructureScraper
-) -> List[ContentItem]:
-    """Process Q&A and blog posts with v1.3.0 [NEW]/[UPDATE] tracking.
+    db: Database,
+    scraper: InstructureScraper,
+    processor: ContentProcessor,
+) -> int:
+    """Process and store Q&A and blog posts with tracking.
 
     Args:
         posts: Combined list of question and blog posts.
         db: Database for tracking.
         scraper: Scraper instance for fetching latest comments.
+        processor: ContentProcessor for LLM enrichment.
 
     Returns:
-        List of ContentItems with [NEW]/[UPDATE] badges.
+        Number of items stored.
     """
     import logging
     logger = logging.getLogger("canvas_rss")
 
-    # Use classify_discussion_posts for proper tracking
     updates = classify_discussion_posts(posts, db, first_run_limit=5, scraper=scraper)
+    stored = 0
 
-    items = []
     for update in updates:
         post = update.post
+        item = community_post_to_content_item(post)
 
-        # Build title with [NEW]/[UPDATE] badge
-        title = build_discussion_title(post.post_type, post.title, update.is_new)
+        # Enrich with LLM
+        item.content = processor.sanitize_html(item.content)
+        item.content = processor.redact_pii(item.content)
+        item.title = processor.redact_pii(item.title)
+        item.summary = processor.summarize_with_llm(item.content, item.content_type)
+        primary, secondary = processor.classify_topic(item.content)
+        item.primary_topic = primary
+        item.topics = secondary
 
-        # Create ContentItem with v1.3.0 metadata (description built after LLM enrichment)
-        item = ContentItem(
-            source="community",
-            source_id=post.source_id,
-            title=title,
-            url=post.url,
-            content=post.content,  # Keep original for LLM enrichment
-            content_type=post.post_type,
-            published_date=post.published_date,
-            engagement_score=post.likes + post.comments,
-            comment_count=post.comments,
-            has_tracking_badge=True,
-            # v1.3.0 metadata for building description after enrichment
-            is_new_post=update.is_new,
-            previous_comment_count=update.previous_comment_count,
-            new_comment_count=update.new_comment_count,
-            latest_comment_preview=update.latest_comment or "",
-        )
-        items.append(item)
+        # Store in database
+        item_id = db.insert_item(item)
+        if item_id > 0:
+            stored += 1
 
-    logger.debug(f"Processed {len(items)} discussion posts with v1.3.0 tracking")
-    return items
+            # Create content_feature_refs for this item
+            for feature_id, option_id, mention_type in update.feature_refs:
+                try:
+                    db.add_content_feature_ref(
+                        content_id=item.source_id,
+                        feature_id=feature_id,
+                        feature_option_id=option_id,
+                        mention_type=mention_type,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to add feature ref for {item.source_id}: {e}")
+
+    logger.debug(f"Stored {stored} discussion posts")
+    return stored
 
 
-def process_release_notes(
+def store_release_notes(
     notes: List[ReleaseNote],
-    db: "Database",
+    db: Database,
     scraper: InstructureScraper,
-    processor: ContentProcessor = None,
+    processor: ContentProcessor,
     is_first_run: bool = False,
-    first_run_limit: int = 3
-) -> List[ContentItem]:
-    """Process release notes with feature-level [NEW]/[UPDATE] tracking.
+    first_run_limit: int = 3,
+) -> int:
+    """Process and store release notes with feature tracking.
 
     Args:
         notes: List of release note posts (post_type='release_note').
         db: Database for feature tracking.
         scraper: Scraper instance for parsing pages.
-        processor: ContentProcessor for generating per-feature summaries.
-        is_first_run: Whether this is the first run (applies item limit).
+        processor: ContentProcessor for generating summaries.
+        is_first_run: Whether this is the first run.
         first_run_limit: Max items to include on first run.
 
     Returns:
-        List of ContentItems with [NEW]/[UPDATE] badges.
+        Number of items stored.
     """
     import logging
     logger = logging.getLogger("canvas_rss")
 
-    items = []
+    stored = 0
     new_page_count = 0
+
     for note in notes:
-        # Parse page to get individual features
         page = scraper.parse_release_note_page(note.url)
         if page is None:
             logger.warning(f"Failed to parse release note page: {note.url}")
             continue
 
-        # Classify features (this also tracks them in the database)
         is_new_page, new_anchors = classify_release_features(page, db, first_run_limit=3)
 
-        # Skip if no new content
         if not is_new_page and not new_anchors:
             continue
 
-        # On first run, limit how many new pages we include in the feed
         if is_new_page:
             new_page_count += 1
             if is_first_run and new_page_count > first_run_limit:
-                continue  # Tracked in DB but not added to feed
+                continue
 
-        # Generate summaries for each feature (Task 17)
-        if processor is not None:
-            for feature in page.features:
-                try:
-                    feature.summary = processor.summarize_feature(feature)
-                except Exception as e:
-                    logger.warning(f"Failed to summarize feature '{feature.name}': {e}")
-                    feature.summary = ""
+        # Generate summaries for features
+        for feature in page.features:
+            try:
+                feature.summary = processor.summarize_feature(feature)
+            except Exception as e:
+                logger.warning(f"Failed to summarize feature '{feature.name}': {e}")
 
-        # Determine badge: [NEW] if page is new, [UPDATE] if features added
-        badge = "[NEW]" if is_new_page else "[UPDATE]"
+        # Store the content item
+        item = community_post_to_content_item(note)
+        item.content = processor.sanitize_html(item.content)
+        item.content = processor.redact_pii(item.content)
+        item.title = processor.redact_pii(item.title)
 
-        # Build description with feature details (now uses feature.summary)
-        description = build_release_note_entry(
-            page=page,
-            is_update=not is_new_page,
-            new_features=new_anchors if not is_new_page else None
-        )
+        item_id = db.insert_item(item)
+        if item_id > 0:
+            stored += 1
 
-        item = ContentItem(
-            source="community",
-            source_id=note.source_id,
-            title=f"{badge} {note.title}",
-            url=note.url,
-            content=note.content,  # Keep original for LLM enrichment
-            structured_description=description,  # Store formatted version for RSS
-            content_type="release_note",
-            published_date=note.published_date,
-            engagement_score=note.likes + note.comments,
-            is_latest=note.is_latest,
-            has_tracking_badge=True,
-        )
-        items.append(item)
+            # Store upcoming changes from this release note
+            if page.upcoming_changes:
+                for change in page.upcoming_changes:
+                    if not db.upcoming_change_exists(
+                        item.source_id,
+                        change.date.isoformat() if change.date else None,
+                        change.description
+                    ):
+                        db.insert_upcoming_change(
+                            content_id=item.source_id,
+                            change_date=change.date.isoformat() if change.date else None,
+                            description=change.description,
+                        )
+                logger.debug(f"Stored {len(page.upcoming_changes)} upcoming changes")
 
-    logger.debug(f"Processed {len(items)} release notes with v1.3.0 tracking")
-    return items
+    logger.debug(f"Stored {stored} release notes")
+    return stored
 
 
-def process_deploy_notes(
+def store_deploy_notes(
     notes: List[ReleaseNote],
-    db: "Database",
+    db: Database,
     scraper: InstructureScraper,
-    processor: ContentProcessor = None,
+    processor: ContentProcessor,
     is_first_run: bool = False,
-    first_run_limit: int = 3
-) -> List[ContentItem]:
-    """Process deploy notes with change-level [NEW]/[UPDATE] tracking.
+    first_run_limit: int = 3,
+) -> int:
+    """Process and store deploy notes with change tracking.
 
     Args:
         notes: List of deploy note posts (post_type='deploy_note').
         db: Database for change tracking.
         scraper: Scraper instance for parsing pages.
-        processor: ContentProcessor for generating per-change summaries.
-        is_first_run: Whether this is the first run (applies item limit).
+        processor: ContentProcessor for generating summaries.
+        is_first_run: Whether this is the first run.
         first_run_limit: Max items to include on first run.
 
     Returns:
-        List of ContentItems with [NEW]/[UPDATE] badges.
+        Number of items stored.
     """
     import logging
     logger = logging.getLogger("canvas_rss")
 
-    items = []
+    stored = 0
     new_page_count = 0
+
     for note in notes:
-        # Parse page to get individual changes
         page = scraper.parse_deploy_note_page(note.url)
         if page is None:
             logger.warning(f"Failed to parse deploy note page: {note.url}")
             continue
 
-        # Classify changes (this also tracks them in the database)
         is_new_page, new_anchors = classify_deploy_changes(page, db, first_run_limit=3)
 
-        # Skip if no new content
         if not is_new_page and not new_anchors:
             continue
 
-        # On first run, limit how many new pages we include in the feed
         if is_new_page:
             new_page_count += 1
             if is_first_run and new_page_count > first_run_limit:
-                continue  # Tracked in DB but not added to feed
+                continue
 
-        # Generate summaries for each change (Task 17)
-        if processor is not None:
-            for change in page.changes:
-                try:
-                    change.summary = processor.summarize_deploy_change(change)
-                except Exception as e:
-                    logger.warning(f"Failed to summarize change '{change.name}': {e}")
-                    change.summary = ""
+        # Generate summaries for changes
+        for change in page.changes:
+            try:
+                change.summary = processor.summarize_deploy_change(change)
+            except Exception as e:
+                logger.warning(f"Failed to summarize change '{change.name}': {e}")
 
-        # Determine badge: [NEW] if page is new, [UPDATE] if changes added
-        badge = "[NEW]" if is_new_page else "[UPDATE]"
+        # Store the content item
+        item = community_post_to_content_item(note)
+        item.content = processor.sanitize_html(item.content)
+        item.content = processor.redact_pii(item.content)
+        item.title = processor.redact_pii(item.title)
 
-        # Build description with change details (now uses change.summary)
-        description = build_deploy_note_entry(
-            page=page,
-            is_update=not is_new_page,
-            new_changes=new_anchors if not is_new_page else None
-        )
+        item_id = db.insert_item(item)
+        if item_id > 0:
+            stored += 1
 
-        item = ContentItem(
-            source="community",
-            source_id=note.source_id,
-            title=f"{badge} {note.title}",
-            url=note.url,
-            content=note.content,  # Keep original for LLM enrichment
-            structured_description=description,  # Store formatted version for RSS
-            content_type="deploy_note",
-            published_date=note.published_date,
-            engagement_score=note.likes + note.comments,
-            is_latest=note.is_latest,
-            has_tracking_badge=True,
-        )
-        items.append(item)
-
-    logger.debug(f"Processed {len(items)} deploy notes with v1.3.0 tracking")
-    return items
+    logger.debug(f"Stored {stored} deploy notes")
+    return stored
 
 
 def main():
-    """Main aggregation workflow with v1.3.0 [NEW]/[UPDATE] tracking."""
+    """Main aggregation workflow - scrape and store in database."""
 
-    # Setup logger
     logger = setup_logger(
         log_file=os.getenv("LOG_FILE", "logs/aggregator.log")
     )
 
     logger.info("=" * 50)
-    logger.info(f"Canvas RSS Aggregator v{__version__} started at {datetime.now()}")
+    logger.info(f"Canvas Aggregator v{__version__} started at {datetime.now()}")
     logger.info("=" * 50)
 
-    # Initialize components
     db = Database()
     processor = ContentProcessor(gemini_api_key=os.getenv("GEMINI_API_KEY"))
-    rss_builder = RSSBuilder()
 
-    # v2.0: Seed canonical features on startup
+    # Seed canonical features on startup
     seeded = db.seed_features()
     if seeded > 0:
         logger.info(f"Seeded {seeded} canonical Canvas features")
 
-    # v2.0: First run detection - check if any content exists
+    # First run detection
     recent_items = db.get_recent_items(days=30)
     is_first_run = len(recent_items) == 0
     if is_first_run:
-        logger.info("First run detected - applying item limits to avoid feed flooding")
+        logger.info("First run detected - applying item limits to avoid flooding")
 
-    # Collect content from all sources
-    all_items: List[ContentItem] = []
+    total_stored = 0
 
     try:
-        # 1. Scrape Instructure Community with v1.3.0 tracking
+        # 1. Scrape Instructure Community
         logger.info("Scraping Instructure Community...")
         with InstructureScraper() as scraper:
-            # 1a. Discussion posts (Q&A + Blog) - v1.3.0 tracking
-            # Process Q&A and Blog separately to apply 5-item limit to each
+            # Q&A forum
             questions = scraper.scrape_question_forum(hours=24)
-            question_items = process_discussion_posts(questions, db, scraper)
-            all_items.extend(question_items)
-            logger.info(f"  -> {len(question_items)} Q&A items")
+            q_stored = store_discussion_posts(questions, db, scraper, processor)
+            logger.info(f"  -> {q_stored} Q&A items stored")
+            total_stored += q_stored
 
+            # Blog
             blogs = scraper.scrape_blog(hours=24)
-            blog_items = process_discussion_posts(blogs, db, scraper)
-            all_items.extend(blog_items)
-            logger.info(f"  -> {len(blog_items)} blog items")
+            b_stored = store_discussion_posts(blogs, db, scraper, processor)
+            logger.info(f"  -> {b_stored} blog items stored")
+            total_stored += b_stored
 
-            # 1b. Release notes - feature tracking with per-feature summaries
+            # Release notes
             all_notes = scraper.scrape_release_notes(hours=24, skip_date_filter=is_first_run)
             release_notes = [n for n in all_notes if n.post_type == "release_note"]
-            release_items = process_release_notes(
+            r_stored = store_release_notes(
                 release_notes, db, scraper, processor,
                 is_first_run=is_first_run, first_run_limit=3
             )
-            all_items.extend(release_items)
-            logger.info(f"  -> {len(release_items)} release note items")
+            logger.info(f"  -> {r_stored} release notes stored")
+            total_stored += r_stored
 
-            # 1c. Deploy notes - change tracking with per-change summaries
+            # Deploy notes
             deploy_notes = [n for n in all_notes if n.post_type == "deploy_note"]
-            deploy_items = process_deploy_notes(
+            d_stored = store_deploy_notes(
                 deploy_notes, db, scraper, processor,
                 is_first_run=is_first_run, first_run_limit=3
             )
-            all_items.extend(deploy_items)
-            logger.info(f"  -> {len(deploy_items)} deploy note items")
+            logger.info(f"  -> {d_stored} deploy notes stored")
+            total_stored += d_stored
 
-        # 2. Monitor Reddit (no v1.3.0 tracking - keep existing deduplication)
+        # 2. Monitor Reddit
         logger.info("Monitoring Reddit...")
         reddit = RedditMonitor(
             client_id=os.getenv("REDDIT_CLIENT_ID"),
@@ -429,56 +393,45 @@ def main():
             user_agent=os.getenv("REDDIT_USER_AGENT")
         )
         reddit_posts = reddit.search_canvas_discussions()
-        reddit_count = 0
+        reddit_stored = 0
         for post in reddit_posts:
             item = reddit_post_to_content_item(post)
             if not db.item_exists(item.source_id):
-                all_items.append(item)
-                reddit_count += 1
-        logger.info(f"  -> {reddit_count} new Reddit posts (of {len(reddit_posts)} found)")
+                # Enrich
+                item.content = processor.sanitize_html(item.content)
+                item.content = processor.redact_pii(item.content)
+                item.title = processor.redact_pii(item.title)
+                item.summary = processor.summarize_with_llm(item.content, "reddit")
+                primary, secondary = processor.classify_topic(item.content)
+                item.primary_topic = primary
+                item.topics = secondary
 
-        # 3. Check Status Page (no v1.3.0 tracking - keep existing deduplication)
+                item_id = db.insert_item(item)
+                if item_id > 0:
+                    reddit_stored += 1
+        logger.info(f"  -> {reddit_stored} Reddit posts stored (of {len(reddit_posts)} found)")
+        total_stored += reddit_stored
+
+        # 3. Check Status Page
         logger.info("Checking Canvas Status Page...")
         status = StatusPageMonitor()
         incidents = status.get_recent_incidents()
-        status_count = 0
+        status_stored = 0
         for incident in incidents:
             item = incident_to_content_item(incident)
             if not db.item_exists(item.source_id):
-                all_items.append(item)
-                status_count += 1
-        logger.info(f"  -> {status_count} new status incidents (of {len(incidents)} found)")
+                item.content = processor.sanitize_html(item.content)
+                item.content = processor.redact_pii(item.content)
+                item.summary = processor.summarize_with_llm(item.content, "status")
 
-        # 4. Enrich all items with LLM summaries
-        logger.info("Enriching content with LLM...")
-        enriched_items = processor.enrich_with_llm(all_items)
-        logger.info(f"  -> Enriched {len(enriched_items)} items with summaries and topics")
-
-        # 5. Generate RSS feed
-        logger.info("Generating RSS feed...")
-        feed_xml = rss_builder.create_feed(enriched_items)
-        output_path = Path("output/feed.xml")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(feed_xml, encoding="utf-8")
-        logger.info(f"  -> RSS feed written to {output_path}")
-
-        # 6. Store Reddit/Status items in database for future deduplication
-        # (Discussion and release/deploy items use separate change tracking tables)
-        logger.info("Storing items in database...")
-        stored_count = 0
-        for item in enriched_items:
-            # Only store Reddit/Status items in content_items table
-            if not getattr(item, 'has_tracking_badge', False):
                 item_id = db.insert_item(item)
                 if item_id > 0:
-                    stored_count += 1
-        db.record_feed_generation(len(enriched_items), feed_xml)
-        logger.info(f"  -> Stored {stored_count} new Reddit/Status items in content_items table")
-
-        # v2.0: Change tracking statistics removed - will be reimplemented in Stage 2
+                    status_stored += 1
+        logger.info(f"  -> {status_stored} status incidents stored (of {len(incidents)} found)")
+        total_stored += status_stored
 
         logger.info("=" * 50)
-        logger.info(f"Aggregation complete! {len(enriched_items)} items in feed")
+        logger.info(f"Aggregation complete! {total_stored} items stored")
         logger.info("=" * 50)
 
     except Exception as e:
