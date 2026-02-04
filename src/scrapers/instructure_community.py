@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 if TYPE_CHECKING:
     from utils.database import Database
+    from processor.content_processor import ContentProcessor
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -62,23 +63,62 @@ class DiscussionUpdate:
 
 @dataclass
 class FeatureTableData:
-    """Configuration table data for a release/deploy feature."""
-    enable_location: str
-    default_status: str
-    permissions: str
-    affected_areas: List[str]
-    affects_roles: List[str]
+    """Configuration table data for a release/deploy feature.
+
+    The table appears after each H4 feature heading and contains configuration info.
+    """
+    # Canonical name from "Feature Option to Enable" cell (first <p> only)
+    canonical_name: Optional[str] = None
+
+    # Parsed from "Enable Feature Option Location & Default Status"
+    enable_location_account: Optional[str] = None  # e.g., "Disabled/Unlocked"
+    enable_location_course: Optional[str] = None   # e.g., "Disabled"
+
+    # Boolean fields
+    subaccount_config: Optional[bool] = None       # "Subaccount Configuration"
+    affects_ui: Optional[bool] = None              # "Affects User Interface"
+
+    # Other fields
+    account_course_setting: Optional[str] = None   # "Account/Course Setting to Enable"
+    permissions: str = ""                          # "Permissions"
+    affected_areas: List[str] = None               # "Affected Areas"
+    affects_roles: List[str] = None                # Extracted from "Affected User Roles"
+
+    # Backwards compat fields (derived from new fields)
+    enable_location: str = ""                      # Legacy: combined location
+    default_status: str = ""                       # Legacy: combined status
+
+    def __post_init__(self):
+        if self.affected_areas is None:
+            self.affected_areas = []
+        if self.affects_roles is None:
+            self.affects_roles = []
+        # Populate legacy fields from new fields if not already set (for forwards compat)
+        if self.enable_location_account and not self.enable_location:
+            self.enable_location = f"Account ({self.enable_location_account})"
+            if self.enable_location_course:
+                self.enable_location += f", Course ({self.enable_location_course})"
+        if self.enable_location_account and not self.default_status:
+            # Extract just the status part (e.g., "Disabled" from "Disabled/Unlocked")
+            self.default_status = self.enable_location_account.split('/')[0] if '/' in self.enable_location_account else self.enable_location_account
+        # Populate new fields from legacy if legacy is set but new fields aren't
+        if self.enable_location and not self.enable_location_account:
+            # Try to extract account location from legacy format
+            if 'account' in self.enable_location.lower():
+                self.enable_location_account = self.enable_location
 
 
 @dataclass
 class Feature:
     """A single feature from a Release/Deploy Notes page."""
-    category: str
-    name: str
-    anchor_id: str
+    category: str       # H3 heading text (e.g., "Assignments")
+    name: str           # H4 heading text (e.g., "Document Processing App")
+    anchor_id: str      # H4 data-id attribute
     added_date: Optional[datetime]
-    raw_content: str
+    raw_content: str    # HTML content after H4
     table_data: Optional[FeatureTableData]
+    section: str = ""   # H2 heading text (e.g., "New Features")
+    summary: str = ""   # LLM-generated summary (populated later)
 
 
 @dataclass
@@ -887,6 +927,9 @@ class InstructureScraper:
     def _parse_feature_table(self, raw_content: str) -> Optional[FeatureTableData]:
         """Parse configuration table from feature content.
 
+        Handles both new format ("Feature Option to Enable", "Enable Feature Option Location")
+        and legacy format ("Enabled", "Default", etc.).
+
         Args:
             raw_content: HTML string that may contain a feature configuration table.
 
@@ -897,31 +940,122 @@ class InstructureScraper:
             return None
 
         try:
-            # Use BeautifulSoup for table parsing
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(raw_content, 'html.parser')
             table = soup.find('table')
             if not table:
                 return None
 
+            # Store both text and HTML for cells that need HTML parsing
             data = {}
+            data_html = {}
             for row in table.find_all('tr'):
                 cells = row.find_all(['td', 'th'])
                 if len(cells) >= 2:
                     key = cells[0].get_text().strip().lower()
                     value = cells[1].get_text().strip()
                     data[key] = value
+                    data_html[key] = cells[1]  # Keep the element for HTML parsing
+
+            # Extract canonical name from "Feature Option to Enable" - first <p> only
+            canonical_name = None
+            feature_option_key = None
+            for key in data.keys():
+                if 'feature option' in key and 'enable' in key:
+                    feature_option_key = key
+                    break
+
+            if feature_option_key and feature_option_key in data_html:
+                cell = data_html[feature_option_key]
+                first_p = cell.find('p')
+                if first_p:
+                    canonical_name = first_p.get_text().strip()
+                else:
+                    # No <p> tags, use entire cell text but stop at newline
+                    text = data[feature_option_key]
+                    canonical_name = text.split('\n')[0].strip() if text else None
+
+            # Parse "Enable Feature Option Location & Default Status" (new format)
+            enable_location_account = None
+            enable_location_course = None
+            location_key = None
+            for key in data.keys():
+                if 'enable' in key and 'location' in key:
+                    location_key = key
+                    break
+
+            if location_key:
+                location_text = data[location_key]
+                lines = [line.strip() for line in location_text.split('\n') if line.strip()]
+                for line in lines:
+                    line_lower = line.lower()
+                    if line_lower.startswith('account'):
+                        # Extract status from parentheses: "Account (Disabled/Unlocked)"
+                        match = re.search(r'\(([^)]+)\)', line)
+                        enable_location_account = match.group(1) if match else line
+                    elif line_lower.startswith('course'):
+                        match = re.search(r'\(([^)]+)\)', line)
+                        enable_location_course = match.group(1) if match else line
+
+            # Legacy format: simple "Enabled" and "Default" columns
+            legacy_enable_location = data.get('enabled', data.get('enable', data.get('enabled at', '')))
+            legacy_default_status = data.get('default', data.get('default status', ''))
+
+            # Parse boolean fields
+            subaccount_config = self._parse_bool_field(data, 'subaccount')
+            affects_ui = self._parse_bool_field(data, 'affects user interface')
+
+            # Get other text fields
+            account_course_setting = None
+            for key in data.keys():
+                if 'setting' in key and 'enable' in key:
+                    account_course_setting = data[key]
+                    break
+
+            permissions = data.get('permissions', data.get('permission', ''))
+            affected_areas = self._extract_areas(
+                data.get('affected areas', data.get('affects', ''))
+            )
+            affects_roles = self._extract_roles(
+                data.get('affected user roles', data.get('roles', ''))
+            )
 
             return FeatureTableData(
-                enable_location=data.get('enabled', data.get('enable', data.get('enabled at', ''))),
-                default_status=data.get('default', data.get('default status', '')),
-                permissions=data.get('permissions', data.get('permission', '')),
-                affected_areas=self._extract_areas(data.get('affects', data.get('affected areas', ''))),
-                affects_roles=self._extract_roles(data.get('affects', data.get('roles', '')))
+                canonical_name=canonical_name,
+                enable_location_account=enable_location_account,
+                enable_location_course=enable_location_course,
+                subaccount_config=subaccount_config,
+                affects_ui=affects_ui,
+                account_course_setting=account_course_setting,
+                permissions=permissions,
+                affected_areas=affected_areas,
+                affects_roles=affects_roles,
+                # Legacy fields for backwards compat
+                enable_location=legacy_enable_location,
+                default_status=legacy_default_status,
             )
         except Exception as e:
             logger.debug(f"Error parsing feature table: {e}")
             return None
+
+    def _parse_bool_field(self, data: dict, key_contains: str) -> Optional[bool]:
+        """Parse a boolean field from table data.
+
+        Args:
+            data: Dictionary of table data (lowercase keys).
+            key_contains: Substring to look for in keys.
+
+        Returns:
+            True if value is 'yes', False if 'no', None if not found.
+        """
+        for key, value in data.items():
+            if key_contains in key:
+                value_lower = value.lower().strip()
+                if value_lower == 'yes':
+                    return True
+                elif value_lower == 'no':
+                    return False
+        return None
 
     def _extract_areas(self, text: str) -> List[str]:
         """Extract affected areas from text.
@@ -1457,7 +1591,8 @@ class InstructureScraper:
                             anchor_id=data_id,
                             added_date=added_date,
                             raw_content=raw_content,
-                            table_data=table_data
+                            table_data=table_data,
+                            section=current_section,
                         )
                         features.append(feature)
 
@@ -1863,15 +1998,35 @@ def classify_discussion_posts(
     return updates
 
 
+def _slugify(text: str) -> str:
+    """Convert text to a slug suitable for option_id.
+
+    Args:
+        text: Text to slugify (e.g., "Document Processor").
+
+    Returns:
+        Slugified text (e.g., "document_processor").
+    """
+    if not text:
+        return ""
+    # Lowercase, replace spaces/hyphens with underscores, remove other special chars
+    slug = text.lower().strip()
+    slug = re.sub(r'[\s\-]+', '_', slug)
+    slug = re.sub(r'[^a-z0-9_]', '', slug)
+    return slug[:50]  # Limit length
+
+
 def classify_release_features(
     page: ReleaseNotePage,
     db: "Database",
     first_run_limit: int = 3
 ) -> Tuple[bool, List[str]]:
-    """Classify release note features as new or existing.
+    """Classify release note features and create announcements.
 
-    Creates feature_options records for announced features and links
-    the content to features via content_feature_refs.
+    Uses the three-tier model:
+    1. features (canonical) - matched from category
+    2. feature_options (canonical) - from "Feature Option to Enable" table cell
+    3. feature_announcements - each H4 entry (this release note)
 
     Args:
         page: Parsed ReleaseNotePage with features to classify.
@@ -1879,9 +2034,9 @@ def classify_release_features(
         first_run_limit: Max features to include on first run.
 
     Returns:
-        Tuple of (is_new_page, new_feature_names):
+        Tuple of (is_new_page, new_feature_anchor_ids):
         - is_new_page: True if this release note page is new
-        - new_feature_names: List of newly announced feature names
+        - new_feature_anchor_ids: List of anchor_ids for new announcements
     """
     from src.constants import CANVAS_FEATURES
 
@@ -1894,45 +2049,81 @@ def classify_release_features(
     # Check if this page is already tracked
     is_new_page = not db.item_exists(content_id)
 
-    new_feature_names: List[str] = []
+    new_anchor_ids: List[str] = []
     processed_count = 0
+    announced_at = page.release_date.isoformat() if page.release_date else None
 
     for feature in page.features:
         # Apply first_run_limit for new pages
         if is_new_page and processed_count >= first_run_limit:
             break
 
-        # Generate option_id from anchor_id or name
-        option_id = feature.anchor_id if feature.anchor_id else \
-            feature.name.lower().replace(' ', '_').replace('-', '_')[:50]
+        # Skip if announcement already exists for this content + anchor
+        if feature.anchor_id and db.announcement_exists(content_id, feature.anchor_id):
+            continue
 
         # Try to match to canonical feature based on category/name
         feature_id = _match_feature_id(feature.category, feature.name, CANVAS_FEATURES)
 
-        # Create/update feature option record
-        db.upsert_feature_option(
-            option_id=option_id,
-            feature_id=feature_id,
-            name=feature.name,
-            status='pending',  # Release notes announce pending features
-            summary=feature.raw_content[:500] if feature.raw_content else None,
-            config_level=feature.table_data.enable_location if feature.table_data else None,
-            default_state=feature.table_data.default_status if feature.table_data else None,
-            first_announced=page.release_date.isoformat() if page.release_date else None,
-        )
+        # Determine option_id from canonical_name (preferred) or anchor_id (fallback)
+        canonical_name = None
+        option_id = None
 
-        # Link content to feature
-        db.add_content_feature_ref(
+        if feature.table_data and feature.table_data.canonical_name:
+            canonical_name = feature.table_data.canonical_name
+            option_id = _slugify(canonical_name)
+        elif feature.anchor_id:
+            option_id = feature.anchor_id
+        else:
+            option_id = _slugify(feature.name)
+
+        # Create/update feature option record (canonical option)
+        if option_id:
+            db.upsert_feature_option(
+                option_id=option_id,
+                feature_id=feature_id,
+                name=feature.name,
+                canonical_name=canonical_name,
+                status='pending',  # Release notes announce pending features
+                config_level=feature.table_data.enable_location_account if feature.table_data else None,
+                default_state=feature.table_data.enable_location_account if feature.table_data else None,
+                first_announced=announced_at,
+            )
+
+            # Link content to feature option
+            db.add_content_feature_ref(
+                content_id=content_id,
+                feature_id=feature_id,
+                feature_option_id=option_id,
+                mention_type='announces',
+            )
+
+        # Insert feature announcement (H4 entry snapshot)
+        table_data = feature.table_data
+        db.insert_feature_announcement(
             content_id=content_id,
-            feature_id=feature_id,
-            feature_option_id=option_id,
-            mention_type='announces',
+            h4_title=feature.name,
+            announced_at=announced_at,
+            option_id=option_id,
+            anchor_id=feature.anchor_id,
+            section=feature.section or "New Features",
+            category=feature.category,
+            raw_content=feature.raw_content,
+            summary=feature.summary if feature.summary else None,
+            enable_location_account=table_data.enable_location_account if table_data else None,
+            enable_location_course=table_data.enable_location_course if table_data else None,
+            subaccount_config=table_data.subaccount_config if table_data else None,
+            account_course_setting=table_data.account_course_setting if table_data else None,
+            permissions=table_data.permissions if table_data else None,
+            affected_areas=table_data.affected_areas if table_data else None,
+            affects_ui=table_data.affects_ui if table_data else None,
+            added_date=feature.added_date.isoformat() if feature.added_date else None,
         )
 
-        new_feature_names.append(feature.name)
+        new_anchor_ids.append(feature.anchor_id or option_id)
         processed_count += 1
 
-    return (is_new_page, new_feature_names)
+    return (is_new_page, new_anchor_ids)
 
 
 def _match_feature_id(category: str, name: str, features: dict) -> str:
@@ -2059,3 +2250,120 @@ def classify_deploy_changes(
         processed_count += 1
 
     return (is_new_page, new_change_names)
+
+
+# Mention type priority (lower index = stronger)
+MENTION_TYPE_PRIORITY = ['announces', 'questions', 'discusses', 'feedback', 'mentions']
+
+
+def extract_feature_refs(
+    title: str,
+    content: str,
+    db: "Database",
+    post_type: str,
+    is_new: bool,
+    processor: Optional["ContentProcessor"] = None,
+) -> List[Tuple[str, Optional[str], str]]:
+    """Extract feature references from post title and content.
+
+    Args:
+        title: Post title.
+        content: Post content.
+        db: Database instance for querying existing feature_options.
+        post_type: 'question' or 'blog'.
+        is_new: True if first scrape, False if update (new comments).
+        processor: Optional ContentProcessor for LLM fallback.
+
+    Returns:
+        List of (feature_id, option_id, mention_type) tuples.
+    """
+    from src.constants import CANVAS_FEATURES
+
+    refs: List[Tuple[str, Optional[str], str]] = []
+    title_lower = (title or "").lower()
+    content_lower = (content or "").lower()
+
+    # Determine base mention_type based on post_type and is_new
+    if post_type == "blog" and is_new:
+        title_mention_type = "announces"
+        content_mention_type = "announces"
+    elif post_type == "question":
+        title_mention_type = "questions"
+        content_mention_type = "mentions"
+    else:
+        # Blog update or other
+        title_mention_type = "discusses"
+        content_mention_type = "mentions"
+
+    # 1. Match against existing feature_options
+    existing_options = db.get_all_feature_options()
+    for option in existing_options:
+        canonical = (option.get("canonical_name") or "").lower()
+        name = (option.get("name") or "").lower()
+
+        if not canonical and not name:
+            continue
+
+        match_text = canonical or name
+
+        if match_text in title_lower:
+            refs.append((option["feature_id"], option["option_id"], title_mention_type))
+        elif match_text in content_lower:
+            refs.append((option["feature_id"], option["option_id"], content_mention_type))
+
+    # 2. Match against CANVAS_FEATURES
+    for feature_id, feature_name in CANVAS_FEATURES.items():
+        feature_name_lower = feature_name.lower()
+
+        if feature_name_lower in title_lower or feature_id in title_lower:
+            refs.append((feature_id, None, title_mention_type))
+        elif feature_name_lower in content_lower or feature_id in content_lower:
+            refs.append((feature_id, None, content_mention_type))
+
+    # 3. LLM fallback if no matches and processor available
+    if not refs and processor:
+        try:
+            llm_features = processor.extract_features_with_llm(title, content)
+            for feat in llm_features:
+                # Try to match LLM output to canonical feature
+                matched_id = _match_feature_id(feat, feat, CANVAS_FEATURES)
+                refs.append((matched_id, None, "mentions"))
+        except Exception as e:
+            logger.warning(f"LLM feature extraction failed: {e}")
+
+    # 4. Fall back to 'general' if still no matches
+    if not refs:
+        refs.append(("general", None, "mentions"))
+
+    # 5. Deduplicate, keeping strongest mention_type per (feature_id, option_id) pair
+    return _deduplicate_refs(refs)
+
+
+def _deduplicate_refs(
+    refs: List[Tuple[str, Optional[str], str]]
+) -> List[Tuple[str, Optional[str], str]]:
+    """Deduplicate refs, keeping strongest mention_type per feature/option pair.
+
+    Args:
+        refs: List of (feature_id, option_id, mention_type) tuples.
+
+    Returns:
+        Deduplicated list with strongest mention_type per pair.
+    """
+    # Group by (feature_id, option_id)
+    best: Dict[Tuple[str, Optional[str]], str] = {}
+
+    for feature_id, option_id, mention_type in refs:
+        key = (feature_id, option_id)
+
+        if key not in best:
+            best[key] = mention_type
+        else:
+            # Keep the stronger mention_type (lower index in priority list)
+            current_priority = MENTION_TYPE_PRIORITY.index(best[key]) if best[key] in MENTION_TYPE_PRIORITY else 999
+            new_priority = MENTION_TYPE_PRIORITY.index(mention_type) if mention_type in MENTION_TYPE_PRIORITY else 999
+
+            if new_priority < current_priority:
+                best[key] = mention_type
+
+    return [(fid, oid, mtype) for (fid, oid), mtype in best.items()]

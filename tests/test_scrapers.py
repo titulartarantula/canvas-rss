@@ -2171,10 +2171,10 @@ class TestClassifyReleaseFeatures:
             upcoming_changes=[], features=[feature], sections={}
         )
 
-        is_new, new_feature_names = classify_release_features(page, temp_db, first_run_limit=3)
+        is_new, new_anchor_ids = classify_release_features(page, temp_db, first_run_limit=3)
         assert is_new is True
-        # v2.0: Returns feature names, not anchor IDs
-        assert "New Feature" in new_feature_names
+        # v2.0: Returns anchor_ids (or option_ids) for tracking
+        assert "new-feature" in new_anchor_ids
 
     def test_first_run_limit_for_features(self, temp_db):
         """Test first-run limit for features (v2.0)."""
@@ -2765,3 +2765,155 @@ class TestParseReleaseNoteTableData:
         # table_data should be parsed from the content
         assert result.features[0].table_data is not None
         assert result.features[0].table_data.enable_location == "Course"
+
+
+class TestExtractFeatureRefs:
+    """Tests for extract_feature_refs function."""
+
+    def test_extract_feature_refs_matches_feature_option_in_title(self, temp_db):
+        """Test that canonical option names in title are matched."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        # Setup: seed features and add an option
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="enhanced_gradebook_filters",
+            feature_id="gradebook",
+            name="Enhanced Gradebook Filters",
+            canonical_name="Enhanced Gradebook Filters",
+            status="preview",
+        )
+
+        refs = extract_feature_refs(
+            title="Problems with Enhanced Gradebook Filters",
+            content="The filters are not working correctly.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should match the option with 'questions' type (Q&A post)
+        assert len(refs) >= 1
+        option_ref = next((r for r in refs if r[1] == "enhanced_gradebook_filters"), None)
+        assert option_ref is not None
+        assert option_ref[0] == "gradebook"  # feature_id
+        assert option_ref[2] == "questions"  # mention_type
+
+    def test_extract_feature_refs_matches_feature_in_content(self, temp_db):
+        """Test that feature names in content get 'mentions' type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="Help needed",
+            content="I'm having trouble with SpeedGrader and the Gradebook.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should match features with 'mentions' type (content only)
+        feature_ids = [r[0] for r in refs]
+        assert "speedgrader" in feature_ids or "gradebook" in feature_ids
+
+    def test_extract_feature_refs_blog_first_scrape_uses_announces(self, temp_db):
+        """Test that blog posts on first scrape use 'announces' mention_type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="New Quizzes Update",
+            content="We're excited to announce improvements to New Quizzes.",
+            db=temp_db,
+            post_type="blog",
+            is_new=True,
+        )
+
+        # Blog first scrape should use 'announces'
+        assert any(r[2] == "announces" for r in refs)
+
+    def test_extract_feature_refs_blog_update_uses_discusses(self, temp_db):
+        """Test that blog post updates use 'discusses' mention_type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="New Quizzes Update",
+            content="We're excited to announce improvements to New Quizzes.",
+            db=temp_db,
+            post_type="blog",
+            is_new=False,  # Not first scrape
+        )
+
+        # Blog update should use 'discusses' not 'announces'
+        assert not any(r[2] == "announces" for r in refs)
+        assert any(r[2] in ("discusses", "mentions") for r in refs)
+
+    def test_extract_feature_refs_no_match_returns_general(self, temp_db):
+        """Test that no matches returns link to 'general' feature."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="Random question",
+            content="Something completely unrelated to Canvas features.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+            processor=None,  # No LLM fallback
+        )
+
+        # Should fall back to 'general'
+        assert len(refs) == 1
+        assert refs[0][0] == "general"
+        assert refs[0][1] is None
+        assert refs[0][2] == "mentions"
+
+    def test_extract_feature_refs_deduplicates_keeps_strongest(self, temp_db):
+        """Test that duplicate feature refs are deduplicated, keeping strongest mention_type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="new_quizzes_logs",
+            feature_id="new_quizzes",
+            name="New Quizzes Build Logs",
+            canonical_name="New Quizzes Build Logs",
+            status="optional",
+        )
+
+        # Title mentions "New Quizzes" (feature) and content mentions it too
+        refs = extract_feature_refs(
+            title="New Quizzes problems",
+            content="I'm having issues with New Quizzes in my course.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should only have one ref to new_quizzes, with strongest type
+        new_quizzes_refs = [r for r in refs if r[0] == "new_quizzes"]
+        assert len(new_quizzes_refs) == 1
+
+    def test_extract_feature_refs_multiple_features(self, temp_db):
+        """Test that multiple different features create multiple refs."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="SpeedGrader and Rubrics question",
+            content="How do rubrics work in SpeedGrader?",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        feature_ids = [r[0] for r in refs]
+        # Should have refs to both features
+        assert "speedgrader" in feature_ids
+        assert "rubrics" in feature_ids
