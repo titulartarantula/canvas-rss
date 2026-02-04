@@ -541,8 +541,9 @@ class TestFeatureOptionsTable:
         cursor.execute("PRAGMA table_info(feature_options)")
         columns = {row[1] for row in cursor.fetchall()}
         expected = {
-            "option_id", "feature_id", "name", "summary", "status",
-            "config_level", "default_state", "first_announced", "last_updated"
+            "option_id", "feature_id", "name", "canonical_name", "summary", "status",
+            "config_level", "default_state", "user_group_url", "first_announced",
+            "last_updated", "first_seen", "last_seen"
         }
         assert expected == columns
 
@@ -717,3 +718,257 @@ class TestDeprecatedTablesDropped:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_tracking'"
         )
         assert cursor.fetchone() is None
+
+
+class TestFeatureAnnouncements:
+    """Tests for v2.0 feature_announcements table."""
+
+    def test_feature_announcements_table_created(self, temp_db):
+        """Test that feature_announcements table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_announcements'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_feature_announcements_table_schema(self, temp_db):
+        """Test that feature_announcements table has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {
+            "id", "feature_id", "option_id", "content_id", "h4_title", "anchor_id",
+            "section", "category", "raw_content", "summary",
+            "enable_location_account", "enable_location_course",
+            "subaccount_config", "account_course_setting", "permissions",
+            "affected_areas", "affects_ui", "added_date", "announced_at", "created_at"
+        }
+        assert expected == columns
+
+    def test_insert_feature_announcement(self, temp_db, sample_content_item):
+        """Test inserting a feature announcement."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.upsert_feature_option(
+            option_id="document_processor",
+            feature_id="assignments",
+            name="Document Processor",
+            canonical_name="Document Processor",
+            status="pending"
+        )
+
+        announcement_id = temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Document Processing App",
+            announced_at="2026-02-21T00:00:00",
+            option_id="document_processor",
+            anchor_id="document-processing-app",
+            section="New Features",
+            category="Assignments",
+            raw_content="<p>This feature enables...</p>",
+            summary="Enables document processing for assignments.",
+            enable_location_account="Disabled/Unlocked",
+            enable_location_course="Disabled",
+            subaccount_config=False,
+            permissions="Inherent to user role",
+            affected_areas=["Grades", "SpeedGrader"],
+            affects_ui=True
+        )
+
+        assert announcement_id > 0
+
+    def test_get_announcements_for_option(self, temp_db, sample_content_item):
+        """Test retrieving announcements for a feature option."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.upsert_feature_option("doc_proc", "assignments", "Doc Proc", status="pending")
+
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Document Processing App",
+            announced_at="2026-02-21T00:00:00",
+            option_id="doc_proc",
+            affected_areas=["Grades"]
+        )
+
+        announcements = temp_db.get_announcements_for_option("doc_proc")
+        assert len(announcements) == 1
+        assert announcements[0]["h4_title"] == "Document Processing App"
+        assert announcements[0]["affected_areas"] == ["Grades"]
+
+    def test_get_announcements_for_content(self, temp_db, sample_content_item):
+        """Test retrieving all announcements in a release note."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.upsert_feature_option("opt1", "assignments", "Option 1", status="pending")
+        temp_db.upsert_feature_option("opt2", "gradebook", "Option 2", status="preview")
+
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Feature One",
+            announced_at="2026-02-21T00:00:00",
+            option_id="opt1",
+            section="New Features",
+            category="Assignments"
+        )
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Feature Two",
+            announced_at="2026-02-21T00:00:00",
+            option_id="opt2",
+            section="New Features",
+            category="Gradebook"
+        )
+
+        announcements = temp_db.get_announcements_for_content(sample_content_item.source_id)
+        assert len(announcements) == 2
+        titles = {a["h4_title"] for a in announcements}
+        assert titles == {"Feature One", "Feature Two"}
+
+    def test_announcement_exists(self, temp_db, sample_content_item):
+        """Test checking if announcement exists."""
+        temp_db.insert_item(sample_content_item)
+
+        assert not temp_db.announcement_exists(sample_content_item.source_id, "test-anchor")
+
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Test Feature",
+            announced_at="2026-02-21T00:00:00",
+            anchor_id="test-anchor"
+        )
+
+        assert temp_db.announcement_exists(sample_content_item.source_id, "test-anchor")
+
+
+class TestFeatureOptions:
+    """Tests for feature option methods."""
+
+    def test_get_all_feature_options_empty(self, temp_db):
+        """Test get_all_feature_options returns empty list when no options exist."""
+        options = temp_db.get_all_feature_options()
+        assert options == []
+
+    def test_get_all_feature_options_returns_options_with_canonical_name(self, temp_db):
+        """Test get_all_feature_options returns options that have canonical_name."""
+        # Seed features first
+        temp_db.seed_features()
+
+        # Insert option with canonical_name
+        temp_db.upsert_feature_option(
+            option_id="doc_processor",
+            feature_id="assignments",
+            name="Document Processor",
+            canonical_name="Document Processor",
+            status="preview",
+        )
+
+        # Insert option without canonical_name (should not be returned)
+        temp_db.upsert_feature_option(
+            option_id="some_legacy_option",
+            feature_id="gradebook",
+            name="Legacy Option",
+            canonical_name=None,
+            status="released",
+        )
+
+        options = temp_db.get_all_feature_options()
+
+        assert len(options) == 1
+        assert options[0]["option_id"] == "doc_processor"
+        assert options[0]["canonical_name"] == "Document Processor"
+        assert options[0]["feature_id"] == "assignments"
+
+    def test_get_all_feature_options_includes_name_field(self, temp_db):
+        """Test that returned options include name field for fallback matching."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="new_quizzes_logs",
+            feature_id="new_quizzes",
+            name="New Quizzes Build Logs",
+            canonical_name="New Quizzes Build Logs",
+            status="optional",
+        )
+
+        options = temp_db.get_all_feature_options()
+
+        assert options[0]["name"] == "New Quizzes Build Logs"
+
+
+class TestUpcomingChanges:
+    """Tests for v2.0 upcoming_changes table."""
+
+    def test_upcoming_changes_table_created(self, temp_db):
+        """Test that upcoming_changes table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='upcoming_changes'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_upcoming_changes_table_schema(self, temp_db):
+        """Test that upcoming_changes table has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(upcoming_changes)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {"id", "content_id", "change_date", "description", "created_at"}
+        assert expected == columns
+
+    def test_insert_upcoming_change(self, temp_db, sample_content_item):
+        """Test inserting an upcoming change."""
+        temp_db.insert_item(sample_content_item)
+
+        change_id = temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-03-15",
+            description="Classic Quizzes will be deprecated"
+        )
+
+        assert change_id > 0
+
+    def test_get_upcoming_changes(self, temp_db, sample_content_item):
+        """Test retrieving upcoming changes."""
+        temp_db.insert_item(sample_content_item)
+
+        temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-03-01",
+            description="Change happening soon"
+        )
+        temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-04-01",
+            description="Change happening later"
+        )
+
+        changes = temp_db.get_upcoming_changes(days_ahead=90)
+        assert len(changes) == 2
+        # Should be ordered by date ascending
+        assert changes[0]["description"] == "Change happening soon"
+        assert changes[1]["description"] == "Change happening later"
+
+    def test_upcoming_change_exists(self, temp_db, sample_content_item):
+        """Test checking if upcoming change exists."""
+        temp_db.insert_item(sample_content_item)
+
+        assert not temp_db.upcoming_change_exists(
+            sample_content_item.source_id,
+            "2026-03-15",
+            "Test change"
+        )
+
+        temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-03-15",
+            description="Test change"
+        )
+
+        assert temp_db.upcoming_change_exists(
+            sample_content_item.source_id,
+            "2026-03-15",
+            "Test change"
+        )
