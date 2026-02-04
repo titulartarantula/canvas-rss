@@ -33,6 +33,11 @@ class CommunityPost:
     comments: int = 0
     post_type: str = "discussion"  # 'release_note', 'changelog', 'question', 'blog'
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
+    last_comment_at: Optional[datetime] = None
+    comment_count: int = 0
 
     @property
     def source(self) -> str:
@@ -42,7 +47,7 @@ class CommunityPost:
     @property
     def source_id(self) -> str:
         """Generate unique ID from URL and post type."""
-        return f"{self.post_type}_{hash(self.url)}"
+        return extract_source_id(self.url, self.post_type)
 
 
 @dataclass
@@ -93,6 +98,9 @@ class ReleaseNotePage:
     upcoming_changes: List[UpcomingChange]
     features: List[Feature]
     sections: Dict[str, List[Feature]]
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
 
 
 @dataclass
@@ -117,6 +125,9 @@ class DeployNotePage:
     beta_date: Optional[datetime]
     changes: List[DeployChange]
     sections: Dict[str, List[DeployChange]]
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
 
 
 def extract_source_id(url: str, post_type: str) -> str:
@@ -148,6 +159,9 @@ class ReleaseNote:
     comments: int = 0
     post_type: str = "release_note"  # 'release_note' or 'deploy_note'
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
 
     @property
     def source(self) -> str:
@@ -157,7 +171,7 @@ class ReleaseNote:
     @property
     def source_id(self) -> str:
         """Generate unique ID from URL and post type."""
-        return f"{self.post_type}_{hash(self.url)}"
+        return extract_source_id(self.url, self.post_type)
 
 
 @dataclass
@@ -612,26 +626,33 @@ class InstructureScraper:
             logger.error(f"Error extracting post cards: {e}")
             return []
 
-    def _get_post_content(self, url: str) -> tuple:
-        """Navigate to a post and extract its content.
+    def _get_post_content(self, url: str) -> dict:
+        """Navigate to a post and extract its content and metadata.
 
         Args:
             url: URL of the post to scrape.
 
         Returns:
-            Tuple of (content, likes, comments).
+            Dictionary with keys: content, likes, comments, first_posted,
+            last_edited, last_comment_at, comment_count.
         """
+        result = {
+            "content": "",
+            "likes": 0,
+            "comments": 0,
+            "first_posted": None,
+            "last_edited": None,
+            "last_comment_at": None,
+            "comment_count": 0,
+        }
+
         if not self.page:
-            return ("", 0, 0)
+            return result
 
         try:
             self._rate_limit()
             self.page.goto(url, timeout=30000)
             self.page.wait_for_load_state("networkidle", timeout=15000)
-
-            content = ""
-            likes = 0
-            comments = 0
 
             # Extract main content
             content_selectors = [
@@ -649,14 +670,14 @@ class InstructureScraper:
                 try:
                     content_el = self.page.query_selector(selector)
                     if content_el:
-                        content = content_el.inner_text().strip()
-                        if len(content) > 50:  # Found substantial content
+                        result["content"] = content_el.inner_text().strip()
+                        if len(result["content"]) > 50:  # Found substantial content
                             break
                 except Exception:
                     continue
 
             # Limit content length
-            content = content[:5000] if content else ""
+            result["content"] = result["content"][:5000] if result["content"] else ""
 
             # Extract likes/reactions
             likes_selectors = [
@@ -674,12 +695,12 @@ class InstructureScraper:
                         likes_text = likes_el.inner_text().strip()
                         likes_match = re.search(r'(\d+)', likes_text)
                         if likes_match:
-                            likes = int(likes_match.group(1))
+                            result["likes"] = int(likes_match.group(1))
                             break
                 except Exception:
                     continue
 
-            # Extract comment count
+            # Extract comment count from reply count or pagination
             comments_selectors = [
                 "[class*='comment-count']",
                 "[class*='reply-count']",
@@ -695,19 +716,73 @@ class InstructureScraper:
                         comments_text = comments_el.inner_text().strip()
                         comments_match = re.search(r'(\d+)', comments_text)
                         if comments_match:
-                            comments = int(comments_match.group(1))
+                            result["comments"] = int(comments_match.group(1))
+                            result["comment_count"] = result["comments"]
                             break
                 except Exception:
                     continue
 
-            return (content, likes, comments)
+            # Extract first_posted from first <time datetime> element
+            try:
+                time_elements = self.page.query_selector_all("time[datetime]")
+                if time_elements:
+                    first_time = time_elements[0]
+                    dt_str = first_time.get_attribute("datetime")
+                    if dt_str:
+                        result["first_posted"] = self._parse_relative_date(dt_str)
+            except Exception as e:
+                logger.debug(f"Error extracting first_posted: {e}")
+
+            # Extract last_edited - look for "Edited" or "Updated" time elements
+            try:
+                edit_selectors = [
+                    "[class*='edited'] time[datetime]",
+                    "[class*='updated'] time[datetime]",
+                ]
+                for selector in edit_selectors:
+                    try:
+                        edited_el = self.page.query_selector(selector)
+                        if edited_el:
+                            dt_str = edited_el.get_attribute("datetime")
+                            if dt_str:
+                                result["last_edited"] = self._parse_relative_date(dt_str)
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting last_edited: {e}")
+
+            # Extract last_comment_at from the last comment's time element
+            try:
+                comment_section_selectors = [
+                    "[class*='comment']",
+                    "[class*='reply']",
+                    "[class*='response']",
+                ]
+                for section_selector in comment_section_selectors:
+                    try:
+                        comments = self.page.query_selector_all(section_selector)
+                        if comments and len(comments) > 1:
+                            last_comment = comments[-1]
+                            time_el = last_comment.query_selector("time[datetime]")
+                            if time_el:
+                                dt_str = time_el.get_attribute("datetime")
+                                if dt_str:
+                                    result["last_comment_at"] = self._parse_relative_date(dt_str)
+                                    break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting last_comment_at: {e}")
+
+            return result
 
         except PlaywrightTimeout:
             logger.warning(f"Timeout loading post: {url}")
-            return ("", 0, 0)
+            return result
         except Exception as e:
             logger.error(f"Error getting post content from {url}: {e}")
-            return ("", 0, 0)
+            return result
 
     def _click_deploys_tab(self) -> bool:
         """Click the Deploys tab to switch to deploy notes view.
@@ -911,8 +986,8 @@ class InstructureScraper:
                     logger.debug(f"Skipping old post (>{hours}h): {post['title']}")
                     continue
 
-                # Get full content
-                content, likes, comments = self._get_post_content(post["url"])
+                # Get full content and metadata
+                post_data = self._get_post_content(post["url"])
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -924,10 +999,10 @@ class InstructureScraper:
                 note = ReleaseNote(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date,
-                    likes=likes,
-                    comments=comments,
+                    likes=post_data["likes"],
+                    comments=post_data["comments"],
                     post_type=post_type,
                     is_latest=is_latest
                 )
@@ -1043,7 +1118,7 @@ class InstructureScraper:
                     continue
 
                 # Get full content
-                content, _, _ = self._get_post_content(post["url"])
+                post_data = self._get_post_content(post["url"])
 
                 # Use current time if we couldn't parse the date
                 if not published_date:
@@ -1052,7 +1127,7 @@ class InstructureScraper:
                 entry = ChangeLogEntry(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date
                 )
                 changelog_entries.append(entry)
@@ -1098,8 +1173,8 @@ class InstructureScraper:
                     logger.debug(f"Skipping old question: {post['title']}")
                     continue
 
-                # Get full content (includes engagement metrics)
-                content, likes, comments = self._get_post_content(post["url"])
+                # Get full content (includes engagement metrics and source dates)
+                post_data = self._get_post_content(post["url"])
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -1107,11 +1182,15 @@ class InstructureScraper:
                 community_post = CommunityPost(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date,
-                    likes=likes,
-                    comments=comments,
-                    post_type="question"
+                    likes=post_data["likes"],
+                    comments=post_data["comments"],
+                    post_type="question",
+                    first_posted=post_data["first_posted"],
+                    last_edited=post_data["last_edited"],
+                    last_comment_at=post_data["last_comment_at"],
+                    comment_count=post_data["comment_count"],
                 )
                 posts.append(community_post)
 
@@ -1156,8 +1235,8 @@ class InstructureScraper:
                     logger.debug(f"Skipping old blog post: {post['title']}")
                     continue
 
-                # Get full content
-                content, likes, comments = self._get_post_content(post["url"])
+                # Get full content and source dates
+                post_data = self._get_post_content(post["url"])
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -1165,11 +1244,15 @@ class InstructureScraper:
                 community_post = CommunityPost(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date,
-                    likes=likes,
-                    comments=comments,
-                    post_type="blog"
+                    likes=post_data["likes"],
+                    comments=post_data["comments"],
+                    post_type="blog",
+                    first_posted=post_data["first_posted"],
+                    last_edited=post_data["last_edited"],
+                    last_comment_at=post_data["last_comment_at"],
+                    comment_count=post_data["comment_count"],
                 )
                 posts.append(community_post)
 
@@ -1385,13 +1468,42 @@ class InstructureScraper:
                     logger.debug(f"Error parsing heading: {e}")
                     continue
 
+            # Extract source dates from page
+            first_posted = None
+            last_edited = None
+            try:
+                time_elements = self.page.query_selector_all("time[datetime]")
+                if time_elements:
+                    dt_str = time_elements[0].get_attribute("datetime")
+                    if dt_str:
+                        first_posted = self._parse_relative_date(dt_str)
+                # Look for edited/updated time
+                edit_selectors = [
+                    "[class*='edited'] time[datetime]",
+                    "[class*='updated'] time[datetime]",
+                ]
+                for selector in edit_selectors:
+                    try:
+                        edited_el = self.page.query_selector(selector)
+                        if edited_el:
+                            dt_str = edited_el.get_attribute("datetime")
+                            if dt_str:
+                                last_edited = self._parse_relative_date(dt_str)
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting page dates: {e}")
+
             return ReleaseNotePage(
                 title=title,
                 url=url,
                 release_date=release_date,
                 upcoming_changes=upcoming_changes,
                 features=features,
-                sections=sections
+                sections=sections,
+                first_posted=first_posted,
+                last_edited=last_edited,
             )
 
         except Exception as e:
@@ -1494,13 +1606,42 @@ class InstructureScraper:
                     logger.debug(f"Error parsing deploy heading: {e}")
                     continue
 
+            # Extract source dates from page
+            first_posted = None
+            last_edited = None
+            try:
+                time_elements = self.page.query_selector_all("time[datetime]")
+                if time_elements:
+                    dt_str = time_elements[0].get_attribute("datetime")
+                    if dt_str:
+                        first_posted = self._parse_relative_date(dt_str)
+                # Look for edited/updated time
+                edit_selectors = [
+                    "[class*='edited'] time[datetime]",
+                    "[class*='updated'] time[datetime]",
+                ]
+                for selector in edit_selectors:
+                    try:
+                        edited_el = self.page.query_selector(selector)
+                        if edited_el:
+                            dt_str = edited_el.get_attribute("datetime")
+                            if dt_str:
+                                last_edited = self._parse_relative_date(dt_str)
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting page dates: {e}")
+
             return DeployNotePage(
                 title=title,
                 url=url,
                 deploy_date=deploy_date,
                 beta_date=beta_date,
                 changes=changes,
-                sections=sections
+                sections=sections,
+                first_posted=first_posted,
+                last_edited=last_edited,
             )
 
         except Exception as e:
@@ -1649,49 +1790,77 @@ def classify_discussion_posts(
 ) -> List[DiscussionUpdate]:
     """Classify posts as new or updated based on comment tracking.
 
+    Uses the content_items table to track which posts are new vs updated.
+    A post is considered:
+    - New: if it doesn't exist in the database
+    - Updated: if it exists but comment_count has increased
+
     Args:
-        posts: List of CommunityPost objects.
-        db: Database instance for tracking.
-        first_run_limit: Max new posts on first run.
-        scraper: Optional scraper for fetching latest comments.
+        posts: List of CommunityPost objects to classify.
+        db: Database instance for checking existing posts.
+        first_run_limit: Max posts to include on first run (when db is empty).
+        scraper: Optional scraper to fetch latest comment text.
 
     Returns:
-        List of DiscussionUpdate objects to include in feed.
+        List of DiscussionUpdate objects for new/updated posts.
     """
-    results = []
-    new_count = 0
+    if not posts:
+        return []
+
+    updates: List[DiscussionUpdate] = []
+    new_posts_count = 0
+
+    # Check if this is a first run (no discussion posts exist in db)
+    is_first_run = True
+    for post in posts:
+        if db.item_exists(post.source_id):
+            is_first_run = False
+            break
 
     for post in posts:
-        source_id = extract_source_id(post.url, post.post_type)
-        tracked = db.get_discussion_tracking(source_id)
+        source_id = post.source_id
+        current_comment_count = post.comment_count or post.comments or 0
 
-        if tracked is None:
-            new_count += 1
-            if new_count > first_run_limit:
-                db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
+        if not db.item_exists(source_id):
+            # New post - check first_run_limit
+            if is_first_run and new_posts_count >= first_run_limit:
                 continue
 
-            results.append(DiscussionUpdate(
-                post=post, is_new=True,
+            # Get latest comment if scraper available
+            latest_comment = None
+            if scraper and current_comment_count > 0:
+                latest_comment = scraper.scrape_latest_comment(post.url)
+
+            updates.append(DiscussionUpdate(
+                post=post,
+                is_new=True,
                 previous_comment_count=0,
-                new_comment_count=post.comments,
-                latest_comment=None
+                new_comment_count=current_comment_count,
+                latest_comment=latest_comment,
             ))
+            new_posts_count += 1
+        else:
+            # Existing post - check for new comments
+            stored_count = db.get_comment_count(source_id) or 0
 
-        elif post.comments > tracked["comment_count"]:
-            new_comments = post.comments - tracked["comment_count"]
-            latest_comment = scraper.scrape_latest_comment(post.url) if scraper else None
+            if current_comment_count > stored_count:
+                # Post has new comments
+                latest_comment = None
+                if scraper:
+                    latest_comment = scraper.scrape_latest_comment(post.url)
 
-            results.append(DiscussionUpdate(
-                post=post, is_new=False,
-                previous_comment_count=tracked["comment_count"],
-                new_comment_count=new_comments,
-                latest_comment=latest_comment
-            ))
+                updates.append(DiscussionUpdate(
+                    post=post,
+                    is_new=False,
+                    previous_comment_count=stored_count,
+                    new_comment_count=current_comment_count,
+                    latest_comment=latest_comment,
+                ))
 
-        db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
+                # Update stored comment count
+                db.update_comment_count(source_id, current_comment_count)
 
-    return results
+    return updates
 
 
 def classify_release_features(
@@ -1701,39 +1870,122 @@ def classify_release_features(
 ) -> Tuple[bool, List[str]]:
     """Classify release note features as new or existing.
 
+    Creates feature_options records for announced features and links
+    the content to features via content_feature_refs.
+
     Args:
-        page: ReleaseNotePage with parsed features.
+        page: Parsed ReleaseNotePage with features to classify.
         db: Database instance for tracking.
-        first_run_limit: Max new features on first run.
+        first_run_limit: Max features to include on first run.
 
     Returns:
-        Tuple of (is_new_page, list_of_new_anchor_ids).
+        Tuple of (is_new_page, new_feature_names):
+        - is_new_page: True if this release note page is new
+        - new_feature_names: List of newly announced feature names
     """
-    parent_id = page.release_date.strftime("release-%Y-%m-%d")
-    new_anchors = []
-    new_count = 0
+    from src.constants import CANVAS_FEATURES
+
+    if not page or not page.features:
+        return (False, [])
+
+    # Generate content_id from the page URL
+    content_id = extract_source_id(page.url, "release_note")
+
+    # Check if this page is already tracked
+    is_new_page = not db.item_exists(content_id)
+
+    new_feature_names: List[str] = []
+    processed_count = 0
 
     for feature in page.features:
-        source_id = f"{parent_id}#{feature.anchor_id}"
-        tracked = db.get_feature_tracking(source_id)
+        # Apply first_run_limit for new pages
+        if is_new_page and processed_count >= first_run_limit:
+            break
 
-        if tracked is None:
-            new_count += 1
-            if new_count <= first_run_limit:
-                new_anchors.append(feature.anchor_id)
+        # Generate option_id from anchor_id or name
+        option_id = feature.anchor_id if feature.anchor_id else \
+            feature.name.lower().replace(' ', '_').replace('-', '_')[:50]
 
-            db.upsert_feature_tracking(
-                source_id=source_id,
-                parent_id=parent_id,
-                feature_type="release_note_feature",
-                anchor_id=feature.anchor_id
-            )
+        # Try to match to canonical feature based on category/name
+        feature_id = _match_feature_id(feature.category, feature.name, CANVAS_FEATURES)
 
-    # Page is "new" if all features are new (first time seeing this page)
-    existing_features = db.get_features_for_parent(parent_id)
-    is_new_page = len(existing_features) == len(page.features) and len(new_anchors) > 0
+        # Create/update feature option record
+        db.upsert_feature_option(
+            option_id=option_id,
+            feature_id=feature_id,
+            name=feature.name,
+            status='pending',  # Release notes announce pending features
+            summary=feature.raw_content[:500] if feature.raw_content else None,
+            config_level=feature.table_data.enable_location if feature.table_data else None,
+            default_state=feature.table_data.default_status if feature.table_data else None,
+            first_announced=page.release_date.isoformat() if page.release_date else None,
+        )
 
-    return (is_new_page, new_anchors)
+        # Link content to feature
+        db.add_content_feature_ref(
+            content_id=content_id,
+            feature_id=feature_id,
+            feature_option_id=option_id,
+            mention_type='announces',
+        )
+
+        new_feature_names.append(feature.name)
+        processed_count += 1
+
+    return (is_new_page, new_feature_names)
+
+
+def _match_feature_id(category: str, name: str, features: dict) -> str:
+    """Match a feature/category to a canonical feature_id.
+
+    Args:
+        category: Feature category from release notes.
+        name: Feature name from release notes.
+        features: CANVAS_FEATURES dictionary.
+
+    Returns:
+        Best matching feature_id, or 'general' if no match.
+    """
+    # Combine category and name for matching
+    combined = f"{category} {name}".lower()
+
+    # Direct name matches
+    for feature_id, feature_name in features.items():
+        if feature_name.lower() in combined or feature_id.lower() in combined:
+            return feature_id
+
+    # Category-based fallbacks
+    category_lower = category.lower()
+    if 'quiz' in category_lower:
+        return 'new_quizzes' if 'new' in combined else 'classic_quizzes'
+    if 'grade' in category_lower or 'speedgrader' in category_lower:
+        return 'gradebook'
+    if 'assignment' in category_lower:
+        return 'assignments'
+    if 'discussion' in category_lower:
+        return 'discussions'
+    if 'module' in category_lower:
+        return 'modules'
+    if 'page' in category_lower:
+        return 'pages'
+    if 'rubric' in category_lower:
+        return 'rubrics'
+    if 'calendar' in category_lower:
+        return 'calendar'
+    if 'inbox' in category_lower or 'conversation' in category_lower:
+        return 'inbox'
+    if 'studio' in category_lower:
+        return 'canvas_studio'
+    if 'mobile' in category_lower:
+        return 'canvas_mobile'
+    if 'api' in category_lower:
+        return 'api'
+    if 'lti' in category_lower or 'external' in category_lower:
+        return 'external_apps_lti'
+    if 'rce' in category_lower or 'rich content' in category_lower:
+        return 'rich_content_editor'
+
+    return 'general'
 
 
 def classify_deploy_changes(
@@ -1743,35 +1995,67 @@ def classify_deploy_changes(
 ) -> Tuple[bool, List[str]]:
     """Classify deploy note changes as new or existing.
 
+    Creates feature_options records for deployed changes and links
+    the content to features via content_feature_refs.
+
     Args:
-        page: DeployNotePage with parsed changes.
+        page: Parsed DeployNotePage with changes to classify.
         db: Database instance for tracking.
-        first_run_limit: Max new changes on first run.
+        first_run_limit: Max changes to include on first run.
 
     Returns:
-        Tuple of (is_new_page, list_of_new_anchor_ids).
+        Tuple of (is_new_page, new_change_names):
+        - is_new_page: True if this deploy note page is new
+        - new_change_names: List of newly deployed change names
     """
-    parent_id = page.deploy_date.strftime("deploy-%Y-%m-%d")
-    new_anchors = []
-    new_count = 0
+    from src.constants import CANVAS_FEATURES
+
+    if not page or not page.changes:
+        return (False, [])
+
+    # Generate content_id from the page URL
+    content_id = extract_source_id(page.url, "deploy_note")
+
+    # Check if this page is already tracked
+    is_new_page = not db.item_exists(content_id)
+
+    new_change_names: List[str] = []
+    processed_count = 0
 
     for change in page.changes:
-        source_id = f"{parent_id}#{change.anchor_id}"
-        tracked = db.get_feature_tracking(source_id)
+        # Apply first_run_limit for new pages
+        if is_new_page and processed_count >= first_run_limit:
+            break
 
-        if tracked is None:
-            new_count += 1
-            if new_count <= first_run_limit:
-                new_anchors.append(change.anchor_id)
+        # Generate option_id from anchor_id or name
+        option_id = change.anchor_id if change.anchor_id else \
+            change.name.lower().replace(' ', '_').replace('-', '_')[:50]
 
-            db.upsert_feature_tracking(
-                source_id=source_id,
-                parent_id=parent_id,
-                feature_type="deploy_note_change",
-                anchor_id=change.anchor_id
-            )
+        # Try to match to canonical feature based on category/name
+        feature_id = _match_feature_id(change.category, change.name, CANVAS_FEATURES)
 
-    existing_changes = db.get_features_for_parent(parent_id)
-    is_new_page = len(existing_changes) == len(page.changes) and len(new_anchors) > 0
+        # Create/update feature option record
+        # Deploy notes typically represent released changes
+        db.upsert_feature_option(
+            option_id=option_id,
+            feature_id=feature_id,
+            name=change.name,
+            status='released',  # Deploy notes announce released changes
+            summary=None,
+            config_level=None,
+            default_state=None,
+            first_announced=page.deploy_date.isoformat() if page.deploy_date else None,
+        )
 
-    return (is_new_page, new_anchors)
+        # Link content to feature
+        db.add_content_feature_ref(
+            content_id=content_id,
+            feature_id=feature_id,
+            feature_option_id=option_id,
+            mention_type='announces',
+        )
+
+        new_change_names.append(change.name)
+        processed_count += 1
+
+    return (is_new_page, new_change_names)

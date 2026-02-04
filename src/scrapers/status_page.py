@@ -27,6 +27,17 @@ class Incident:
         """Return the source type for this incident."""
         return "status"
 
+    # v2.0 source date field aliases for consistency with other scrapers
+    @property
+    def first_posted(self) -> datetime:
+        """Return when the incident was first created."""
+        return self.created_at
+
+    @property
+    def last_edited(self) -> Optional[datetime]:
+        """Return when the incident was last updated."""
+        return self.updated_at
+
 
 class StatusPageMonitor:
     """Monitor Canvas status page for incidents.

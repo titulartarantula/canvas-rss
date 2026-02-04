@@ -31,15 +31,14 @@ class TestContentProcessorInitialization:
         """Test initialization with API key provided directly."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-api-key")
 
         assert processor.gemini_api_key == "test-api-key"
-        mock_genai.configure.assert_called_once_with(api_key="test-api-key")
-        mock_genai.GenerativeModel.assert_called_once()
-        assert processor.model is not None
+        mock_genai.Client.assert_called_once_with(api_key="test-api-key")
+        assert processor.client is not None
 
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
     @patch('processor.content_processor.genai')
@@ -48,19 +47,19 @@ class TestContentProcessorInitialization:
         """Test initialization with API key from environment variable."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor()
 
         assert processor.gemini_api_key == "env-api-key"
-        mock_genai.configure.assert_called_once_with(api_key="env-api-key")
+        mock_genai.Client.assert_called_once_with(api_key="env-api-key")
 
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
     @patch('processor.content_processor.genai')
     @patch.dict('os.environ', {}, clear=True)
     def test_init_without_api_key(self, mock_genai):
-        """Test initialization without API key (model should be None)."""
+        """Test initialization without API key (client should be None)."""
         from processor.content_processor import ContentProcessor
         import os
         # Clear the env var if it exists
@@ -68,32 +67,32 @@ class TestContentProcessorInitialization:
 
         processor = ContentProcessor()
 
-        assert processor.model is None
-        mock_genai.configure.assert_not_called()
+        assert processor.client is None
+        mock_genai.Client.assert_not_called()
 
     @patch('processor.content_processor.GENAI_AVAILABLE', False)
     @patch.dict('os.environ', {}, clear=True)
     def test_init_genai_not_available(self):
-        """Test initialization when google-generativeai is not installed."""
+        """Test initialization when google-genai is not installed."""
         from processor.content_processor import ContentProcessor
         import os
         os.environ.pop('GEMINI_API_KEY', None)
 
         processor = ContentProcessor(gemini_api_key="test-key")
 
-        assert processor.model is None
+        assert processor.client is None
 
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
     @patch('processor.content_processor.genai')
     def test_init_model_initialization_error(self, mock_genai):
-        """Test initialization when model initialization fails."""
+        """Test initialization when client initialization fails."""
         from processor.content_processor import ContentProcessor
 
-        mock_genai.configure.side_effect = Exception("Configuration error")
+        mock_genai.Client.side_effect = Exception("Configuration error")
 
         processor = ContentProcessor(gemini_api_key="test-key")
 
-        assert processor.model is None
+        assert processor.client is None
 
 
 class TestDeduplicate:
@@ -239,17 +238,17 @@ class TestSummarizeWithLLM:
         """Test successful LLM summarization."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "This is a summary of the Canvas update."
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.summarize_with_llm("Some content about Canvas LMS updates")
 
         assert result == "This is a summary of the Canvas update."
-        mock_model.generate_content.assert_called_once()
+        mock_client.models.generate_content.assert_called_once()
 
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
     @patch('processor.content_processor.genai')
@@ -257,9 +256,9 @@ class TestSummarizeWithLLM:
         """Test that API error returns empty string."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = Exception("API error")
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.summarize_with_llm("Some content")
@@ -269,19 +268,19 @@ class TestSummarizeWithLLM:
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
     @patch('processor.content_processor.genai')
     def test_summarize_truncates_long_api_response(self, mock_genai):
-        """Test that long API responses are truncated to 300 chars."""
+        """Test that long API responses are truncated to ~1200 chars."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = "word " * 100  # Very long response
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_response.text = "word " * 300  # Very long response
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.summarize_with_llm("Some content")
 
-        assert len(result) <= 310  # 300 + buffer for "..."
+        assert len(result) <= 1210  # 1200 + buffer for "..."
         assert result.endswith("...")
 
 
@@ -323,11 +322,11 @@ class TestAnalyzeSentiment:
         """Test detection of positive sentiment."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "positive"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.analyze_sentiment("Great new feature!")
@@ -340,11 +339,11 @@ class TestAnalyzeSentiment:
         """Test detection of neutral sentiment."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "neutral"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.analyze_sentiment("The update was released.")
@@ -357,11 +356,11 @@ class TestAnalyzeSentiment:
         """Test detection of negative sentiment."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "negative"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.analyze_sentiment("This feature is broken!")
@@ -374,11 +373,11 @@ class TestAnalyzeSentiment:
         """Test that invalid response defaults to neutral."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "unknown_value"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.analyze_sentiment("Some content")
@@ -391,9 +390,9 @@ class TestAnalyzeSentiment:
         """Test that API error defaults to neutral."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = Exception("API error")
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.analyze_sentiment("Some content")
@@ -406,11 +405,11 @@ class TestAnalyzeSentiment:
         """Test that sentiment matching is case insensitive."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "POSITIVE"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         result = processor.analyze_sentiment("Great!")
@@ -459,11 +458,11 @@ class TestClassifyTopic:
         """Test that valid topics from TOPIC_CATEGORIES are returned."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "PRIMARY: Gradebook | SECONDARY: Assignments"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         primary, secondary = processor.classify_topic("Content about grades and homework")
@@ -477,11 +476,11 @@ class TestClassifyTopic:
         """Test that invalid topics are filtered out."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "PRIMARY: Gradebook | SECONDARY: InvalidTopic, Assignments"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         primary, secondary = processor.classify_topic("Some content")
@@ -496,11 +495,11 @@ class TestClassifyTopic:
         """Test that topic matching is case insensitive."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "PRIMARY: gradebook | SECONDARY: ASSIGNMENTS, Quizzes"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         primary, secondary = processor.classify_topic("Some content")
@@ -516,11 +515,11 @@ class TestClassifyTopic:
         """Test that maximum 2 secondary topics are returned."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "PRIMARY: Gradebook | SECONDARY: Assignments, Quizzes, Discussions, Pages"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         primary, secondary = processor.classify_topic("Some content")
@@ -534,9 +533,9 @@ class TestClassifyTopic:
         """Test that API error returns default topic tuple."""
         from processor.content_processor import ContentProcessor
 
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = Exception("API error")
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
         primary, secondary = processor.classify_topic("Some content")
@@ -892,18 +891,18 @@ class TestEnrichWithLLM:
     @patch('processor.content_processor.GENAI_AVAILABLE', True)
     @patch('processor.content_processor.genai')
     def test_enrich_with_model(self, mock_genai, mock_time):
-        """Test enrichment with LLM model available."""
+        """Test enrichment with LLM client available."""
         from processor.content_processor import ContentProcessor, ContentItem
 
-        mock_model = MagicMock()
+        mock_client = MagicMock()
         # Mock responses for summarize, sentiment, and topic classification
         mock_responses = [
             MagicMock(text="Summary of the content"),  # summarize
             MagicMock(text="positive"),  # sentiment
             MagicMock(text="PRIMARY: Gradebook | SECONDARY: Assignments"),  # topics
         ]
-        mock_model.generate_content.side_effect = mock_responses
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client.models.generate_content.side_effect = mock_responses
+        mock_genai.Client.return_value = mock_client
 
         processor = ContentProcessor(gemini_api_key="test-key")
 

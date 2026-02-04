@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from src.scrapers.instructure_community import Feature, FeatureTableData, DeployChange
 
 from dataclasses import dataclass
+from datetime import datetime as dt
 
 logger = logging.getLogger("canvas_rss")
 
@@ -58,23 +59,36 @@ def format_availability(table: Optional["FeatureTableData"]) -> str:
 class ContentItem:
     """A processed content item ready for RSS feed."""
 
+    # Identity
     source: str  # 'community', 'reddit', 'status'
-    source_id: str
+    source_id: str  # Will migrate to content_id in Stage 2
     title: str
     url: str
-    content: str
     content_type: str = ""  # 'release_note', 'deploy_note', 'changelog', 'blog', 'question', 'reddit', 'status'
+
+    # Content
     summary: str = ""
-    sentiment: str = ""  # positive, neutral, negative
-    primary_topic: str = ""  # Single topic for feature-centric grouping
-    topics: List[str] = None  # Additional/secondary topics
-    published_date: Any = None
+
+    # Source dates (v2.0)
+    first_posted: Optional[dt] = None  # When content was created
+    last_edited: Optional[dt] = None  # When author last edited
+    last_comment_at: Optional[dt] = None  # Most recent comment
+    comment_count: int = 0  # Total comments
+
+    # Engagement
     engagement_score: int = 0
-    comment_count: int = 0  # Track comments for detecting new activity
+
+    # Deprecated fields (keep for backwards compat during migration)
+    content: str = ""  # Raw content, summary is sufficient
+    published_date: Any = None  # Use first_posted instead
+    sentiment: str = ""  # Not used
+    primary_topic: str = ""  # Replaced by feature refs
+    topics: List[str] = None  # Replaced by feature refs
+
+    # RSS-only fields (not stored in DB)
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
     has_tracking_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
     structured_description: str = ""  # v1.3.0+ formatted description (preserved through pipeline)
-    # v1.3.0 discussion metadata (for building description after LLM enrichment)
     is_new_post: bool = False  # True if new post, False if update
     previous_comment_count: int = 0  # Comment count before this update
     new_comment_count: int = 0  # Number of new comments since last check
@@ -524,6 +538,108 @@ Keep it concise and jargon-free."""
         except Exception as e:
             logger.error(f"Topic classification failed: {e}")
             return (self.DEFAULT_TOPIC, [])
+
+    def classify_feature(self, content: str, title: str) -> Optional[str]:
+        """Use LLM to determine which Canvas feature this content is about.
+
+        Args:
+            content: The content text to analyze.
+            title: The title of the content.
+
+        Returns:
+            feature_id from CANVAS_FEATURES, or None if unclear.
+        """
+        from src.constants import CANVAS_FEATURES
+
+        if not content and not title:
+            return None
+
+        # Fallback if client not available
+        if self.client is None:
+            return self._match_feature_keywords(f"{title} {content}", CANVAS_FEATURES)
+
+        try:
+            features_str = ", ".join(f"{fid}: {fname}" for fid, fname in CANVAS_FEATURES.items())
+            prompt = (
+                f"Given this list of Canvas LMS features:\n{features_str}\n\n"
+                "Identify which single feature this content is MOST about.\n"
+                "Respond with ONLY the feature_id (e.g., 'gradebook', 'assignments', 'new_quizzes').\n"
+                "If the content doesn't clearly relate to any specific feature, respond with 'general'.\n\n"
+                f"Title: {title}\n"
+                f"Content: {content[:1000]}"  # Limit content length
+            )
+
+            def call():
+                response = self.client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=prompt,
+                    config=self.generation_config
+                )
+                return response.text.strip().lower()
+
+            response_text = self._call_with_retry(call, None)
+            if not response_text:
+                return self._match_feature_keywords(f"{title} {content}", CANVAS_FEATURES)
+
+            # Validate response is a valid feature_id
+            if response_text in CANVAS_FEATURES:
+                return response_text
+
+            # Try to extract feature_id from response
+            for feature_id in CANVAS_FEATURES:
+                if feature_id in response_text:
+                    return feature_id
+
+            return 'general'
+
+        except Exception as e:
+            logger.error(f"Feature classification failed: {e}")
+            return self._match_feature_keywords(f"{title} {content}", CANVAS_FEATURES)
+
+    def _match_feature_keywords(self, text: str, features: dict) -> Optional[str]:
+        """Simple keyword-based feature matching as fallback.
+
+        Args:
+            text: Text to search for feature keywords.
+            features: CANVAS_FEATURES dictionary.
+
+        Returns:
+            Matched feature_id or 'general'.
+        """
+        text_lower = text.lower()
+
+        # Direct name matches
+        for feature_id, feature_name in features.items():
+            if feature_name.lower() in text_lower:
+                return feature_id
+
+        # Keyword-based matches
+        keyword_map = {
+            'quiz': 'new_quizzes',
+            'speedgrader': 'speedgrader',
+            'gradebook': 'gradebook',
+            'grade': 'gradebook',
+            'assignment': 'assignments',
+            'discussion': 'discussions',
+            'announcement': 'announcements',
+            'module': 'modules',
+            'page': 'pages',
+            'rubric': 'rubrics',
+            'calendar': 'calendar',
+            'inbox': 'inbox',
+            'studio': 'canvas_studio',
+            'mobile': 'canvas_mobile',
+            'api': 'api',
+            'lti': 'external_apps_lti',
+            'rce': 'rich_content_editor',
+            'rich content editor': 'rich_content_editor',
+        }
+
+        for keyword, feature_id in keyword_map.items():
+            if keyword in text_lower:
+                return feature_id
+
+        return 'general'
 
     def sanitize_html(self, content: str) -> str:
         """Remove potentially malicious HTML/scripts.

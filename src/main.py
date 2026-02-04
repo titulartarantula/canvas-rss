@@ -372,10 +372,16 @@ def main():
     processor = ContentProcessor(gemini_api_key=os.getenv("GEMINI_API_KEY"))
     rss_builder = RSSBuilder()
 
-    # Detect first run using v1.3.0 tracking tables
-    is_first_run = db.is_discussion_tracking_empty() and db.is_feature_tracking_empty()
+    # v2.0: Seed canonical features on startup
+    seeded = db.seed_features()
+    if seeded > 0:
+        logger.info(f"Seeded {seeded} canonical Canvas features")
+
+    # v2.0: First run detection - check if any content exists
+    recent_items = db.get_recent_items(days=30)
+    is_first_run = len(recent_items) == 0
     if is_first_run:
-        logger.info("First run detected - will apply flood prevention limits")
+        logger.info("First run detected - applying item limits to avoid feed flooding")
 
     # Collect content from all sources
     all_items: List[ContentItem] = []
@@ -469,13 +475,7 @@ def main():
         db.record_feed_generation(len(enriched_items), feed_xml)
         logger.info(f"  -> Stored {stored_count} new Reddit/Status items in content_items table")
 
-        # Log change tracking statistics (used for [NEW]/[UPDATE] badge detection)
-        stats = db.get_tracking_stats()
-        logger.info(f"  -> Change tracking: "
-                    f"{stats['discussion_total']} discussions "
-                    f"({stats['question_count']} Q&A, {stats['blog_count']} blog), "
-                    f"{stats['feature_total']} features "
-                    f"({stats['release_feature_count']} release, {stats['deploy_change_count']} deploy)")
+        # v2.0: Change tracking statistics removed - will be reimplemented in Stage 2
 
         logger.info("=" * 50)
         logger.info(f"Aggregation complete! {len(enriched_items)} items in feed")

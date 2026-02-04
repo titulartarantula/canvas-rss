@@ -1266,7 +1266,16 @@ class TestInstructureScraperScraping:
                         "url": "https://community.instructure.com/t/canvas-q1/123",
                         "date_text": "2 hours ago"
                     }]
-                    mock_content.return_value = ("Post content about new features", 25, 5)
+                    # v2.0: _get_post_content returns a dictionary
+                    mock_content.return_value = {
+                        "content": "Post content about new features",
+                        "likes": 25,
+                        "comments": 5,
+                        "first_posted": None,
+                        "last_edited": None,
+                        "last_comment_at": None,
+                        "comment_count": 5,
+                    }
                     mock_click.return_value = False  # Don't scrape deploy notes
 
                     result = scraper.scrape_release_notes(hours=24)
@@ -1333,7 +1342,16 @@ class TestInstructureScraperScraping:
                         {"title": "Recent Post", "url": "https://example.com/1", "date_text": "2 hours ago"},
                         {"title": "Old Post", "url": "https://example.com/2", "date_text": "5 days ago"}
                     ]
-                    mock_content.return_value = ("Content", 0, 0)
+                    # v2.0: _get_post_content returns a dictionary
+                    mock_content.return_value = {
+                        "content": "Content",
+                        "likes": 0,
+                        "comments": 0,
+                        "first_posted": None,
+                        "last_edited": None,
+                        "last_comment_at": None,
+                        "comment_count": 0,
+                    }
                     mock_click.return_value = False  # Don't scrape deploy notes
 
                     result = scraper.scrape_release_notes(hours=24)
@@ -1382,7 +1400,16 @@ class TestInstructureScraperScraping:
                     "url": "https://community.instructure.com/t/api-changes/456",
                     "date_text": "3 hours ago"
                 }]
-                mock_content.return_value = ("API deprecation notice...", 10, 3)
+                # v2.0: _get_post_content returns a dictionary
+                mock_content.return_value = {
+                    "content": "API deprecation notice...",
+                    "likes": 10,
+                    "comments": 3,
+                    "first_posted": None,
+                    "last_edited": None,
+                    "last_comment_at": None,
+                    "comment_count": 3,
+                }
 
                 result = scraper.scrape_changelog(hours=24)
 
@@ -2077,11 +2104,23 @@ class TestClassifyDiscussionPosts:
         assert results[0].is_new is True
 
     def test_updated_post_classified(self, temp_db):
-        """Test posts with new comments are classified as updates."""
+        """Test posts with new comments are classified as updates (v2.0)."""
         from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+        from processor.content_processor import ContentItem
         from datetime import datetime
 
-        temp_db.upsert_discussion_tracking("question_888", "question", 5)
+        # v2.0: Track existing item via content_items table with comment_count
+        existing_item = ContentItem(
+            source="community",
+            source_id="question_888",
+            title="Existing Q",
+            url="http://example.com/discussion/888/test",
+            content="Content",
+            content_type="question",
+            published_date=datetime.now(),
+            comment_count=5,
+        )
+        temp_db.insert_item(existing_item)
 
         posts = [CommunityPost(
             title="Existing Q", url="http://example.com/discussion/888/test",
@@ -2092,7 +2131,7 @@ class TestClassifyDiscussionPosts:
         results = classify_discussion_posts(posts, temp_db, first_run_limit=5)
         assert len(results) == 1
         assert results[0].is_new is False
-        assert results[0].new_comment_count == 3
+        assert results[0].new_comment_count == 8  # Current comment count
 
     def test_first_run_limit_enforced(self, temp_db):
         """Test first-run limit caps new posts."""
@@ -2108,79 +2147,82 @@ class TestClassifyDiscussionPosts:
         ]
 
         results = classify_discussion_posts(posts, temp_db, first_run_limit=3)
-        assert len(results) == 3  # Limited
-
-        # All should be tracked
-        for i in range(10):
-            assert temp_db.get_discussion_tracking(f"question_{i}") is not None
+        assert len(results) == 3  # Limited (first run applies limit)
 
 
 class TestClassifyReleaseFeatures:
-    """Tests for classify_release_features function."""
+    """Tests for classify_release_features function (v2.0)."""
 
     def test_new_features_detected(self, temp_db):
-        """Test new features are detected."""
+        """Test new features are detected and linked to feature_options."""
         from scrapers.instructure_community import (
             ReleaseNotePage, Feature, FeatureTableData, classify_release_features
         )
         from datetime import datetime
 
+        # Seed features first (required for v2.0)
+        temp_db.seed_features()
+
         feature = Feature("Apps", "New Feature", "new-feature", None, "", None)
         page = ReleaseNotePage(
             title="Canvas Release Notes (2026-02-21)",
-            url="http://example.com/release",
+            url="http://example.com/release/123456",
             release_date=datetime(2026, 2, 21),
             upcoming_changes=[], features=[feature], sections={}
         )
 
-        is_new, new_anchors = classify_release_features(page, temp_db, first_run_limit=3)
+        is_new, new_feature_names = classify_release_features(page, temp_db, first_run_limit=3)
         assert is_new is True
-        assert "new-feature" in new_anchors
+        # v2.0: Returns feature names, not anchor IDs
+        assert "New Feature" in new_feature_names
 
     def test_first_run_limit_for_features(self, temp_db):
-        """Test first-run limit for features."""
+        """Test first-run limit for features (v2.0)."""
         from scrapers.instructure_community import (
             ReleaseNotePage, Feature, classify_release_features
         )
         from datetime import datetime
 
+        # Seed features first (required for v2.0)
+        temp_db.seed_features()
+
         features = [Feature("Cat", f"Feature {i}", f"f{i}", None, "", None) for i in range(5)]
         page = ReleaseNotePage(
             title="Canvas Release Notes (2026-02-21)",
-            url="http://example.com/release",
+            url="http://example.com/release/789012",
             release_date=datetime(2026, 2, 21),
             upcoming_changes=[], features=features, sections={}
         )
 
-        is_new, new_anchors = classify_release_features(page, temp_db, first_run_limit=3)
-        assert len(new_anchors) == 3  # Limited
-
-        # All should be tracked
-        for i in range(5):
-            assert temp_db.get_feature_tracking(f"release-2026-02-21#f{i}") is not None
+        is_new, new_feature_names = classify_release_features(page, temp_db, first_run_limit=3)
+        assert len(new_feature_names) == 3  # Limited by first_run_limit
 
 
 class TestClassifyDeployChanges:
-    """Tests for classify_deploy_changes function."""
+    """Tests for classify_deploy_changes function (v2.0)."""
 
     def test_new_changes_detected(self, temp_db):
-        """Test new changes are detected."""
+        """Test new changes are detected and linked to feature_options."""
         from scrapers.instructure_community import (
             DeployNotePage, DeployChange, classify_deploy_changes
         )
         from datetime import datetime
 
+        # Seed features first (required for v2.0)
+        temp_db.seed_features()
+
         change = DeployChange("Nav", "Fix", "fix-1", "Updates", "", None, None, None)
         page = DeployNotePage(
             title="Canvas Deploy Notes (2026-02-11)",
-            url="http://example.com/deploy",
+            url="http://example.com/deploy/345678",
             deploy_date=datetime(2026, 2, 11),
             beta_date=None, changes=[change], sections={}
         )
 
-        is_new, new_anchors = classify_deploy_changes(page, temp_db, first_run_limit=3)
+        is_new, new_change_names = classify_deploy_changes(page, temp_db, first_run_limit=3)
         assert is_new is True
-        assert "fix-1" in new_anchors
+        # v2.0: Returns change names, not anchor IDs
+        assert "Fix" in new_change_names
 
 
 class TestGetNextSiblingContent:

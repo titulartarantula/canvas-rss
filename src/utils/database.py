@@ -78,6 +78,15 @@ class Database:
             # Column already exists, ignore
             pass
 
+        # Migration: Add source date columns for v2.0
+        for col in ['first_posted', 'last_edited', 'last_comment_at', 'last_checked_at']:
+            try:
+                cursor.execute(f"ALTER TABLE content_items ADD COLUMN {col} TIMESTAMP")
+                conn.commit()
+            except sqlite3.OperationalError:
+                # Column already exists, ignore
+                pass
+
         # Feed history table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS feed_history (
@@ -89,28 +98,61 @@ class Database:
             )
         """)
 
-        # Discussion tracking table for [NEW]/[UPDATE] badges
+        # Drop deprecated tables from v1.x
+        cursor.execute("DROP TABLE IF EXISTS discussion_tracking")
+        cursor.execute("DROP TABLE IF EXISTS feature_tracking")
+
+        # Features table (canonical Canvas features)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS discussion_tracking (
-                source_id TEXT PRIMARY KEY,
-                post_type TEXT NOT NULL,
-                comment_count INTEGER DEFAULT 0,
-                first_seen TEXT NOT NULL,
-                last_checked TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS features (
+                feature_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Feature tracking for Release/Deploy notes granular items
+        # Feature options table (sub-features with lifecycle)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS feature_tracking (
-                source_id TEXT PRIMARY KEY,
-                parent_id TEXT NOT NULL,
-                feature_type TEXT NOT NULL,
-                anchor_id TEXT NOT NULL,
-                first_seen TEXT NOT NULL,
-                last_checked TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS feature_options (
+                option_id TEXT PRIMARY KEY,
+                feature_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                summary TEXT,
+                status TEXT NOT NULL,
+                config_level TEXT,
+                default_state TEXT,
+                first_announced TIMESTAMP,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (feature_id) REFERENCES features(feature_id)
             )
         """)
+
+        # Content-feature junction table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS content_feature_refs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_id TEXT NOT NULL,
+                feature_id TEXT,
+                feature_option_id TEXT,
+                mention_type TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (feature_id) REFERENCES features(feature_id),
+                FOREIGN KEY (feature_option_id) REFERENCES feature_options(option_id),
+                CHECK (feature_id IS NOT NULL OR feature_option_id IS NOT NULL)
+            )
+        """)
+        # Unique index to prevent duplicate refs (treating NULLs as empty strings for uniqueness)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_content_feature_refs_unique
+            ON content_feature_refs(content_id, COALESCE(feature_id, ''), COALESCE(feature_option_id, ''))
+        """)
+
+        # Create indexes for new tables
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_feature ON feature_options(feature_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_status ON feature_options(status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_feature ON content_feature_refs(feature_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_option ON content_feature_refs(feature_option_id)")
 
         conn.commit()
 
@@ -152,12 +194,29 @@ class Database:
         comment_count = getattr(item, 'comment_count', 0) or 0
         content_type = getattr(item, 'content_type', '') or ''
 
+        # v2.0: Handle source date fields
+        first_posted = getattr(item, 'first_posted', None)
+        if isinstance(first_posted, datetime):
+            first_posted = first_posted.isoformat()
+
+        last_edited = getattr(item, 'last_edited', None)
+        if isinstance(last_edited, datetime):
+            last_edited = last_edited.isoformat()
+
+        last_comment_at = getattr(item, 'last_comment_at', None)
+        if isinstance(last_comment_at, datetime):
+            last_comment_at = last_comment_at.isoformat()
+
+        # last_checked_at is set to now when we insert
+        last_checked_at = datetime.now().isoformat()
+
         cursor.execute("""
             INSERT INTO content_items
             (source, source_id, url, title, content, summary, published_date,
              sentiment, primary_topic, topics, engagement_score, comment_count,
-             content_type, included_in_feed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             content_type, included_in_feed,
+             first_posted, last_edited, last_comment_at, last_checked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.source,
             item.source_id,
@@ -172,11 +231,69 @@ class Database:
             item.engagement_score,
             comment_count,
             content_type,
-            True  # Mark as included in feed
+            True,  # Mark as included in feed
+            first_posted,
+            last_edited,
+            last_comment_at,
+            last_checked_at,
         ))
 
         conn.commit()
         return cursor.lastrowid
+
+    def update_item_tracking(
+        self,
+        source_id: str,
+        last_comment_at: datetime = None,
+        comment_count: int = None,
+        last_checked_at: datetime = None,
+    ) -> bool:
+        """Update tracking fields for an existing item.
+
+        Use this to update items when re-scraped to track new comments
+        or activity without creating duplicate records.
+
+        Args:
+            source_id: The unique source ID of the item.
+            last_comment_at: New last comment timestamp (optional).
+            comment_count: New comment count (optional).
+            last_checked_at: When we checked (defaults to now if not provided).
+
+        Returns:
+            True if updated, False if item not found.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Build SET clause dynamically based on provided fields
+        updates = []
+        params = []
+
+        if last_comment_at is not None:
+            if isinstance(last_comment_at, datetime):
+                last_comment_at = last_comment_at.isoformat()
+            updates.append("last_comment_at = ?")
+            params.append(last_comment_at)
+
+        if comment_count is not None:
+            updates.append("comment_count = ?")
+            params.append(comment_count)
+
+        # Always update last_checked_at if any update is being made
+        checked_at = last_checked_at or datetime.now()
+        if isinstance(checked_at, datetime):
+            checked_at = checked_at.isoformat()
+        updates.append("last_checked_at = ?")
+        params.append(checked_at)
+
+        if not updates:
+            return False
+
+        params.append(source_id)
+        query = f"UPDATE content_items SET {', '.join(updates)} WHERE source_id = ?"
+        cursor.execute(query, params)
+        conn.commit()
+        return cursor.rowcount > 0
 
     def get_comment_count(self, source_id: str) -> Optional[int]:
         """Get the stored comment count for an item.
@@ -281,164 +398,152 @@ class Database:
 
         conn.commit()
 
-    def get_discussion_tracking(self, source_id: str) -> Optional[dict]:
-        """Get tracking data for a discussion post."""
+    def seed_features(self) -> int:
+        """Seed the features table with canonical Canvas features.
+
+        Returns:
+            Number of features inserted.
+        """
+        from src.constants import CANVAS_FEATURES
+
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT source_id, post_type, comment_count, first_seen, last_checked "
-            "FROM discussion_tracking WHERE source_id = ?",
-            (source_id,)
-        )
+        inserted = 0
+
+        for feature_id, name in CANVAS_FEATURES.items():
+            try:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO features (feature_id, name) VALUES (?, ?)",
+                    (feature_id, name)
+                )
+                if cursor.rowcount > 0:
+                    inserted += 1
+            except sqlite3.Error as e:
+                # Log warning but continue with other features
+                pass
+
+        conn.commit()
+        return inserted
+
+    def get_feature(self, feature_id: str) -> Optional[dict]:
+        """Get a feature by ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM features WHERE feature_id = ?", (feature_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def upsert_discussion_tracking(
-        self, source_id: str, post_type: str, comment_count: int
+    def get_all_features(self) -> List[dict]:
+        """Get all features."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM features ORDER BY name")
+        return [dict(row) for row in cursor.fetchall()]
+
+    def upsert_feature_option(
+        self,
+        option_id: str,
+        feature_id: str,
+        name: str,
+        status: str,
+        summary: str = None,
+        config_level: str = None,
+        default_state: str = None,
+        first_announced: str = None,
     ) -> None:
-        """Insert or update tracking data for a discussion post."""
+        """Insert or update a feature option."""
         conn = self._get_connection()
         cursor = conn.cursor()
         now = datetime.now().isoformat()
 
-        existing = self.get_discussion_tracking(source_id)
-        if existing:
-            cursor.execute(
-                "UPDATE discussion_tracking SET comment_count = ?, last_checked = ? WHERE source_id = ?",
-                (comment_count, now, source_id)
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO discussion_tracking (source_id, post_type, comment_count, first_seen, last_checked) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (source_id, post_type, comment_count, now, now)
-            )
+        cursor.execute("""
+            INSERT INTO feature_options
+                (option_id, feature_id, name, summary, status, config_level, default_state, first_announced, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(option_id) DO UPDATE SET
+                name = excluded.name,
+                summary = excluded.summary,
+                status = excluded.status,
+                config_level = excluded.config_level,
+                default_state = excluded.default_state,
+                last_updated = ?
+        """, (option_id, feature_id, name, summary, status, config_level, default_state, first_announced, now, now))
         conn.commit()
 
-    def is_discussion_tracking_empty(self) -> bool:
-        """Check if discussion_tracking table is empty (first run)."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM discussion_tracking")
-        return cursor.fetchone()[0] == 0
-
-    def get_feature_tracking(self, source_id: str) -> Optional[dict]:
-        """Get tracking data for a release/deploy feature."""
+    def get_feature_options(self, feature_id: str) -> List[dict]:
+        """Get all feature options for a feature."""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT source_id, parent_id, feature_type, anchor_id, first_seen, last_checked "
-            "FROM feature_tracking WHERE source_id = ?",
-            (source_id,)
-        )
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
-    def upsert_feature_tracking(
-        self, source_id: str, parent_id: str, feature_type: str, anchor_id: str
-    ) -> None:
-        """Insert or update tracking data for a feature."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-
-        existing = self.get_feature_tracking(source_id)
-        if existing:
-            cursor.execute(
-                "UPDATE feature_tracking SET last_checked = ? WHERE source_id = ?",
-                (now, source_id)
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO feature_tracking (source_id, parent_id, feature_type, anchor_id, first_seen, last_checked) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (source_id, parent_id, feature_type, anchor_id, now, now)
-            )
-        conn.commit()
-
-    def get_features_for_parent(self, parent_id: str) -> List[dict]:
-        """Get all tracked features for a parent release/deploy."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT source_id, parent_id, feature_type, anchor_id, first_seen, last_checked "
-            "FROM feature_tracking WHERE parent_id = ?",
-            (parent_id,)
+            "SELECT * FROM feature_options WHERE feature_id = ? ORDER BY first_announced DESC",
+            (feature_id,)
         )
         return [dict(row) for row in cursor.fetchall()]
 
-    def is_feature_tracking_empty(self) -> bool:
-        """Check if feature_tracking table is empty (first run)."""
+    def get_active_feature_options(self) -> List[dict]:
+        """Get all non-released feature options."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM feature_tracking")
-        return cursor.fetchone()[0] == 0
+        cursor.execute("""
+            SELECT fo.*, f.name as feature_name
+            FROM feature_options fo
+            JOIN features f ON fo.feature_id = f.feature_id
+            WHERE fo.status IN ('pending', 'preview', 'optional', 'default_optional')
+            ORDER BY fo.first_announced DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
 
-    def is_first_run_for_type(self, content_type: str) -> bool:
-        """Check if this is the first run for a specific content type.
+    def add_content_feature_ref(
+        self,
+        content_id: str,
+        feature_id: str = None,
+        feature_option_id: str = None,
+        mention_type: str = 'discusses',
+    ) -> None:
+        """Link content to a feature or feature option."""
+        if not feature_id and not feature_option_id:
+            raise ValueError("Must provide feature_id or feature_option_id")
 
-        Args:
-            content_type: 'question', 'blog', 'release_note', or 'deploy_note'
-
-        Returns:
-            True if no items of this type have been tracked yet.
-        """
         conn = self._get_connection()
         cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR IGNORE INTO content_feature_refs
+                (content_id, feature_id, feature_option_id, mention_type)
+            VALUES (?, ?, ?, ?)
+        """, (content_id, feature_id, feature_option_id, mention_type))
+        conn.commit()
 
-        if content_type in ("question", "blog"):
-            cursor.execute(
-                "SELECT COUNT(*) FROM discussion_tracking WHERE post_type = ?",
-                (content_type,)
-            )
-        elif content_type in ("release_note", "deploy_note"):
-            feature_type = f"{content_type}_feature"
-            cursor.execute(
-                "SELECT COUNT(*) FROM feature_tracking WHERE feature_type = ?",
-                (feature_type,)
-            )
-        else:
-            return True
-
-        return cursor.fetchone()[0] == 0
-
-    def get_tracking_stats(self) -> dict:
-        """Get statistics from v1.3.0 tracking tables.
-
-        Returns:
-            Dictionary with counts from discussion_tracking and feature_tracking tables.
-        """
+    def get_content_for_feature(self, feature_id: str) -> List[dict]:
+        """Get all content items related to a feature (direct + via options)."""
         conn = self._get_connection()
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT c.*
+            FROM content_items c
+            JOIN content_feature_refs r ON c.source_id = r.content_id
+            LEFT JOIN feature_options fo ON r.feature_option_id = fo.option_id
+            WHERE r.feature_id = ? OR fo.feature_id = ?
+            ORDER BY c.scraped_date DESC
+        """, (feature_id, feature_id))
+        return [dict(row) for row in cursor.fetchall()]
 
-        # Discussion tracking stats
-        cursor.execute("SELECT COUNT(*) FROM discussion_tracking")
-        discussion_total = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM discussion_tracking WHERE post_type = 'question'")
-        question_count = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM discussion_tracking WHERE post_type = 'blog'")
-        blog_count = cursor.fetchone()[0]
-
-        # Feature tracking stats
-        cursor.execute("SELECT COUNT(*) FROM feature_tracking")
-        feature_total = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM feature_tracking WHERE feature_type = 'release_note_feature'")
-        release_feature_count = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM feature_tracking WHERE feature_type = 'deploy_note_change'")
-        deploy_change_count = cursor.fetchone()[0]
-
-        return {
-            "discussion_total": discussion_total,
-            "question_count": question_count,
-            "blog_count": blog_count,
-            "feature_total": feature_total,
-            "release_feature_count": release_feature_count,
-            "deploy_change_count": deploy_change_count,
-        }
+    def get_features_for_content(self, content_id: str) -> List[dict]:
+        """Get all features/options referenced by a content item."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                r.mention_type,
+                f.feature_id,
+                f.name as feature_name,
+                fo.option_id,
+                fo.name as option_name
+            FROM content_feature_refs r
+            LEFT JOIN features f ON r.feature_id = f.feature_id
+            LEFT JOIN feature_options fo ON r.feature_option_id = fo.option_id
+            WHERE r.content_id = ?
+        """, (content_id,))
+        return [dict(row) for row in cursor.fetchall()]
 
     def close(self) -> None:
         """Close database connection."""
