@@ -47,6 +47,18 @@ def test_get_release_detail(client, populated_db):
     assert "upcoming_changes" in data
 
 
+def test_get_releases_filtered_by_search(client, populated_db):
+    """Test filtering releases by search term in title."""
+    response = client.get("/api/releases?search=Release")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Should find release_note_2026-02-21 which has "Release" in title
+    assert len(data["releases"]) >= 1
+    for release in data["releases"]:
+        assert "Release" in release["title"]
+
+
 def test_get_release_detail_not_found(client, populated_db):
     """Test 404 for non-existent release."""
     response = client.get("/api/releases/nonexistent")

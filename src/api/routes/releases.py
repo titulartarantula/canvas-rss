@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["releases"])
 @router.get("/releases")
 def get_releases(
     type: Optional[str] = Query(None, description="Filter by type (release_note, deploy_note)"),
-    year: Optional[int] = Query(None, description="Filter by year"),
+    year: Optional[int] = Query(None, ge=1900, le=2100, description="Filter by year"),
     search: Optional[str] = Query(None, description="Search in title"),
 ):
     """Get list of release and deploy notes."""
