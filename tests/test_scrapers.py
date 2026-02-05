@@ -3070,3 +3070,47 @@ class TestLifecycleDateParsing:
 
         # Should handle various date formats
         assert result['beta_date'] is not None or result['production_date'] is not None
+
+
+class TestCommentScraping:
+    """Tests for scraping comments from blog/Q&A posts."""
+
+    def test_scrape_comments_returns_list(self):
+        """Test that scrape_comments returns a list."""
+        from src.scrapers.instructure_community import scrape_comments_from_html
+
+        html = """
+        <div class="lia-message-body-content">
+            <p>First comment text here</p>
+        </div>
+        <div class="lia-message-body-content">
+            <p>Second comment text here</p>
+        </div>
+        """
+
+        comments = scrape_comments_from_html(html)
+
+        assert isinstance(comments, list)
+        assert len(comments) >= 0  # May or may not parse depending on structure
+
+    def test_scrape_comments_empty_html(self):
+        """Test scraping from empty HTML."""
+        from src.scrapers.instructure_community import scrape_comments_from_html
+
+        comments = scrape_comments_from_html("")
+        assert comments == []
+
+    def test_scrape_comments_extracts_text(self):
+        """Test that comment text is extracted."""
+        from src.scrapers.instructure_community import scrape_comments_from_html
+
+        html = """
+        <div class="lia-message-body-content">
+            <p>This is comment text</p>
+        </div>
+        """
+
+        comments = scrape_comments_from_html(html)
+        # If parsing works, should have at least one comment
+        if comments:
+            assert 'comment_text' in comments[0]

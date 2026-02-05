@@ -257,6 +257,80 @@ def _parse_written_date(month_name: str, day: str, year: str) -> Optional[date]:
         return None
 
 
+def scrape_comments_from_html(html: str) -> List[dict]:
+    """Extract comments from Instructure Community page HTML.
+
+    This parses the HTML to find comment elements. The Instructure Community
+    uses Lithium/Khoros forum software with specific CSS classes.
+
+    Args:
+        html: The full page HTML content.
+
+    Returns:
+        List of dicts with:
+        - comment_text: The comment body text
+        - position: Order in thread (1, 2, 3...)
+        - posted_at: DateTime string if available (may be None)
+
+    Note:
+        The actual CSS selectors may need adjustment based on DOM inspection.
+        Common selectors for Khoros forums include:
+        - .lia-message-body-content (message body)
+        - .lia-message-posted-on (timestamp)
+        - .lia-quilt-row-reply (reply containers)
+    """
+    from bs4 import BeautifulSoup
+
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, 'html.parser')
+    comments = []
+
+    # Try multiple selector strategies for Khoros/Lithium forums
+    # Strategy 1: Look for reply message bodies (skip first which is usually the main post)
+    message_bodies = soup.select('.lia-message-body-content')
+
+    # Skip first element (main post) and process replies
+    for i, body in enumerate(message_bodies[1:], start=1):
+        text = body.get_text(strip=True)
+        if text:
+            # Try to find associated timestamp
+            posted_at = None
+            parent = body.find_parent(class_='lia-message')
+            if parent:
+                time_elem = parent.select_one('.lia-message-posted-on time, .DateTime time, time[datetime]')
+                if time_elem and time_elem.get('datetime'):
+                    posted_at = time_elem['datetime']
+
+            comments.append({
+                'comment_text': text[:5000],  # Truncate very long comments
+                'position': i,
+                'posted_at': posted_at
+            })
+
+    # Fallback: Look for explicit reply containers
+    if not comments:
+        replies = soup.select('.lia-quilt-row-reply, .lia-message-reply')
+        for i, reply in enumerate(replies, start=1):
+            body = reply.select_one('.lia-message-body-content, .message-body')
+            if body:
+                text = body.get_text(strip=True)
+                if text:
+                    posted_at = None
+                    time_elem = reply.select_one('time[datetime]')
+                    if time_elem:
+                        posted_at = time_elem.get('datetime')
+
+                    comments.append({
+                        'comment_text': text[:5000],
+                        'position': i,
+                        'posted_at': posted_at
+                    })
+
+    return comments
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:
