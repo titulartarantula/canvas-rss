@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 from datetime import datetime as dt
+from datetime import date as date_type
 
 logger = logging.getLogger("canvas_rss")
 
@@ -53,6 +54,68 @@ def format_availability(table: Optional["FeatureTableData"]) -> str:
         parts.append(f"in {areas}")
 
     return "; ".join(parts) if parts else "Automatic update"
+
+
+def generate_implementation_status(
+    status: str,
+    config_level: Optional[str] = None,
+    default_state: Optional[str] = None,
+    beta_date: Optional[date_type] = None,
+    production_date: Optional[date_type] = None,
+    deprecation_date: Optional[date_type] = None,
+    first_announced: Optional[date_type] = None
+) -> str:
+    """Generate implementation_status from structured data (no LLM).
+
+    Args:
+        status: Feature option status ('pending', 'preview', 'optional', 'default_on', 'released').
+        config_level: 'account', 'course', or 'both'.
+        default_state: 'enabled' or 'disabled'.
+        beta_date: When available in beta.
+        production_date: When available in production.
+        deprecation_date: When deprecated.
+        first_announced: When first announced.
+
+    Returns:
+        Human-readable implementation status string.
+    """
+    status_map = {
+        'pending': 'Not yet available',
+        'preview': 'In feature preview (beta)',
+        'optional': 'Available, disabled by default',
+        'default_on': 'Available, enabled by default',
+        'released': 'Fully released'
+    }
+
+    parts = [status_map.get(status, status)]
+
+    if config_level:
+        parts.append(f"{config_level.title()}-level setting")
+
+    today = date_type.today()
+
+    if beta_date:
+        if beta_date > today:
+            parts.append(f"Beta: {beta_date.strftime('%b %d, %Y')}")
+        else:
+            parts.append(f"In beta since {beta_date.strftime('%b %Y')}")
+
+    if production_date:
+        if production_date > today:
+            parts.append(f"Production: {production_date.strftime('%b %d, %Y')}")
+        else:
+            parts.append(f"In production since {production_date.strftime('%b %Y')}")
+
+    if deprecation_date:
+        if deprecation_date > today:
+            parts.append(f"Deprecation: {deprecation_date.strftime('%b %d, %Y')}")
+        else:
+            parts.append(f"Deprecated {deprecation_date.strftime('%b %Y')}")
+
+    if first_announced and not any([beta_date, production_date]):
+        parts.append(f"First announced {first_announced.strftime('%b %Y')}")
+
+    return ". ".join(parts) + "."
 
 
 @dataclass

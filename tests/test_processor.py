@@ -1506,3 +1506,49 @@ class TestExtractFeaturesWithLLM:
         )
 
         assert result == ["Gradebook", "Assignments"]
+
+
+class TestImplementationStatusGenerator:
+    """Tests for implementation_status template generation."""
+
+    def test_generate_implementation_status_preview(self):
+        """Test generating status for preview option."""
+        from processor.content_processor import generate_implementation_status
+        from datetime import date
+
+        status = generate_implementation_status(
+            status='preview',
+            config_level='account',
+            beta_date=date(2026, 1, 19),
+            production_date=date(2026, 2, 21),
+            first_announced=date(2026, 1, 1)
+        )
+
+        assert 'feature preview' in status.lower()
+        assert 'Account' in status
+        assert 'Jan 19, 2026' in status or 'beta' in status.lower()
+
+    def test_generate_implementation_status_released(self):
+        """Test generating status for released option."""
+        from processor.content_processor import generate_implementation_status
+        from datetime import date
+
+        status = generate_implementation_status(
+            status='released',
+            production_date=date(2025, 6, 1)
+        )
+
+        assert 'released' in status.lower() or 'production' in status.lower()
+
+    def test_generate_implementation_status_future_dates(self):
+        """Test that future dates are shown with specific dates."""
+        from processor.content_processor import generate_implementation_status
+        from datetime import date, timedelta
+
+        future = date.today() + timedelta(days=30)
+        status = generate_implementation_status(
+            status='preview',
+            production_date=future
+        )
+
+        assert 'Production:' in status or future.strftime('%b') in status
