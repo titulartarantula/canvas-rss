@@ -127,12 +127,12 @@ def get_option_detail(option_id: str):
         if result["announcements"]:
             latest = result["announcements"][0]
             result["configuration"].update({
-                "enable_location_account": latest["enable_location_account"],
-                "enable_location_course": latest["enable_location_course"],
-                "subaccount_config": latest["subaccount_config"],
-                "permissions": latest["permissions"],
-                "affected_areas": latest["affected_areas"],
-                "affects_ui": latest["affects_ui"],
+                "enable_location_account": latest.get("enable_location_account"),
+                "enable_location_course": latest.get("enable_location_course"),
+                "subaccount_config": latest.get("subaccount_config"),
+                "permissions": latest.get("permissions"),
+                "affected_areas": latest.get("affected_areas"),
+                "affects_ui": latest.get("affects_ui"),
             })
 
         # Get community posts

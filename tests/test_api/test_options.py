@@ -43,8 +43,21 @@ def test_get_options_sorted_by_beta_date(client, populated_db):
     assert response.status_code == 200
     data = response.json()
 
-    # document_processor has beta_date, should be first among those with dates
-    assert "options" in data
+    options = data["options"]
+    assert len(options) >= 1
+
+    # Verify options with beta_date come first, nulls at end
+    beta_dates = [o.get("beta_date") for o in options]
+    non_null_indices = [i for i, d in enumerate(beta_dates) if d is not None]
+    null_indices = [i for i, d in enumerate(beta_dates) if d is None]
+
+    # All non-null indices should come before null indices
+    if non_null_indices and null_indices:
+        assert max(non_null_indices) < min(null_indices), "Options with beta_date should come before those without"
+
+    # Non-null dates should be in ascending order
+    non_null_dates = [beta_dates[i] for i in non_null_indices]
+    assert non_null_dates == sorted(non_null_dates), "Beta dates should be sorted ascending"
 
 
 def test_get_option_detail(client, populated_db):
