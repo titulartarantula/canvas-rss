@@ -5,7 +5,7 @@ import time
 import re
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 if TYPE_CHECKING:
     from utils.database import Database
@@ -189,6 +189,72 @@ def extract_source_id(url: str, post_type: str) -> str:
     if match:
         return f"{post_type}_{match.group(2)}"
     return f"{post_type}_{abs(hash(url))}"
+
+
+def parse_page_lifecycle_dates(intro_text: str) -> dict:
+    """Parse beta and production dates from release note intro paragraph.
+
+    Looks for patterns like:
+    - "Beta environment on 2026-01-19"
+    - "Production environment on 2026-02-21"
+    - "Beta on January 19, 2026"
+
+    Args:
+        intro_text: The intro paragraph text.
+
+    Returns:
+        Dict with 'beta_date' and 'production_date' (date objects or None).
+    """
+    result = {'beta_date': None, 'production_date': None}
+
+    # Pattern for ISO dates: 2026-01-19
+    iso_pattern = r'(\d{4}-\d{2}-\d{2})'
+
+    # Pattern for written dates: January 19, 2026
+    written_pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
+
+    text_lower = intro_text.lower()
+
+    # Find beta date
+    beta_match = re.search(r'beta\s+(?:environment\s+)?on\s+' + iso_pattern, text_lower)
+    if beta_match:
+        try:
+            result['beta_date'] = date.fromisoformat(beta_match.group(1))
+        except ValueError:
+            pass
+
+    if not result['beta_date']:
+        beta_written = re.search(r'beta\s+(?:environment\s+)?on\s+' + written_pattern, intro_text, re.IGNORECASE)
+        if beta_written:
+            result['beta_date'] = _parse_written_date(beta_written.group(1), beta_written.group(2), beta_written.group(3))
+
+    # Find production date
+    prod_match = re.search(r'production\s+(?:environment\s+)?on\s+' + iso_pattern, text_lower)
+    if prod_match:
+        try:
+            result['production_date'] = date.fromisoformat(prod_match.group(1))
+        except ValueError:
+            pass
+
+    if not result['production_date']:
+        prod_written = re.search(r'production\s+(?:environment\s+)?on\s+' + written_pattern, intro_text, re.IGNORECASE)
+        if prod_written:
+            result['production_date'] = _parse_written_date(prod_written.group(1), prod_written.group(2), prod_written.group(3))
+
+    return result
+
+
+def _parse_written_date(month_name: str, day: str, year: str) -> Optional[date]:
+    """Parse a written date like 'January 19, 2026' into a date object."""
+    months = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+        'september': 9, 'october': 10, 'november': 11, 'december': 12
+    }
+    try:
+        return date(int(year), months[month_name.lower()], int(day))
+    except (ValueError, KeyError):
+        return None
 
 
 # Keep legacy classes for backwards compatibility

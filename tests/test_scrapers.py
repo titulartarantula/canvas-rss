@@ -3031,3 +3031,42 @@ class TestClassifyDiscussionPostsWithRefs:
         assert hasattr(update, 'feature_refs')
         assert len(update.feature_refs) >= 1
         assert any(r[2] == "announces" for r in update.feature_refs)
+
+
+class TestLifecycleDateParsing:
+    """Tests for parsing lifecycle dates from release notes."""
+
+    def test_parse_page_lifecycle_dates(self):
+        """Test parsing beta and production dates from intro paragraph."""
+        from scrapers.instructure_community import parse_page_lifecycle_dates
+
+        intro = """Unless otherwise stated, all features in this release are
+        available in the Beta environment on 2026-01-19 and the Production
+        environment on 2026-02-21."""
+
+        result = parse_page_lifecycle_dates(intro)
+
+        assert result['beta_date'].isoformat() == '2026-01-19'
+        assert result['production_date'].isoformat() == '2026-02-21'
+
+    def test_parse_page_lifecycle_dates_no_match(self):
+        """Test parsing when dates not found."""
+        from scrapers.instructure_community import parse_page_lifecycle_dates
+
+        intro = "This release includes various improvements."
+        result = parse_page_lifecycle_dates(intro)
+
+        assert result['beta_date'] is None
+        assert result['production_date'] is None
+
+    def test_parse_page_lifecycle_dates_alternate_format(self):
+        """Test parsing alternate date formats."""
+        from scrapers.instructure_community import parse_page_lifecycle_dates
+
+        intro = """Features will be available in Beta on January 19, 2026
+        and Production on February 21, 2026."""
+
+        result = parse_page_lifecycle_dates(intro)
+
+        # Should handle various date formats
+        assert result['beta_date'] is not None or result['production_date'] is not None
