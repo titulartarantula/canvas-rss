@@ -763,7 +763,7 @@ class TestFeatureAnnouncements:
         columns = {row[1] for row in cursor.fetchall()}
         expected = {
             "id", "feature_id", "option_id", "content_id", "h4_title", "anchor_id",
-            "section", "category", "raw_content", "summary",
+            "section", "category", "raw_content", "description", "implications", "summary",
             "enable_location_account", "enable_location_course",
             "subaccount_config", "account_course_setting", "permissions",
             "affected_areas", "affects_ui", "added_date", "announced_at", "created_at"
@@ -974,6 +974,26 @@ class TestFeatureOptionsTableV2:
         assert 'llm_generated_at' in columns
 
 
+class TestFeatureAnnouncementsTableV2:
+    """Tests for v2.0 feature_announcements table columns."""
+
+    def test_feature_announcements_has_description_column(self, temp_db):
+        """Test that feature_announcements has description column (replaces summary)."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'description' in columns
+
+    def test_feature_announcements_has_implications_column(self, temp_db):
+        """Test that feature_announcements has implications column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'implications' in columns
+
+
 class TestUpcomingChanges:
     """Tests for v2.0 upcoming_changes table."""
 
@@ -1049,3 +1069,39 @@ class TestUpcomingChanges:
             "2026-03-15",
             "Test change"
         )
+
+
+class TestContentCommentsTable:
+    """Tests for content_comments table."""
+
+    def test_content_comments_table_exists(self, temp_db):
+        """Test that content_comments table exists."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='content_comments'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_content_comments_has_required_columns(self, temp_db):
+        """Test that content_comments has all required columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(content_comments)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'id' in columns
+        assert 'content_id' in columns
+        assert 'comment_text' in columns
+        assert 'posted_at' in columns
+        assert 'position' in columns
+        assert 'created_at' in columns
+
+    def test_content_comments_has_no_author_column(self, temp_db):
+        """Test that content_comments does NOT have author column (anonymity)."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(content_comments)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'author' not in columns
+        assert 'user' not in columns
+        assert 'username' not in columns

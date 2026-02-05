@@ -214,6 +214,8 @@ class Database:
 
                 -- Content
                 raw_content TEXT,
+                description TEXT,
+                implications TEXT,
                 summary TEXT,
 
                 -- Configuration snapshot at time of announcement
@@ -243,6 +245,14 @@ class Database:
         except sqlite3.OperationalError:
             pass
 
+        # Migration: Add description and implications columns to feature_announcements
+        for col in ['description', 'implications']:
+            try:
+                cursor.execute(f"ALTER TABLE feature_announcements ADD COLUMN {col} TEXT")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
+
         # Indexes for feature_announcements
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_feature ON feature_announcements(feature_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_option ON feature_announcements(option_id)")
@@ -265,6 +275,23 @@ class Database:
         # Indexes for upcoming_changes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_upcoming_content ON upcoming_changes(content_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_upcoming_date ON upcoming_changes(change_date)")
+
+        # Content comments table (for blog/Q&A posts) - NO author field for anonymity
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS content_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_id TEXT NOT NULL,
+                comment_text TEXT NOT NULL,
+                posted_at TIMESTAMP,
+                position INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (content_id) REFERENCES content_items(source_id)
+            )
+        """)
+
+        # Indexes for content_comments
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_comments_content ON content_comments(content_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_comments_posted ON content_comments(posted_at)")
 
         conn.commit()
 
