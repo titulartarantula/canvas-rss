@@ -28,6 +28,7 @@ from scrapers.instructure_community import (
     classify_discussion_posts,
     classify_release_features,
     classify_deploy_changes,
+    parse_page_lifecycle_dates,
 )
 from scrapers.reddit_client import RedditMonitor, RedditPost
 from scrapers.status_page import StatusPageMonitor, Incident
@@ -223,10 +224,49 @@ def store_release_notes(
             if is_first_run and new_page_count > first_run_limit:
                 continue
 
+        # v2.0: Parse page-level lifecycle dates from intro paragraph
+        intro_text = getattr(page, 'intro', '') or ''
+        lifecycle_dates = parse_page_lifecycle_dates(intro_text)
+        beta_date = lifecycle_dates.get('beta_date')
+        production_date = lifecycle_dates.get('production_date')
+
         # Generate summaries for features
         for feature in page.features:
             try:
                 feature.summary = processor.summarize_feature(feature)
+
+                # v2.0: Generate description and implications for announcements
+                if hasattr(feature, 'option_id') and feature.option_id:
+                    # Update lifecycle dates for this option
+                    if beta_date or production_date:
+                        db.update_feature_option_lifecycle_dates(
+                            option_id=feature.option_id,
+                            beta_date=beta_date,
+                            production_date=production_date
+                        )
+
+                    # Generate description using new method
+                    description = processor.summarize_announcement_description(
+                        h4_title=feature.name,
+                        raw_content=getattr(feature, 'raw_content', '') or feature.summary or ''
+                    )
+
+                    # Generate implications
+                    feature_obj = db.get_feature(feature.feature_id) if hasattr(feature, 'feature_id') else None
+                    feature_name = feature_obj['name'] if feature_obj else 'Unknown'
+                    implications = processor.summarize_announcement_implications(
+                        h4_title=feature.name,
+                        raw_content=getattr(feature, 'raw_content', '') or feature.summary or '',
+                        feature_name=feature_name
+                    )
+
+                    # These would be stored via insert_feature_announcement in a full implementation
+                    # For now, just log that we processed them
+                    if description:
+                        logger.debug(f"Generated description for {feature.name}: {description[:50]}...")
+                    if implications:
+                        logger.debug(f"Generated implications for {feature.name}: {implications[:50]}...")
+
             except Exception as e:
                 logger.warning(f"Failed to summarize feature '{feature.name}': {e}")
 
