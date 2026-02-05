@@ -4,6 +4,9 @@ import argparse
 import sys
 from typing import Optional
 
+from src.utils.database import Database
+from src.processor.content_processor import ContentProcessor
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser with all subcommands."""
@@ -73,6 +76,52 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def handle_regenerate_feature(feature_id: str, dry_run: bool = False) -> int:
+    """Handle regenerate feature command.
+
+    Args:
+        feature_id: The feature ID to regenerate.
+        dry_run: If True, don't actually update.
+
+    Returns:
+        Exit code.
+    """
+    db = Database()
+
+    feature = db.get_feature(feature_id)
+    if not feature:
+        print(f"Error: Feature '{feature_id}' not found")
+        return 1
+
+    # Get recent content for context
+    content = db.get_content_for_feature(feature_id)
+    content_snippet = "\n".join([
+        f"- {c.get('title', '')}: {c.get('content', '')[:200]}"
+        for c in content[:5]
+    ]) if content else "No recent content available."
+
+    if dry_run:
+        print(f"Would regenerate description for: {feature['name']}")
+        print(f"Using context from {len(content)} content items")
+        return 0
+
+    processor = ContentProcessor()
+    description = processor.summarize_feature_description(
+        feature_name=feature['name'],
+        content_snippet=content_snippet
+    )
+
+    if description:
+        db.update_feature_description(feature_id, description)
+        print(f"Updated description for {feature['name']}:")
+        print(f"  {description}")
+    else:
+        print(f"Warning: Could not generate description (LLM unavailable?)")
+
+    db.close()
+    return 0
+
+
 def main(args: Optional[list] = None) -> int:
     """Main entry point for CLI.
 
@@ -87,6 +136,13 @@ def main(args: Optional[list] = None) -> int:
 
     if not parsed.command:
         parser.print_help()
+        return 1
+
+    if parsed.command == 'regenerate':
+        if parsed.regen_type == 'feature':
+            return handle_regenerate_feature(parsed.feature_id)
+        # More handlers will be added later
+        print(f"Regenerate {parsed.regen_type} not yet implemented")
         return 1
 
     # Command handlers will be added in subsequent tasks
