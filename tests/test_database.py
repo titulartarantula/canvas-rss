@@ -561,9 +561,12 @@ class TestFeatureOptionsTable:
         cursor.execute("PRAGMA table_info(feature_options)")
         columns = {row[1] for row in cursor.fetchall()}
         expected = {
-            "option_id", "feature_id", "name", "canonical_name", "summary", "status",
-            "config_level", "default_state", "user_group_url", "first_announced",
-            "last_updated", "first_seen", "last_seen"
+            "option_id", "feature_id", "name", "canonical_name", "description",
+            "summary", "meta_summary", "meta_summary_updated_at", "implementation_status",
+            "status", "config_level", "default_state", "user_group_url",
+            "beta_date", "production_date", "deprecation_date",
+            "first_announced", "last_updated", "first_seen", "last_seen",
+            "llm_generated_at"
         }
         assert expected == columns
 
@@ -915,6 +918,60 @@ class TestFeatureOptions:
         options = temp_db.get_all_feature_options()
 
         assert options[0]["name"] == "New Quizzes Build Logs"
+
+
+class TestFeatureOptionsTableV2:
+    """Tests for v2.0 feature_options table columns."""
+
+    def test_feature_options_has_description_column(self, temp_db):
+        """Test that feature_options has description column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'description' in columns
+
+    def test_feature_options_has_meta_summary_column(self, temp_db):
+        """Test that feature_options has meta_summary column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'meta_summary' in columns
+
+    def test_feature_options_has_meta_summary_updated_at_column(self, temp_db):
+        """Test that feature_options has meta_summary_updated_at column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'meta_summary_updated_at' in columns
+
+    def test_feature_options_has_implementation_status_column(self, temp_db):
+        """Test that feature_options has implementation_status column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'implementation_status' in columns
+
+    def test_feature_options_has_lifecycle_date_columns(self, temp_db):
+        """Test that feature_options has beta_date, production_date, deprecation_date."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'beta_date' in columns
+        assert 'production_date' in columns
+        assert 'deprecation_date' in columns
+
+    def test_feature_options_has_llm_generated_at_column(self, temp_db):
+        """Test that feature_options has llm_generated_at column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'llm_generated_at' in columns
 
 
 class TestUpcomingChanges:

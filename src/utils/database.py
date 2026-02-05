@@ -129,23 +129,45 @@ class Database:
                 feature_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 canonical_name TEXT,
+                description TEXT,
                 summary TEXT,
+                meta_summary TEXT,
+                meta_summary_updated_at TIMESTAMP,
+                implementation_status TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
                 config_level TEXT,
                 default_state TEXT,
                 user_group_url TEXT,
+                beta_date DATE,
+                production_date DATE,
+                deprecation_date DATE,
                 first_announced TIMESTAMP,
                 last_updated TIMESTAMP,
                 first_seen TIMESTAMP,
                 last_seen TIMESTAMP,
+                llm_generated_at TIMESTAMP,
                 FOREIGN KEY (feature_id) REFERENCES features(feature_id)
             )
         """)
 
         # Migration: Add new columns to feature_options if they don't exist
-        for col in ['canonical_name', 'first_seen', 'last_seen', 'user_group_url']:
+        new_option_cols = [
+            ('canonical_name', 'TEXT'),
+            ('first_seen', 'TEXT'),
+            ('last_seen', 'TEXT'),
+            ('user_group_url', 'TEXT'),
+            ('description', 'TEXT'),
+            ('meta_summary', 'TEXT'),
+            ('meta_summary_updated_at', 'TIMESTAMP'),
+            ('implementation_status', 'TEXT'),
+            ('beta_date', 'DATE'),
+            ('production_date', 'DATE'),
+            ('deprecation_date', 'DATE'),
+            ('llm_generated_at', 'TIMESTAMP'),
+        ]
+        for col, col_type in new_option_cols:
             try:
-                cursor.execute(f"ALTER TABLE feature_options ADD COLUMN {col} TEXT")
+                cursor.execute(f"ALTER TABLE feature_options ADD COLUMN {col} {col_type}")
                 conn.commit()
             except sqlite3.OperationalError:
                 pass
