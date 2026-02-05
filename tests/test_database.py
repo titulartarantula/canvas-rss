@@ -1217,3 +1217,33 @@ class TestContentCommentsMethods:
 
         comments = temp_db.get_comments_for_content(sample_content_item.source_id, limit=5)
         assert len(comments) == 5
+
+
+class TestMetaSummaryMethods:
+    """Tests for meta_summary database methods."""
+
+    def test_update_feature_option_meta_summary(self, temp_db):
+        """Test updating meta_summary for a feature option."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        temp_db.update_feature_option_meta_summary('test_opt', 'Ready for deployment. Positive feedback.')
+
+        option = temp_db.get_feature_option('test_opt')
+        assert option['meta_summary'] == 'Ready for deployment. Positive feedback.'
+        assert option['meta_summary_updated_at'] is not None
+
+    def test_get_latest_content_for_option(self, temp_db, sample_content_item):
+        """Test getting latest content items for meta_summary generation."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+        temp_db.insert_item(sample_content_item)
+        temp_db.add_content_feature_ref(
+            content_id=sample_content_item.source_id,
+            feature_option_id='test_opt',
+            mention_type='announces'
+        )
+
+        content = temp_db.get_latest_content_for_option('test_opt', limit=5)
+        assert len(content) == 1
+        assert content[0]['source_id'] == sample_content_item.source_id

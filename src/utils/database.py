@@ -1108,6 +1108,47 @@ class Database:
         """)
         return [dict(row) for row in cursor.fetchall()]
 
+    def update_feature_option_meta_summary(self, option_id: str, meta_summary: str) -> None:
+        """Update a feature option's meta_summary.
+
+        Args:
+            option_id: The option ID.
+            meta_summary: The LLM-generated meta_summary (3-4 sentences).
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_options
+            SET meta_summary = ?, meta_summary_updated_at = ?
+            WHERE option_id = ?
+        """, (meta_summary, datetime.now().isoformat(), option_id))
+        conn.commit()
+
+    def get_latest_content_for_option(self, option_id: str, limit: int = 5) -> List[dict]:
+        """Get the latest content items referencing a feature option.
+
+        Used to generate meta_summary.
+
+        Args:
+            option_id: The feature option ID.
+            limit: Maximum number of items to return.
+
+        Returns:
+            List of content item dicts with announcement data, newest first.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT ci.*, fa.description as announcement_description, fa.implications
+            FROM content_items ci
+            JOIN content_feature_refs cfr ON ci.source_id = cfr.content_id
+            LEFT JOIN feature_announcements fa ON ci.source_id = fa.content_id
+            WHERE cfr.feature_option_id = ?
+            ORDER BY ci.first_posted DESC
+            LIMIT ?
+        """, (option_id, limit))
+        return [dict(row) for row in cursor.fetchall()]
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:
