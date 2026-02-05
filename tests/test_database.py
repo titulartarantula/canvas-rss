@@ -1071,6 +1071,72 @@ class TestUpcomingChanges:
         )
 
 
+class TestFeatureDescriptionMethods:
+    """Tests for feature description update methods."""
+
+    def test_update_feature_description(self, temp_db):
+        """Test updating a feature's description."""
+        temp_db.seed_features()
+
+        temp_db.update_feature_description('speedgrader', 'SpeedGrader is an inline grading tool.')
+
+        feature = temp_db.get_feature('speedgrader')
+        assert feature['description'] == 'SpeedGrader is an inline grading tool.'
+        assert feature['llm_generated_at'] is not None
+
+    def test_update_feature_option_description(self, temp_db):
+        """Test updating a feature option's description."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id='test_option',
+            feature_id='speedgrader',
+            name='Test Option',
+            status='preview'
+        )
+
+        temp_db.update_feature_option_description('test_option', 'This option enables testing.')
+
+        option = temp_db.get_feature_option('test_option')
+        assert option['description'] == 'This option enables testing.'
+        assert option['llm_generated_at'] is not None
+
+    def test_get_feature_option(self, temp_db):
+        """Test getting a feature option by ID."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        option = temp_db.get_feature_option('test_opt')
+        assert option is not None
+        assert option['name'] == 'Test'
+
+    def test_get_feature_option_not_found(self, temp_db):
+        """Test getting a non-existent feature option."""
+        option = temp_db.get_feature_option('nonexistent')
+        assert option is None
+
+    def test_get_features_missing_description(self, temp_db):
+        """Test getting features that don't have descriptions."""
+        temp_db.seed_features()
+        temp_db.update_feature_description('speedgrader', 'Has description')
+
+        missing = temp_db.get_features_missing_description()
+        feature_ids = [f['feature_id'] for f in missing]
+        assert 'speedgrader' not in feature_ids
+        assert len(missing) > 0  # Other features should be missing
+
+    def test_get_feature_options_missing_description(self, temp_db):
+        """Test getting feature options that don't have descriptions."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('opt1', 'speedgrader', 'Opt1', status='preview')
+        temp_db.upsert_feature_option('opt2', 'speedgrader', 'Opt2', status='preview')
+        temp_db.update_feature_option_description('opt1', 'Has description')
+
+        missing = temp_db.get_feature_options_missing_description()
+        option_ids = [o['option_id'] for o in missing]
+        assert 'opt1' not in option_ids
+        assert 'opt2' in option_ids
+
+
 class TestContentCommentsTable:
     """Tests for content_comments table."""
 
@@ -1105,3 +1171,49 @@ class TestContentCommentsTable:
         assert 'author' not in columns
         assert 'user' not in columns
         assert 'username' not in columns
+
+
+class TestContentCommentsMethods:
+    """Tests for content_comments database methods."""
+
+    def test_insert_comment(self, temp_db, sample_content_item):
+        """Test inserting a comment."""
+        temp_db.insert_item(sample_content_item)
+        comment_id = temp_db.insert_comment(
+            content_id=sample_content_item.source_id,
+            comment_text="This is a test comment",
+            posted_at=datetime.now(),
+            position=1
+        )
+        assert comment_id > 0
+
+    def test_get_comments_for_content(self, temp_db, sample_content_item):
+        """Test retrieving comments for a content item."""
+        temp_db.insert_item(sample_content_item)
+        temp_db.insert_comment(sample_content_item.source_id, "First comment", datetime.now(), 1)
+        temp_db.insert_comment(sample_content_item.source_id, "Second comment", datetime.now(), 2)
+
+        comments = temp_db.get_comments_for_content(sample_content_item.source_id)
+        assert len(comments) == 2
+        assert comments[0]['position'] == 1
+        assert comments[1]['position'] == 2
+
+    def test_get_comments_ordered_by_posted_at_desc(self, temp_db, sample_content_item):
+        """Test that comments are returned newest first when order='desc'."""
+        temp_db.insert_item(sample_content_item)
+        older = datetime.now() - timedelta(hours=2)
+        newer = datetime.now()
+        temp_db.insert_comment(sample_content_item.source_id, "Older", older, 1)
+        temp_db.insert_comment(sample_content_item.source_id, "Newer", newer, 2)
+
+        comments = temp_db.get_comments_for_content(sample_content_item.source_id, order='desc')
+        assert comments[0]['comment_text'] == "Newer"
+
+    def test_get_latest_comments_with_limit(self, temp_db, sample_content_item):
+        """Test retrieving limited number of recent comments."""
+        temp_db.insert_item(sample_content_item)
+        for i in range(10):
+            temp_db.insert_comment(sample_content_item.source_id, f"Comment {i}", datetime.now(), i)
+
+        comments = temp_db.get_comments_for_content(sample_content_item.source_id, limit=5)
+        assert len(comments) == 5

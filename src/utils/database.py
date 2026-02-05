@@ -985,6 +985,129 @@ class Database:
         )
         return cursor.fetchone() is not None
 
+    # -------------------------------------------------------------------------
+    # Content Comments
+    # -------------------------------------------------------------------------
+
+    def insert_comment(
+        self,
+        content_id: str,
+        comment_text: str,
+        posted_at: Optional[datetime] = None,
+        position: Optional[int] = None
+    ) -> int:
+        """Insert a comment for a content item.
+
+        Args:
+            content_id: The source_id of the content item.
+            comment_text: The PII-redacted comment text.
+            posted_at: When the comment was posted.
+            position: Order in the thread (1, 2, 3...).
+
+        Returns:
+            The ID of the inserted comment row.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        posted_at_str = posted_at.isoformat() if isinstance(posted_at, datetime) else posted_at
+
+        cursor.execute("""
+            INSERT INTO content_comments (content_id, comment_text, posted_at, position)
+            VALUES (?, ?, ?, ?)
+        """, (content_id, comment_text, posted_at_str, position))
+
+        conn.commit()
+        return cursor.lastrowid
+
+    def get_comments_for_content(
+        self,
+        content_id: str,
+        limit: Optional[int] = None,
+        order: str = 'asc'
+    ) -> List[dict]:
+        """Get comments for a content item.
+
+        Args:
+            content_id: The source_id of the content item.
+            limit: Maximum number of comments to return.
+            order: 'asc' for oldest first, 'desc' for newest first.
+
+        Returns:
+            List of comment dicts.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        order_clause = "DESC" if order == 'desc' else "ASC"
+        limit_clause = f"LIMIT {limit}" if limit else ""
+
+        cursor.execute(f"""
+            SELECT id, content_id, comment_text, posted_at, position, created_at
+            FROM content_comments
+            WHERE content_id = ?
+            ORDER BY posted_at {order_clause}
+            {limit_clause}
+        """, (content_id,))
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    # -------------------------------------------------------------------------
+    # Feature Description Methods
+    # -------------------------------------------------------------------------
+
+    def update_feature_description(self, feature_id: str, description: str) -> None:
+        """Update a feature's LLM-generated description."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE features
+            SET description = ?, llm_generated_at = ?
+            WHERE feature_id = ?
+        """, (description, datetime.now().isoformat(), feature_id))
+        conn.commit()
+
+    def update_feature_option_description(self, option_id: str, description: str) -> None:
+        """Update a feature option's LLM-generated description."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_options
+            SET description = ?, llm_generated_at = ?
+            WHERE option_id = ?
+        """, (description, datetime.now().isoformat(), option_id))
+        conn.commit()
+
+    def get_feature_option(self, option_id: str) -> Optional[dict]:
+        """Get a feature option by ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM feature_options WHERE option_id = ?", (option_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_features_missing_description(self) -> List[dict]:
+        """Get all features that don't have LLM descriptions yet."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM features
+            WHERE description IS NULL OR description = ''
+            ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_feature_options_missing_description(self) -> List[dict]:
+        """Get all feature options that don't have LLM descriptions yet."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM feature_options
+            WHERE description IS NULL OR description = ''
+            ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:
