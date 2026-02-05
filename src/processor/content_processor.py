@@ -744,6 +744,203 @@ Post:
             logger.warning(f"LLM feature extraction failed: {e}")
             return []
 
+    def _call_llm(self, prompt: str, max_chars: int = 500) -> str:
+        """Internal method to call LLM with retry logic.
+
+        Args:
+            prompt: The prompt to send.
+            max_chars: Maximum characters in response.
+
+        Returns:
+            LLM response text, truncated if needed.
+        """
+        try:
+            response = self._call_with_retry(
+                lambda: self.client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=prompt,
+                    config=self.generation_config
+                ),
+                fallback=""
+            )
+
+            if response and hasattr(response, 'text'):
+                text = response.text.strip()
+                # Truncate at word boundary
+                if len(text) > max_chars:
+                    text = text[:max_chars].rsplit(' ', 1)[0] + '...'
+                return text
+            return ""
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            return ""
+
+    def summarize_feature_description(self, feature_name: str, content_snippet: str) -> str:
+        """Generate a 1-2 sentence description for a feature.
+
+        Args:
+            feature_name: Name of the Canvas feature.
+            content_snippet: Recent content about the feature.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are summarizing Canvas LMS features for educational technologists.
+
+Describe what {feature_name} is in 1-2 sentences. Be concise and factual.
+
+Context from recent content:
+{content_snippet[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=300)
+
+    def summarize_feature_option_description(
+        self, option_name: str, feature_name: str, raw_content: str
+    ) -> str:
+        """Generate a 1-2 sentence description for a feature option.
+
+        Args:
+            option_name: Name of the feature option.
+            feature_name: Name of the parent feature.
+            raw_content: Raw content from announcement.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are summarizing a Canvas LMS feature option for educational technologists.
+
+Feature option: {option_name}
+Parent feature: {feature_name}
+
+Describe what this feature option does in 1-2 sentences. Be concise and factual.
+
+Context:
+{raw_content[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=300)
+
+    def summarize_announcement_description(self, h4_title: str, raw_content: str) -> str:
+        """Generate a 1-2 sentence description for a feature announcement.
+
+        Args:
+            h4_title: The H4 title from release notes.
+            raw_content: The raw content after the H4.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""Summarize this Canvas release note entry in 1-2 sentences. What changed or was added?
+
+Title: {h4_title}
+Content: {raw_content[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=300)
+
+    def summarize_announcement_implications(
+        self, h4_title: str, raw_content: str, feature_name: str
+    ) -> str:
+        """Generate 2-3 sentence implications for a feature announcement.
+
+        Args:
+            h4_title: The H4 title from release notes.
+            raw_content: The raw content after the H4.
+            feature_name: Name of the related feature.
+
+        Returns:
+            2-3 sentence implications for ed techs.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""In 2-3 sentences, explain who is affected by this change and what educational technologists should know. Be actionable.
+
+Title: {h4_title}
+Content: {raw_content[:2000]}
+Feature: {feature_name}"""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def summarize_announcement_implications_from_comments(
+        self, title: str, initial_content: str, comments: List[dict]
+    ) -> str:
+        """Generate implications from blog/Q&A comments.
+
+        Args:
+            title: The post title.
+            initial_content: The initial post content.
+            comments: List of comment dicts with 'comment_text' and 'posted_at'.
+
+        Returns:
+            2-3 sentence implications based on discussion.
+        """
+        if not self.client:
+            return ""
+
+        # Format comments, newest first
+        comments_text = "\n".join([
+            f"- {c.get('comment_text', '')[:500]}"
+            for c in sorted(comments, key=lambda x: x.get('posted_at', ''), reverse=True)[:10]
+        ])
+
+        prompt = f"""In 2-3 sentences, summarize the community discussion and what educational technologists should know. Weight recent comments more heavily. Be actionable.
+
+Title: {title}
+Initial post: {initial_content[:1000]}
+
+Comments (newest first):
+{comments_text}"""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def generate_meta_summary(
+        self,
+        option_name: str,
+        feature_name: str,
+        implementation_status: str,
+        content_summaries: List[dict]
+    ) -> str:
+        """Generate meta_summary for a feature option from latest content.
+
+        Args:
+            option_name: Name of the feature option.
+            feature_name: Name of the parent feature.
+            implementation_status: Current implementation status text.
+            content_summaries: List of dicts with 'date', 'title', 'description', 'implications'.
+
+        Returns:
+            3-4 sentence meta summary.
+        """
+        if not self.client:
+            return ""
+
+        # Format content summaries
+        summaries_text = "\n".join([
+            f"- [{c.get('date', 'Unknown')}] {c.get('title', '')}: {c.get('description', '')} {c.get('implications', '')}"
+            for c in content_summaries[:5]
+        ])
+
+        prompt = f"""You are advising educational technologists about the deployment readiness of a Canvas feature option.
+
+Feature option: {option_name}
+Parent feature: {feature_name}
+Current status: {implementation_status}
+
+Recent activity (newest first):
+{summaries_text}
+
+In 3-4 sentences, summarize the current state of this feature option for ed techs considering deployment. Cover: readiness for wide rollout, recent changes (especially status transitions like beta→production), community sentiment, and any concerns. Be direct and actionable."""
+
+        return self._call_llm(prompt, max_chars=600)
+
     def sanitize_html(self, content: str) -> str:
         """Remove potentially malicious HTML/scripts.
 

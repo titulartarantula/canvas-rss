@@ -1552,3 +1552,59 @@ class TestImplementationStatusGenerator:
         )
 
         assert 'Production:' in status or future.strftime('%b') in status
+
+
+class TestV2Prompts:
+    """Tests for v2.0 LLM prompt methods."""
+
+    @pytest.fixture
+    def mock_processor(self):
+        """Create a ContentProcessor without API credentials."""
+        from processor.content_processor import ContentProcessor
+        return ContentProcessor()
+
+    def test_summarize_feature_description_returns_string(self, mock_processor):
+        """Test that summarize_feature_description returns a string."""
+        result = mock_processor.summarize_feature_description(
+            feature_name='SpeedGrader',
+            content_snippet='SpeedGrader allows inline grading...'
+        )
+        assert isinstance(result, str)
+
+    def test_summarize_feature_option_description_returns_string(self, mock_processor):
+        """Test that summarize_feature_option_description returns a string."""
+        result = mock_processor.summarize_feature_option_description(
+            option_name='Performance Upgrades',
+            feature_name='SpeedGrader',
+            raw_content='This feature improves...'
+        )
+        assert isinstance(result, str)
+
+    def test_summarize_announcement_description_returns_string(self, mock_processor):
+        """Test that summarize_announcement_description returns a string."""
+        result = mock_processor.summarize_announcement_description(
+            h4_title='Document Processing',
+            raw_content='New document processing capabilities...'
+        )
+        assert isinstance(result, str)
+
+    def test_summarize_announcement_implications_returns_string(self, mock_processor):
+        """Test that summarize_announcement_implications returns a string."""
+        result = mock_processor.summarize_announcement_implications(
+            h4_title='Document Processing',
+            raw_content='New document processing capabilities...',
+            feature_name='Files'
+        )
+        assert isinstance(result, str)
+
+    def test_generate_meta_summary_returns_string(self, mock_processor):
+        """Test that generate_meta_summary returns a string."""
+        result = mock_processor.generate_meta_summary(
+            option_name='Performance Upgrades',
+            feature_name='SpeedGrader',
+            implementation_status='In production since Feb 2026.',
+            content_summaries=[
+                {'date': '2026-02-21', 'title': 'Released', 'description': 'Now live', 'implications': 'Ready to use'},
+            ]
+        )
+        assert isinstance(result, str)
