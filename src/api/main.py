@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 
-from src.api.routes import dashboard, features, options
+from src.api.routes import dashboard, features, options, releases
 
 app = FastAPI(
     title="Canvas Feature Tracker API",
@@ -16,6 +16,7 @@ app = FastAPI(
 app.include_router(dashboard.router)
 app.include_router(features.router)
 app.include_router(options.router)
+app.include_router(releases.router)
 
 # Static files will be mounted after frontend build exists
 FRONTEND_DIST = Path(__file__).parent.parent.parent / "frontend" / "dist"
