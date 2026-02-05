@@ -107,10 +107,20 @@ class Database:
             CREATE TABLE IF NOT EXISTS features (
                 feature_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                description TEXT,
                 status TEXT DEFAULT 'active',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                llm_generated_at TIMESTAMP
             )
         """)
+
+        # Migration: Add new columns to features if they don't exist
+        for col, col_type in [('description', 'TEXT'), ('llm_generated_at', 'TIMESTAMP')]:
+            try:
+                cursor.execute(f"ALTER TABLE features ADD COLUMN {col} {col_type}")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
         # Feature options table (canonical feature options from "Feature Option to Enable")
         cursor.execute("""

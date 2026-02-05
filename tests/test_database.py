@@ -465,6 +465,26 @@ class TestUpdateItemTracking:
         assert result is False
 
 
+class TestFeaturesTableV2:
+    """Tests for v2.0 features table columns."""
+
+    def test_features_table_has_description_column(self, temp_db):
+        """Test that features table has description column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(features)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'description' in columns
+
+    def test_features_table_has_llm_generated_at_column(self, temp_db):
+        """Test that features table has llm_generated_at column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(features)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'llm_generated_at' in columns
+
+
 class TestFeaturesTable:
     """Tests for v2.0 features table."""
 
@@ -483,7 +503,7 @@ class TestFeaturesTable:
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(features)")
         columns = {row[1] for row in cursor.fetchall()}
-        expected = {"feature_id", "name", "status", "created_at"}
+        expected = {"feature_id", "name", "description", "status", "created_at", "llm_generated_at"}
         assert expected == columns
 
     def test_seed_features_populates_table(self, temp_db):
