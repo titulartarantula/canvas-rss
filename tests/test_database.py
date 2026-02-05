@@ -1247,3 +1247,36 @@ class TestMetaSummaryMethods:
         content = temp_db.get_latest_content_for_option('test_opt', limit=5)
         assert len(content) == 1
         assert content[0]['source_id'] == sample_content_item.source_id
+
+
+class TestLifecycleDateMethods:
+    """Tests for feature option lifecycle date methods."""
+
+    def test_update_feature_option_lifecycle_dates(self, temp_db):
+        """Test updating beta_date and production_date."""
+        from datetime import date
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        temp_db.update_feature_option_lifecycle_dates(
+            option_id='test_opt',
+            beta_date=date(2026, 1, 19),
+            production_date=date(2026, 2, 21)
+        )
+
+        option = temp_db.get_feature_option('test_opt')
+        assert option['beta_date'] == '2026-01-19'
+        assert option['production_date'] == '2026-02-21'
+
+    def test_update_implementation_status(self, temp_db):
+        """Test updating implementation_status."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        temp_db.update_feature_option_implementation_status(
+            'test_opt',
+            'In feature preview (beta). Account-level setting. Beta: Jan 19, 2026.'
+        )
+
+        option = temp_db.get_feature_option('test_opt')
+        assert 'feature preview' in option['implementation_status']

@@ -4,7 +4,7 @@ import sqlite3
 import json
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 if TYPE_CHECKING:
     from src.processor.content_processor import ContentItem
@@ -1148,6 +1148,63 @@ class Database:
             LIMIT ?
         """, (option_id, limit))
         return [dict(row) for row in cursor.fetchall()]
+
+    def update_feature_option_lifecycle_dates(
+        self,
+        option_id: str,
+        beta_date: Optional[date] = None,
+        production_date: Optional[date] = None,
+        deprecation_date: Optional[date] = None
+    ) -> None:
+        """Update lifecycle dates for a feature option.
+
+        Args:
+            option_id: The option ID.
+            beta_date: When available in beta.
+            production_date: When available in production.
+            deprecation_date: When deprecated.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Build dynamic update based on provided dates
+        updates = []
+        values = []
+
+        if beta_date is not None:
+            updates.append("beta_date = ?")
+            values.append(beta_date.isoformat() if hasattr(beta_date, 'isoformat') else beta_date)
+        if production_date is not None:
+            updates.append("production_date = ?")
+            values.append(production_date.isoformat() if hasattr(production_date, 'isoformat') else production_date)
+        if deprecation_date is not None:
+            updates.append("deprecation_date = ?")
+            values.append(deprecation_date.isoformat() if hasattr(deprecation_date, 'isoformat') else deprecation_date)
+
+        if updates:
+            values.append(option_id)
+            cursor.execute(f"""
+                UPDATE feature_options
+                SET {', '.join(updates)}
+                WHERE option_id = ?
+            """, values)
+            conn.commit()
+
+    def update_feature_option_implementation_status(self, option_id: str, status: str) -> None:
+        """Update the template-generated implementation_status.
+
+        Args:
+            option_id: The option ID.
+            status: The generated implementation status text.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_options
+            SET implementation_status = ?
+            WHERE option_id = ?
+        """, (status, option_id))
+        conn.commit()
 
     def close(self) -> None:
         """Close database connection."""
