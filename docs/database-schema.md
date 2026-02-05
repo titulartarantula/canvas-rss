@@ -1,6 +1,7 @@
 # Database Schema
 
-**Last Updated:** 2026-02-04
+**Last Updated:** 2026-02-05
+**Schema Version:** 2.0
 
 ## Overview
 
@@ -9,6 +10,35 @@ This document describes the database schema for tracking Canvas LMS release note
 1. **features** - Canonical Canvas features (~45 top-level features like "Assignments", "Gradebook")
 2. **feature_options** - Canonical feature options (from "Feature Option to Enable" table cell)
 3. **feature_announcements** - Each H4 announcement about a feature option over time
+4. **content_comments** - Comments from blog/Q&A posts (v2.0)
+
+## v2.0 Changes
+
+The v2.0 schema adds LLM-generated summaries and lifecycle date tracking:
+
+### New Columns
+
+**features:**
+- `description TEXT` - LLM-generated 1-2 sentence description
+- `llm_generated_at TIMESTAMP` - When description was last generated
+
+**feature_options:**
+- `description TEXT` - LLM-generated 1-2 sentence description
+- `meta_summary TEXT` - LLM-generated 3-4 sentence deployment readiness summary
+- `meta_summary_updated_at TIMESTAMP` - When meta_summary was last updated
+- `implementation_status TEXT` - Template-generated status text (no LLM)
+- `beta_date DATE` - When available in beta environment
+- `production_date DATE` - When available in production environment
+- `deprecation_date DATE` - When deprecated
+- `llm_generated_at TIMESTAMP` - When description was last generated
+
+**feature_announcements:**
+- `description TEXT` - LLM-generated 1-2 sentence summary
+- `implications TEXT` - LLM-generated 2-3 sentence implications for ed techs
+
+### New Table: content_comments
+
+Stores comments from blog/Q&A posts for implications regeneration. **No author field** (anonymity principle).
 
 ---
 
@@ -121,6 +151,15 @@ erDiagram
         TIMESTAMP generated_at
     }
 
+    content_comments {
+        INTEGER id PK
+        TEXT content_id FK
+        TEXT comment_text
+        TIMESTAMP posted_at
+        INTEGER position
+        TIMESTAMP created_at
+    }
+
     features ||--o{ feature_options : "has"
     features ||--o{ feature_announcements : "categorizes"
     feature_options ||--o{ feature_announcements : "announced by"
@@ -129,6 +168,7 @@ erDiagram
     feature_options ||--o{ content_feature_refs : "referenced by"
     content_items ||--o{ content_feature_refs : "links to"
     content_items ||--o{ upcoming_changes : "announces"
+    content_items ||--o{ content_comments : "has"
 ```
 
 ---
@@ -143,8 +183,10 @@ Canonical Canvas features (~45 top-level features).
 CREATE TABLE features (
     feature_id TEXT PRIMARY KEY,      -- e.g., 'assignments', 'gradebook'
     name TEXT NOT NULL,               -- e.g., 'Assignments', 'Gradebook'
+    description TEXT,                 -- v2.0: LLM-generated 1-2 sentence description
     status TEXT DEFAULT 'active',     -- 'active', 'deprecated'
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    llm_generated_at TIMESTAMP        -- v2.0: When description was generated
 );
 ```
 
@@ -156,16 +198,40 @@ Canonical feature options extracted from "Feature Option to Enable" table cell.
 CREATE TABLE feature_options (
     option_id TEXT PRIMARY KEY,       -- slugified: 'document_processor'
     feature_id TEXT NOT NULL,         -- FK to features
-    canonical_name TEXT NOT NULL,     -- exact: 'Document Processor'
+    canonical_name TEXT,              -- exact: 'Document Processor'
+    name TEXT NOT NULL,               -- Display name (may be H4 title)
+
+    -- v2.0: LLM-generated summaries
+    description TEXT,                 -- 1-2 sentence description
+    meta_summary TEXT,                -- 3-4 sentence deployment readiness
+    meta_summary_updated_at TIMESTAMP,
+    implementation_status TEXT,       -- Template-generated status text
+
+    -- Lifecycle status
     status TEXT NOT NULL DEFAULT 'pending',
-        -- 'pending'    : Announced but not yet available
-        -- 'preview'    : Feature preview / beta
-        -- 'optional'   : Available but disabled by default
-        -- 'default_on' : Enabled by default, can be disabled
-        -- 'released'   : Fully released, no longer optional
+        -- 'pending'        : Announced but not yet available
+        -- 'preview'        : Feature preview / beta
+        -- 'optional'       : Available but disabled by default
+        -- 'default_optional' : Enabled by default, can be disabled
+        -- 'released'       : Fully released, no longer optional
+
+    -- v2.0: Lifecycle dates
+    beta_date DATE,                   -- When available in beta
+    production_date DATE,             -- When available in production
+    deprecation_date DATE,            -- When deprecated
+
+    -- Configuration
+    config_level TEXT,                -- 'account', 'course', 'both'
+    default_state TEXT,               -- 'enabled', 'disabled'
     user_group_url TEXT,              -- Feature Preview community group URL
-    first_seen TIMESTAMP,             -- When we first saw this option
-    last_seen TIMESTAMP,              -- When we last saw this option announced
+
+    -- Tracking timestamps
+    first_announced TIMESTAMP,
+    last_updated TIMESTAMP,
+    first_seen TIMESTAMP,
+    last_seen TIMESTAMP,
+    llm_generated_at TIMESTAMP,       -- v2.0: When description was generated
+
     FOREIGN KEY (feature_id) REFERENCES features(feature_id)
 );
 
@@ -192,7 +258,9 @@ CREATE TABLE feature_announcements (
 
     -- Content
     raw_content TEXT,                 -- HTML content after H4
-    summary TEXT,                     -- LLM-generated summary
+    summary TEXT,                     -- Legacy: LLM-generated summary
+    description TEXT,                 -- v2.0: 1-2 sentence description
+    implications TEXT,                -- v2.0: 2-3 sentence implications for ed techs
 
     -- Configuration snapshot at time of announcement
     enable_location_account TEXT,     -- "Disabled/Unlocked", "Enabled/Locked", etc.
@@ -299,6 +367,26 @@ CREATE TABLE upcoming_changes (
 
 CREATE INDEX idx_upcoming_content ON upcoming_changes(content_id);
 CREATE INDEX idx_upcoming_date ON upcoming_changes(change_date);
+```
+
+### content_comments (v2.0)
+
+Comments from blog/Q&A posts for implications regeneration. **No author field** (anonymity principle).
+
+```sql
+CREATE TABLE content_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_id TEXT NOT NULL,         -- FK to content_items.source_id
+    comment_text TEXT NOT NULL,       -- PII-redacted comment text
+    posted_at TIMESTAMP,              -- When comment was posted
+    position INTEGER,                 -- Order in thread (1, 2, 3...)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (content_id) REFERENCES content_items(source_id)
+);
+
+CREATE INDEX idx_comments_content ON content_comments(content_id);
+CREATE INDEX idx_comments_posted ON content_comments(posted_at);
 ```
 
 ### feed_history
