@@ -2,10 +2,11 @@
 
 import argparse
 import sys
-from typing import Optional
+from typing import Optional, List
 
 from src.utils.database import Database
 from src.processor.content_processor import ContentProcessor
+from src.constants import CANVAS_FEATURES
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -275,6 +276,169 @@ def handle_regenerate_options(missing_only: bool = False, dry_run: bool = False)
     return 0
 
 
+def suggest_matches(title: str, content: str) -> List[dict]:
+    """Suggest feature matches for content using keyword matching.
+
+    Args:
+        title: Content title.
+        content: Content text.
+
+    Returns:
+        List of suggestions sorted by confidence, each with:
+        - feature_id: The suggested feature ID
+        - feature_name: The feature name
+        - confidence: 0-100 confidence score
+        - keywords: List of matched keywords
+    """
+    combined = f"{title} {content}".lower()
+    suggestions = []
+
+    for feature_id, feature_name in CANVAS_FEATURES.items():
+        if feature_id == 'general':
+            continue
+
+        keywords = []
+        score = 0
+
+        # Check feature name
+        name_lower = feature_name.lower()
+        if name_lower in combined:
+            score += 50
+            keywords.append(feature_name)
+
+        # Check feature_id (e.g., 'speedgrader')
+        if feature_id.replace('_', ' ') in combined or feature_id.replace('_', '') in combined:
+            score += 40
+            keywords.append(feature_id)
+
+        # Check individual words from feature name
+        for word in feature_name.split():
+            if len(word) > 3 and word.lower() in combined:
+                score += 10
+                if word not in keywords:
+                    keywords.append(word)
+
+        # Boost if in title
+        if any(kw.lower() in title.lower() for kw in keywords):
+            score += 20
+
+        if score > 0:
+            suggestions.append({
+                'feature_id': feature_id,
+                'feature_name': feature_name,
+                'confidence': min(score, 100),
+                'keywords': keywords
+            })
+
+    return sorted(suggestions, key=lambda x: x['confidence'], reverse=True)[:3]
+
+
+def handle_general_list(days: Optional[int] = None) -> int:
+    """Handle general list command."""
+    db = Database()
+
+    items = db.get_content_by_feature('general')
+
+    if days:
+        from datetime import datetime, timedelta
+        cutoff = datetime.now() - timedelta(days=days)
+        items = [i for i in items if i.get('first_posted', '') >= cutoff.isoformat()]
+
+    if not items:
+        print("No content tagged as 'general'")
+        return 0
+
+    print(f"Found {len(items)} items tagged as 'general':\n")
+    for item in items:
+        date = item.get('first_posted', 'Unknown')[:10] if item.get('first_posted') else 'Unknown'
+        print(f"  [{date}] {item.get('source_id', 'Unknown')}")
+        print(f"    {item.get('title', 'No title')[:60]}")
+        print()
+
+    db.close()
+    return 0
+
+
+def handle_general_triage(auto_high: bool = False, days: Optional[int] = None, export: Optional[str] = None) -> int:
+    """Handle general triage command - interactive review of general-tagged content."""
+    db = Database()
+
+    items = db.get_content_by_feature('general')
+
+    if days:
+        from datetime import datetime, timedelta
+        cutoff = datetime.now() - timedelta(days=days)
+        items = [i for i in items if i.get('first_posted', '') >= cutoff.isoformat()]
+
+    if not items:
+        print("No content to triage")
+        return 0
+
+    if export:
+        # Export mode - write CSV
+        import csv
+        with open(export, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['content_id', 'title', 'suggested_feature', 'confidence'])
+            for item in items:
+                suggestions = suggest_matches(item.get('title', ''), item.get('content', ''))
+                top = suggestions[0] if suggestions else {'feature_id': '', 'confidence': 0}
+                writer.writerow([
+                    item.get('source_id'),
+                    item.get('title', '')[:50],
+                    top.get('feature_id', ''),
+                    top.get('confidence', 0)
+                ])
+        print(f"Exported {len(items)} items to {export}")
+        return 0
+
+    # Interactive mode
+    print(f"Reviewing {len(items)} items tagged as 'general'...\n")
+
+    for i, item in enumerate(items):
+        print(f"[{i+1}/{len(items)}] {item.get('source_id', 'Unknown')} ({item.get('first_posted', 'Unknown')[:10] if item.get('first_posted') else 'Unknown'})")
+        print(f"Title: {item.get('title', 'No title')}")
+        print(f"Preview: {item.get('content', '')[:200]}...")
+        print()
+
+        suggestions = suggest_matches(item.get('title', ''), item.get('content', ''))
+
+        print("Suggested matches:")
+        for j, s in enumerate(suggestions):
+            print(f"  {j+1}. {s['feature_id']} ({s['confidence']}% confidence) - keywords: {', '.join(s['keywords'])}")
+        print(f"  {len(suggestions)+1}. [skip] - keep as general")
+        print(f"  {len(suggestions)+2}. [new] - create new feature/option")
+        print(f"  {len(suggestions)+3}. [quit] - exit triage")
+
+        if auto_high and suggestions and suggestions[0]['confidence'] >= 80:
+            print(f"\n  Auto-assigning to {suggestions[0]['feature_id']} (confidence >= 80%)")
+            db.reassign_content_feature('general', item.get('source_id'), suggestions[0]['feature_id'])
+            continue
+
+        try:
+            choice = input(f"\nChoice [1-{len(suggestions)+3}]: ").strip()
+
+            if choice == str(len(suggestions)+3) or choice.lower() == 'quit':
+                print("Exiting triage")
+                break
+            elif choice == str(len(suggestions)+1) or choice.lower() == 'skip':
+                print("Skipped\n")
+                continue
+            elif choice == str(len(suggestions)+2) or choice.lower() == 'new':
+                print("TODO: Implement new feature/option creation")
+                continue
+            elif choice.isdigit() and 1 <= int(choice) <= len(suggestions):
+                selected = suggestions[int(choice)-1]
+                db.reassign_content_feature('general', item.get('source_id'), selected['feature_id'])
+                print(f"Assigned to {selected['feature_id']}\n")
+        except (EOFError, KeyboardInterrupt):
+            print("\nExiting triage")
+            break
+
+    db.close()
+    return 0
+
+
 def main(args: Optional[list] = None) -> int:
     """Main entry point for CLI.
 
@@ -311,8 +475,18 @@ def main(args: Optional[list] = None) -> int:
         print(f"Regenerate {parsed.regen_type} not yet implemented")
         return 1
 
-    # Command handlers will be added in subsequent tasks
-    print(f"Command: {parsed.command}")
+    if parsed.command == 'general':
+        if parsed.general_action == 'list':
+            return handle_general_list(days=getattr(parsed, 'days', None))
+        elif parsed.general_action == 'triage':
+            return handle_general_triage(
+                auto_high=parsed.auto_high,
+                days=parsed.days,
+                export=parsed.export
+            )
+        print(f"General {parsed.general_action} not yet implemented")
+        return 1
+
     return 0
 
 

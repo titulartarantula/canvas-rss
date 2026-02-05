@@ -1206,6 +1206,43 @@ class Database:
         """, (status, option_id))
         conn.commit()
 
+    def get_content_by_feature(self, feature_id: str) -> List[dict]:
+        """Get all content items linked to a specific feature.
+
+        Args:
+            feature_id: The feature ID to search for.
+
+        Returns:
+            List of content item dicts.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT ci.*
+            FROM content_items ci
+            JOIN content_feature_refs cfr ON ci.source_id = cfr.content_id
+            WHERE cfr.feature_id = ?
+            ORDER BY ci.first_posted DESC
+        """, (feature_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def reassign_content_feature(self, old_feature_id: str, content_id: str, new_feature_id: str) -> None:
+        """Reassign content from one feature to another.
+
+        Args:
+            old_feature_id: Current feature ID.
+            content_id: The content source_id.
+            new_feature_id: New feature to assign to.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE content_feature_refs
+            SET feature_id = ?
+            WHERE content_id = ? AND feature_id = ?
+        """, (new_feature_id, content_id, old_feature_id))
+        conn.commit()
+
     def close(self) -> None:
         """Close database connection."""
         if self.conn:

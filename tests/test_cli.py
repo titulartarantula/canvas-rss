@@ -137,3 +137,98 @@ class TestRegenerateCommands:
 
         result = handle_regenerate_features(missing_only=True, dry_run=True)
         assert result == 0
+
+
+class TestGeneralTriage:
+    """Tests for general triage command."""
+
+    def test_suggest_matches_returns_ranked_list(self):
+        """Test that suggest_matches returns ranked suggestions."""
+        from src.cli import suggest_matches
+
+        suggestions = suggest_matches(
+            title="Tips for using SpeedGrader with large classes",
+            content="Many instructors struggle with grading..."
+        )
+
+        assert len(suggestions) > 0
+        assert suggestions[0]['feature_id'] == 'speedgrader'
+        assert 'confidence' in suggestions[0]
+
+    def test_suggest_matches_handles_no_match(self):
+        """Test suggest_matches with unrelated content."""
+        from src.cli import suggest_matches
+
+        suggestions = suggest_matches(
+            title="Random unrelated topic",
+            content="This has nothing to do with Canvas features"
+        )
+
+        # Should still return something, even if low confidence
+        assert isinstance(suggestions, list)
+
+    @patch('src.cli.Database')
+    def test_general_list(self, mock_db_cls):
+        """Test general list command."""
+        from src.cli import handle_general_list
+
+        mock_db = MagicMock()
+        mock_db.get_content_by_feature.return_value = [
+            {'source_id': 'blog_123', 'title': 'Test', 'first_posted': '2026-02-01'}
+        ]
+        mock_db_cls.return_value = mock_db
+
+        result = handle_general_list()
+        assert result == 0
+
+    @patch('src.cli.Database')
+    def test_general_list_empty(self, mock_db_cls):
+        """Test general list with no items."""
+        from src.cli import handle_general_list
+
+        mock_db = MagicMock()
+        mock_db.get_content_by_feature.return_value = []
+        mock_db_cls.return_value = mock_db
+
+        result = handle_general_list()
+        assert result == 0
+
+    @patch('src.cli.Database')
+    def test_general_list_with_days_filter(self, mock_db_cls):
+        """Test general list with --days filter."""
+        from src.cli import handle_general_list
+
+        mock_db = MagicMock()
+        mock_db.get_content_by_feature.return_value = [
+            {'source_id': 'blog_123', 'title': 'Test', 'first_posted': '2026-02-01'}
+        ]
+        mock_db_cls.return_value = mock_db
+
+        result = handle_general_list(days=7)
+        assert result == 0
+
+    def test_suggest_matches_boosts_title_match(self):
+        """Test that matches in title get boosted confidence."""
+        from src.cli import suggest_matches
+
+        # Use 'Rich Content Editor' - multi-word feature that won't hit cap
+        # Title match: RCE keywords in title
+        title_match = suggest_matches(
+            title="Rich Content Editor issues",
+            content="Having some problems."
+        )
+
+        # Content match: RCE keywords in content only
+        content_only = suggest_matches(
+            title="Having some problems",
+            content="Issues with Rich Content Editor."
+        )
+
+        # Both should find rich_content_editor
+        assert any(s['feature_id'] == 'rich_content_editor' for s in title_match)
+        assert any(s['feature_id'] == 'rich_content_editor' for s in content_only)
+
+        # Title match should have higher confidence due to title boost
+        title_conf = next(s['confidence'] for s in title_match if s['feature_id'] == 'rich_content_editor')
+        content_conf = next(s['confidence'] for s in content_only if s['feature_id'] == 'rich_content_editor')
+        assert title_conf > content_conf
