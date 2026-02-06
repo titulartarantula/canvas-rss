@@ -36,9 +36,9 @@ services:
       - ./logs:/app/logs
       - ./config:/app/config:ro
     networks:
-      - canvas-rss-net
+      - canvas-net
     healthcheck:
-      test: ["CMD-SHELL", "test -f /app/output/feed.xml || exit 1"]
+      test: ["CMD-SHELL", "test -f /app/data/canvas_digest.db || exit 1"]
       interval: 1h
       timeout: 10s
       retries: 3
@@ -65,11 +65,11 @@ services:
       - DATABASE_PATH=/app/data/canvas_digest.db
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "${TRACKER_HOST:-127.0.0.1}:${TRACKER_PORT:-8000}:8000"
+      - "${WEB_HOST:-127.0.0.1}:${WEB_PORT:-8986}:8000"
     volumes:
       - ./data:/app/data:ro
     networks:
-      - canvas-rss-net
+      - canvas-net
     depends_on:
       - canvas-rss-aggregator
     healthcheck:
@@ -79,40 +79,6 @@ services:
       retries: 3
       start_period: 10s
 
-  feed-server:
-    image: python:3.11-alpine
-    container_name: canvas-rss-server
-    restart: unless-stopped
-    user: "1000:1000"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 128M
-        reservations:
-          cpus: '0.1'
-          memory: 32M
-    command: python -m http.server 8080 --directory /app/output
-    ports:
-      - "${FEED_HOST:-127.0.0.1}:${FEED_PORT:-8986}:8080"
-    volumes:
-      - ./output:/app/output:ro
-    networks:
-      - canvas-rss-net
-    depends_on:
-      - canvas-rss-aggregator
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
 networks:
-  canvas-rss-net:
+  canvas-net:
     driver: bridge
