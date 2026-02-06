@@ -1,3 +1,12 @@
+# Frontend build stage
+FROM node:20-alpine AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Main Python application stage
 FROM python:3.11-slim
 
 # Install system dependencies for Playwright/Chromium and supercronic
@@ -32,7 +41,7 @@ RUN groupadd -g 1000 appuser && \
     useradd -u 1000 -g appuser -m appuser
 
 # Create directories for data persistence and playwright
-RUN mkdir -p /app/data /app/output /app/logs /opt/playwright && \
+RUN mkdir -p /app/data /app/output /app/logs /opt/playwright /app/frontend/dist && \
     chown -R appuser:appuser /app /opt/playwright
 
 # Install Playwright browsers as appuser
@@ -44,6 +53,10 @@ USER root
 COPY src/ ./src/
 COPY config/ ./config/
 COPY VERSION .
+
+# Copy frontend build from frontend-builder stage
+COPY --from=frontend-builder /frontend/dist /app/frontend/dist
+
 RUN chown -R appuser:appuser /app
 
 # Copy and set up entrypoint (handles volume permissions and cron)

@@ -44,6 +44,41 @@ services:
       retries: 3
       start_period: 10m
 
+  feature-tracker:
+    build: .
+    container_name: canvas-feature-tracker
+    restart: unless-stopped
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    environment:
+      - DATABASE_PATH=/app/data/canvas_digest.db
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "${TRACKER_HOST:-127.0.0.1}:${TRACKER_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data:ro
+    networks:
+      - canvas-rss-net
+    depends_on:
+      - canvas-rss-aggregator
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   feed-server:
     image: python:3.11-alpine
     container_name: canvas-rss-server
