@@ -2452,10 +2452,16 @@ def classify_deploy_changes(
     new_change_names: List[str] = []
     processed_count = 0
 
+    announced_at = page.deploy_date.isoformat() if page.deploy_date else None
+
     for change in page.changes:
         # Apply first_run_limit for new pages
         if is_new_page and processed_count >= first_run_limit:
             break
+
+        # Skip if announcement already exists for this content + anchor
+        if change.anchor_id and db.announcement_exists(content_id, change.anchor_id):
+            continue
 
         # Generate option_id from anchor_id or name
         option_id = change.anchor_id if change.anchor_id else \
@@ -2474,7 +2480,7 @@ def classify_deploy_changes(
             summary=None,
             config_level=None,
             default_state=None,
-            first_announced=page.deploy_date.isoformat() if page.deploy_date else None,
+            first_announced=announced_at,
         )
 
         # Link content to feature
@@ -2483,6 +2489,27 @@ def classify_deploy_changes(
             feature_id=feature_id,
             feature_option_id=option_id,
             mention_type='announces',
+        )
+
+        # Insert feature announcement (H4 entry snapshot)
+        table_data = change.table_data
+        db.insert_feature_announcement(
+            content_id=content_id,
+            h4_title=change.name,
+            announced_at=announced_at,
+            feature_id=feature_id,
+            option_id=option_id,
+            anchor_id=change.anchor_id,
+            section=change.section,
+            category=change.category,
+            raw_content=change.raw_content,
+            enable_location_account=table_data.enable_location_account if table_data else None,
+            enable_location_course=table_data.enable_location_course if table_data else None,
+            subaccount_config=table_data.subaccount_config if table_data else None,
+            account_course_setting=table_data.account_course_setting if table_data else None,
+            permissions=table_data.permissions if table_data else None,
+            affected_areas=table_data.affected_areas if table_data else None,
+            affects_ui=table_data.affects_ui if table_data else None,
         )
 
         new_change_names.append(change.name)
