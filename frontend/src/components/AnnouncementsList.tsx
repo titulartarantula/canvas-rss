@@ -44,7 +44,11 @@ function AnnouncementCard({
   index: number
   showReleaseLink: boolean
 }) {
-  const announcedDate = new Date(announcement.announced_at)
+  const aaStr = announcement.announced_at || ''
+  const aaMatch = aaStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  const announcedDate = aaMatch
+    ? new Date(Number(aaMatch[1]), Number(aaMatch[2]) - 1, Number(aaMatch[3]))
+    : new Date(aaStr)
 
   return (
     <div

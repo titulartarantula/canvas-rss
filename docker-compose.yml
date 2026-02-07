@@ -9,6 +9,7 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - FOWNER
       - SETUID
       - SETGID
       - DAC_OVERRIDE
@@ -63,7 +64,8 @@ services:
           memory: 128M
     environment:
       - DATABASE_PATH=/app/data/canvas_digest.db
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    entrypoint: ["python", "-m", "uvicorn"]
+    command: ["src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${WEB_HOST:-127.0.0.1}:${WEB_PORT:-8986}:8000"
     volumes:
@@ -73,7 +75,7 @@ services:
     depends_on:
       - canvas-rss-aggregator
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

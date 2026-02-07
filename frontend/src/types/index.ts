@@ -87,7 +87,8 @@ export interface Release {
   title: string;
   content_type: string;
   summary: string | null;
-  first_posted: string;
+  first_posted: string | null;
+  published_date: string | null;
   announcement_count?: number;
   announcements?: Announcement[];
   upcoming_changes?: UpcomingChange[];

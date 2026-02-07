@@ -224,48 +224,72 @@ def store_release_notes(
             if is_first_run and new_page_count > first_run_limit:
                 continue
 
-        # v2.0: Parse page-level lifecycle dates from intro paragraph
-        intro_text = getattr(page, 'intro', '') or ''
-        lifecycle_dates = parse_page_lifecycle_dates(intro_text)
+        # Transfer canonical dates from parsed page to the note object
+        if page.release_date:
+            note.published_date = page.release_date
+        if page.first_posted:
+            note.first_posted = page.first_posted
+
+        # v2.0: Parse page-level lifecycle dates from page content
+        # The intro paragraph typically contains "Beta environment on DATE"
+        # and "Production environment on DATE"
+        page_content = note.content or ''
+        lifecycle_dates = parse_page_lifecycle_dates(page_content)
         beta_date = lifecycle_dates.get('beta_date')
         production_date = lifecycle_dates.get('production_date')
 
-        # Generate summaries for features
+        # Update lifecycle dates on all feature options from this page
+        if beta_date or production_date:
+            for feature in page.features:
+                option_id = feature.anchor_id
+                if option_id:
+                    try:
+                        db.update_feature_option_lifecycle_dates(
+                            option_id=option_id,
+                            beta_date=beta_date,
+                            production_date=production_date,
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to update lifecycle dates for {option_id}: {e}")
+
+        # Update per-announcement lifecycle dates (avoids shared option_id collision)
+        content_id = note.source_id
+        if beta_date or production_date:
+            try:
+                updated = db.update_announcement_lifecycle_dates(
+                    content_id=content_id,
+                    beta_date=beta_date,
+                    production_date=production_date,
+                )
+                logger.debug(f"Updated lifecycle dates on {updated} announcements for {content_id}")
+            except Exception as e:
+                logger.debug(f"Failed to update announcement lifecycle dates for {content_id}: {e}")
+
+        # Generate summaries for features and persist to DB
         for feature in page.features:
             try:
                 feature.summary = processor.summarize_feature(feature)
 
-                # v2.0: Generate description and implications for announcements
-                if hasattr(feature, 'option_id') and feature.option_id:
-                    # Update lifecycle dates for this option
-                    if beta_date or production_date:
-                        db.update_feature_option_lifecycle_dates(
-                            option_id=feature.option_id,
-                            beta_date=beta_date,
-                            production_date=production_date
-                        )
+                # Generate description and implications for announcements
+                raw = feature.raw_content or feature.summary or ''
+                description = processor.summarize_announcement_description(
+                    h4_title=feature.name,
+                    raw_content=raw,
+                )
+                implications = processor.summarize_announcement_implications(
+                    h4_title=feature.name,
+                    raw_content=raw,
+                    feature_name=feature.category or 'Unknown',
+                )
 
-                    # Generate description using new method
-                    description = processor.summarize_announcement_description(
-                        h4_title=feature.name,
-                        raw_content=getattr(feature, 'raw_content', '') or feature.summary or ''
+                # Persist LLM summaries to the announcement row
+                if description or implications:
+                    db.update_announcement_summary(
+                        content_id=content_id,
+                        anchor_id=feature.anchor_id,
+                        description=description,
+                        implications=implications,
                     )
-
-                    # Generate implications
-                    feature_obj = db.get_feature(feature.feature_id) if hasattr(feature, 'feature_id') else None
-                    feature_name = feature_obj['name'] if feature_obj else 'Unknown'
-                    implications = processor.summarize_announcement_implications(
-                        h4_title=feature.name,
-                        raw_content=getattr(feature, 'raw_content', '') or feature.summary or '',
-                        feature_name=feature_name
-                    )
-
-                    # These would be stored via insert_feature_announcement in a full implementation
-                    # For now, just log that we processed them
-                    if description:
-                        logger.debug(f"Generated description for {feature.name}: {description[:50]}...")
-                    if implications:
-                        logger.debug(f"Generated implications for {feature.name}: {implications[:50]}...")
 
             except Exception as e:
                 logger.warning(f"Failed to summarize feature '{feature.name}': {e}")
@@ -276,24 +300,30 @@ def store_release_notes(
         item.content = processor.redact_pii(item.content)
         item.title = processor.redact_pii(item.title)
 
+        # Generate content-level summary for the release note
+        try:
+            item.summary = processor.summarize_with_llm(item.content, item.content_type)
+        except Exception as e:
+            logger.warning(f"Failed to generate release note summary: {e}")
+
         item_id = db.insert_item(item)
         if item_id > 0:
             stored += 1
 
-            # Store upcoming changes from this release note
-            if page.upcoming_changes:
-                for change in page.upcoming_changes:
-                    if not db.upcoming_change_exists(
-                        item.source_id,
-                        change.date.isoformat() if change.date else None,
-                        change.description
-                    ):
-                        db.insert_upcoming_change(
-                            content_id=item.source_id,
-                            change_date=change.date.isoformat() if change.date else None,
-                            description=change.description,
-                        )
-                logger.debug(f"Stored {len(page.upcoming_changes)} upcoming changes")
+        # Store upcoming changes from this release note (even for existing items)
+        if page.upcoming_changes:
+            for change in page.upcoming_changes:
+                if not db.upcoming_change_exists(
+                    item.source_id,
+                    change.date.isoformat() if change.date else None,
+                    change.description
+                ):
+                    db.insert_upcoming_change(
+                        content_id=item.source_id,
+                        change_date=change.date.isoformat() if change.date else None,
+                        description=change.description,
+                    )
+            logger.debug(f"Stored {len(page.upcoming_changes)} upcoming changes")
 
     logger.debug(f"Stored {stored} release notes")
     return stored
@@ -341,6 +371,30 @@ def store_deploy_notes(
             new_page_count += 1
             if is_first_run and new_page_count > first_run_limit:
                 continue
+
+        # Transfer canonical dates from parsed page to the note object
+        if page.deploy_date:
+            note.published_date = page.deploy_date
+        if page.first_posted:
+            note.first_posted = page.first_posted
+
+        # Parse page-level lifecycle dates from page content
+        page_content = note.content or ''
+        lifecycle_dates = parse_page_lifecycle_dates(page_content)
+        beta_date = lifecycle_dates.get('beta_date')
+        production_date = lifecycle_dates.get('production_date')
+
+        # Update per-announcement lifecycle dates
+        if beta_date or production_date:
+            try:
+                updated = db.update_announcement_lifecycle_dates(
+                    content_id=note.source_id,
+                    beta_date=beta_date,
+                    production_date=production_date,
+                )
+                logger.debug(f"Updated lifecycle dates on {updated} deploy announcements for {note.source_id}")
+            except Exception as e:
+                logger.debug(f"Failed to update deploy announcement lifecycle dates: {e}")
 
         # Generate summaries for changes
         for change in page.changes:
@@ -406,9 +460,23 @@ def main():
             logger.info(f"  -> {b_stored} blog items stored")
             total_stored += b_stored
 
-            # Release notes
+            # Release and deploy notes — classify by title, not scraper tab
             all_notes = scraper.scrape_release_notes(hours=24, skip_date_filter=is_first_run)
-            release_notes = [n for n in all_notes if n.post_type == "release_note"]
+
+            # Deduplicate by URL (same post may appear on both tabs)
+            seen_urls = set()
+            unique_notes = []
+            for n in all_notes:
+                if n.url not in seen_urls:
+                    seen_urls.add(n.url)
+                    # Fix post_type based on title content
+                    if "Deploy Notes" in n.title:
+                        n.post_type = "deploy_note"
+                    else:
+                        n.post_type = "release_note"
+                    unique_notes.append(n)
+
+            release_notes = [n for n in unique_notes if n.post_type == "release_note"]
             r_stored = store_release_notes(
                 release_notes, db, scraper, processor,
                 is_first_run=is_first_run, first_run_limit=3
@@ -417,7 +485,7 @@ def main():
             total_stored += r_stored
 
             # Deploy notes
-            deploy_notes = [n for n in all_notes if n.post_type == "deploy_note"]
+            deploy_notes = [n for n in unique_notes if n.post_type == "deploy_note"]
             d_stored = store_deploy_notes(
                 deploy_notes, db, scraper, processor,
                 is_first_run=is_first_run, first_run_limit=3

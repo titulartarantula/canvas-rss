@@ -82,7 +82,11 @@ export default function Releases() {
     const monthMap = new Map<string, Release[]>()
 
     data.releases.forEach(release => {
-      const date = new Date(release.first_posted)
+      const dateStr = release.first_posted || release.published_date || ''
+      const dateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      const date = dateMatch
+        ? new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))
+        : new Date(dateStr)
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 

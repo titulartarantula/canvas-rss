@@ -55,7 +55,7 @@ function OptionRow({ option, index }: { option: FeatureOption; index: number }) 
           <DatePill label="Prod" date={option.production_date} variant="prod" />
           {option.deprecation_date && (
             <span className="text-xs text-status-deprecated">
-              Deprecated {new Date(option.deprecation_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              Deprecated {(() => { const m = option.deprecation_date.match(/^(\d{4})-(\d{2})-(\d{2})/); const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(option.deprecation_date); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); })()}
             </span>
           )}
         </div>

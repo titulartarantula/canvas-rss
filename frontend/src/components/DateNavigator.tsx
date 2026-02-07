@@ -18,7 +18,12 @@ export default function DateNavigator({ currentDate, onDateChange, isLoading }: 
         day: 'numeric',
       })
     }
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    // Parse date parts directly to avoid timezone shift
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    const d = match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : new Date(dateStr)
+    return d.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -26,22 +31,36 @@ export default function DateNavigator({ currentDate, onDateChange, isLoading }: 
     })
   }
 
+  const parseLocalDate = (dateStr: string): Date => {
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    return match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : new Date(dateStr)
+  }
+
+  const toDateString = (d: Date): string => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
   const navigatePrevious = () => {
     // Move back ~14 days (Canvas release cycle)
-    const baseDate = currentDate ? new Date(currentDate) : new Date()
+    const baseDate = currentDate ? parseLocalDate(currentDate) : new Date()
     baseDate.setDate(baseDate.getDate() - 14)
-    onDateChange(baseDate.toISOString().split('T')[0])
+    onDateChange(toDateString(baseDate))
   }
 
   const navigateNext = () => {
     if (isCurrentView) return
-    const baseDate = new Date(currentDate!)
+    const baseDate = parseLocalDate(currentDate!)
     baseDate.setDate(baseDate.getDate() + 14)
     const today = new Date()
     if (baseDate >= today) {
       onDateChange(null) // Return to current
     } else {
-      onDateChange(baseDate.toISOString().split('T')[0])
+      onDateChange(toDateString(baseDate))
     }
   }
 

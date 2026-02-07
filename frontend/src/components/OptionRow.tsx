@@ -61,7 +61,7 @@ export default function OptionRow({ option, index = 0 }: OptionRowProps) {
         {option.deprecation_date && (
           <span className="text-xs text-status-deprecated flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-status-deprecated" />
-            Deprecated {new Date(option.deprecation_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            Deprecated {(() => { const m = option.deprecation_date.match(/^(\d{4})-(\d{2})-(\d{2})/); const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(option.deprecation_date); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); })()}
           </span>
         )}
 

@@ -9,14 +9,13 @@ if [ "$1" = "cron" ]; then
     # Default: 6:00 AM (in container's timezone, set via TZ env var)
     CRON_SCHEDULE="${CRON_SCHEDULE:-0 6 * * *}"
 
-    # Create environment file for cron job
-    printenv | grep -E '^(GEMINI_|REDDIT_|TEAMS_|TZ|PLAYWRIGHT_)' > /app/env.sh
-    sed -i 's/^/export /' /app/env.sh
-    chmod 600 /app/env.sh
-    chown appuser:appuser /app/env.sh
+    # Create environment file for cron job (quote values to handle special chars)
+    printenv | grep -E '^(GEMINI_|REDDIT_|TEAMS_|TZ|PLAYWRIGHT_)' | sed "s/=/='/" | sed "s/$/'/" | sed 's/^/export /' > /tmp/env.sh
+    install -o appuser -g appuser -m 600 /tmp/env.sh /app/env.sh
+    rm -f /tmp/env.sh
 
     # Create the crontab file for supercronic
-    echo "${CRON_SCHEDULE} cd /app && . /app/env.sh && python src/main.py >> /app/logs/cron.log 2>&1" > /app/crontab
+    echo "${CRON_SCHEDULE} cd /app && . /app/env.sh && python -m src.main >> /app/logs/cron.log 2>&1" > /app/crontab
     chown appuser:appuser /app/crontab
 
     echo "Cron scheduled: ${CRON_SCHEDULE} (TZ=${TZ:-UTC})"
@@ -24,7 +23,7 @@ if [ "$1" = "cron" ]; then
 
     # Run once immediately on startup as appuser
     echo "Running initial aggregation..."
-    gosu appuser bash -c "cd /app && . /app/env.sh && python src/main.py"
+    gosu appuser bash -c "cd /app && . /app/env.sh && python -m src.main"
 
     echo "Starting supercronic (non-root cron)..."
     # Run supercronic as appuser - no root process needed

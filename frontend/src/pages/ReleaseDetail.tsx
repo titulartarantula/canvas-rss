@@ -81,7 +81,11 @@ export default function ReleaseDetail() {
   const typeLabel = isDeployNote ? 'Deploy Notes' : 'Release Notes'
   const typeColor = isDeployNote ? 'text-status-optional bg-status-optional/10' : 'text-status-beta bg-status-beta/10'
 
-  const publishDate = new Date(data.first_posted)
+  const pubStr = data.first_posted || data.published_date || ''
+  const pubMatch = pubStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  const publishDate = pubMatch
+    ? new Date(Number(pubMatch[1]), Number(pubMatch[2]) - 1, Number(pubMatch[3]))
+    : new Date(pubStr)
   const formattedDate = publishDate.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -252,9 +256,15 @@ function AnnouncementCard({ announcement, index }: { announcement: Announcement;
 }
 
 function UpcomingChangesSection({ changes }: { changes: UpcomingChange[] }) {
-  // Sort by date
+  // Sort by date (parse locally to avoid timezone shift)
+  const parseLocalDate = (dateStr: string): Date => {
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    return match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : new Date(dateStr)
+  }
   const sortedChanges = [...changes].sort((a, b) =>
-    new Date(a.change_date).getTime() - new Date(b.change_date).getTime()
+    parseLocalDate(a.change_date).getTime() - parseLocalDate(b.change_date).getTime()
   )
 
   return (
@@ -268,7 +278,11 @@ function UpcomingChangesSection({ changes }: { changes: UpcomingChange[] }) {
 
       <div className="space-y-4">
         {sortedChanges.map((change, index) => {
-          const changeDate = new Date(change.change_date)
+          const cdStr = change.change_date || ''
+          const cdMatch = cdStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+          const changeDate = cdMatch
+            ? new Date(Number(cdMatch[1]), Number(cdMatch[2]) - 1, Number(cdMatch[3]))
+            : new Date(cdStr)
           const isUpcoming = changeDate > new Date()
           const formattedDate = changeDate.toLocaleDateString('en-US', {
             month: 'short',

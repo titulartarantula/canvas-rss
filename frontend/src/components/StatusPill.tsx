@@ -91,7 +91,10 @@ interface DatePillProps {
 export function DatePill({ label, date, variant = 'beta' }: DatePillProps) {
   if (!date) return null
 
-  const formattedDate = new Date(date).toLocaleDateString('en-US', {
+  // Parse date parts directly to avoid timezone shift
+  // (new Date('2026-01-19') is midnight UTC, shifts back a day in local tz)
+  const [year, month, day] = date.split('-').map(Number)
+  const formattedDate = new Date(year, month - 1, day).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   })

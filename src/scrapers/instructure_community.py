@@ -1665,41 +1665,58 @@ class InstructureScraper:
             current_category = "General"
 
             # Task 11: Parse Upcoming Canvas Changes section
-            upcoming_section = self.page.query_selector("[data-id='upcoming-canvas-changes'], h2[data-id*='upcoming']")
-            if upcoming_section:
-                try:
-                    # Get list items within or after the upcoming changes section
-                    list_items = upcoming_section.evaluate("""
-                        el => {
-                            // Try to find list items after this heading
-                            let items = [];
-                            let sibling = el.nextElementSibling;
-                            while (sibling && !sibling.matches('h1, h2')) {
-                                if (sibling.tagName === 'UL' || sibling.tagName === 'OL') {
-                                    const lis = sibling.querySelectorAll('li');
-                                    lis.forEach(li => items.push(li.innerText));
-                                }
-                                sibling = sibling.nextElementSibling;
+            # Structure: <p><em>Upcoming Canvas Changes</em></p>
+            #   then alternating <p>DATE</p> + <ul><li>DESC</li></ul> pairs
+            try:
+                change_items = self.page.evaluate("""
+                    () => {
+                        // Find the italic "Upcoming Canvas Changes" header
+                        const emEls = document.querySelectorAll('em');
+                        let headerP = null;
+                        for (const em of emEls) {
+                            if (em.innerText.toLowerCase().includes('upcoming canvas change')) {
+                                headerP = em.closest('p');
+                                break;
                             }
-                            return items;
                         }
-                    """)
-                    for item_text in list_items:
-                        if item_text:
-                            # Parse date from text (e.g., "2026-02-15: Feature deprecation")
-                            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', item_text)
-                            if date_match:
-                                change_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
-                                days_until = (change_date - datetime.now()).days
-                                # Remove date prefix from description
-                                description = re.sub(r'\d{4}-\d{2}-\d{2}[:\s]*', '', item_text).strip()
-                                upcoming_changes.append(UpcomingChange(
-                                    date=change_date,
-                                    description=description,
-                                    days_until=max(0, days_until)
-                                ))
-                except Exception as e:
-                    logger.debug(f"Error parsing upcoming changes: {e}")
+                        if (!headerP) return [];
+
+                        // Walk siblings: <p>DATE</p> followed by <ul><li>DESC</li></ul>
+                        const items = [];
+                        let currentDate = null;
+                        let sibling = headerP.nextElementSibling;
+                        while (sibling) {
+                            if (sibling.matches('h1, h2, h3')) break;
+                            const text = sibling.innerText.trim();
+                            if (!text) { sibling = sibling.nextElementSibling; continue; }
+                            // "For more information" signals end of section
+                            if (text.toLowerCase().startsWith('for more information')) break;
+
+                            if (sibling.tagName === 'P' && /^\\d{4}-\\d{2}-\\d{2}$/.test(text)) {
+                                currentDate = text;
+                            } else if ((sibling.tagName === 'UL' || sibling.tagName === 'OL') && currentDate) {
+                                const lis = sibling.querySelectorAll('li');
+                                lis.forEach(li => {
+                                    items.push({ date: currentDate, description: li.innerText.trim() });
+                                });
+                                currentDate = null;
+                            }
+                            sibling = sibling.nextElementSibling;
+                        }
+                        return items;
+                    }
+                """)
+                for item in change_items:
+                    if item.get("date") and item.get("description"):
+                        change_date = datetime.strptime(item["date"], "%Y-%m-%d")
+                        days_until = (change_date - datetime.now()).days
+                        upcoming_changes.append(UpcomingChange(
+                            date=change_date,
+                            description=item["description"],
+                            days_until=max(0, days_until)
+                        ))
+            except Exception as e:
+                logger.debug(f"Error parsing upcoming changes: {e}")
 
             # Parse H2 (sections), H3 (categories), H4 (features)
             headings = self.page.query_selector_all("h2[data-id], h3[data-id], h4[data-id]")

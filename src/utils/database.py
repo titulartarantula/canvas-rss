@@ -232,6 +232,10 @@ class Database:
                 announced_at TIMESTAMP NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+                -- Per-announcement lifecycle dates (page-level, not shared via option)
+                beta_date DATE,
+                production_date DATE,
+
                 FOREIGN KEY (feature_id) REFERENCES features(feature_id),
                 FOREIGN KEY (option_id) REFERENCES feature_options(option_id),
                 FOREIGN KEY (content_id) REFERENCES content_items(source_id)
@@ -244,6 +248,14 @@ class Database:
             conn.commit()
         except sqlite3.OperationalError:
             pass
+
+        # Migration: Add per-announcement lifecycle dates
+        for col in ('beta_date', 'production_date'):
+            try:
+                cursor.execute(f"ALTER TABLE feature_announcements ADD COLUMN {col} DATE")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
         # Migration: Add description and implications columns to feature_announcements
         for col in ['description', 'implications']:
@@ -795,6 +807,59 @@ class Database:
 
         conn.commit()
         return cursor.lastrowid
+
+    def update_announcement_summary(self, content_id: str, anchor_id: str,
+                                     description: str = None, implications: str = None) -> bool:
+        """Update LLM-generated description and implications for an announcement.
+
+        Args:
+            content_id: FK to content_items.source_id.
+            anchor_id: The H4 data-id anchor.
+            description: LLM-generated 1-2 sentence description.
+            implications: LLM-generated 2-3 sentence implications.
+
+        Returns:
+            True if a row was updated, False otherwise.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_announcements
+            SET description = ?, implications = ?
+            WHERE content_id = ? AND anchor_id = ?
+        """, (description, implications, content_id, anchor_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def update_announcement_lifecycle_dates(
+        self,
+        content_id: str,
+        beta_date: Optional[date] = None,
+        production_date: Optional[date] = None,
+    ) -> int:
+        """Update per-announcement lifecycle dates for all announcements on a content page.
+
+        Args:
+            content_id: FK to content_items.source_id.
+            beta_date: When available in beta environment.
+            production_date: When available in production environment.
+
+        Returns:
+            Number of rows updated.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_announcements
+            SET beta_date = ?, production_date = ?
+            WHERE content_id = ?
+        """, (
+            beta_date.isoformat() if beta_date else None,
+            production_date.isoformat() if production_date else None,
+            content_id,
+        ))
+        conn.commit()
+        return cursor.rowcount
 
     def get_announcements_for_option(self, option_id: str) -> List[dict]:
         """Get all announcements for a feature option.

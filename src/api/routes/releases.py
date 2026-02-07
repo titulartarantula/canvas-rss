@@ -6,6 +6,9 @@ from src.api.database import get_db, row_to_dict, rows_to_list
 
 router = APIRouter(prefix="/api", tags=["releases"])
 
+# Extract date from title pattern "Canvas ... Notes (YYYY-MM-DD)"
+_TITLE_DATE_SQL = "substr(ci.title, instr(ci.title, '(') + 1, 10)"
+
 
 @router.get("/releases")
 def get_releases(
@@ -17,14 +20,15 @@ def get_releases(
     with get_db() as conn:
         cursor = conn.cursor()
 
-        query = """
+        query = f"""
             SELECT
                 ci.source_id,
                 ci.url,
                 ci.title,
                 ci.content_type,
                 ci.summary,
-                ci.first_posted,
+                COALESCE(ci.first_posted, ci.published_date) as first_posted,
+                ci.published_date,
                 COUNT(fa.id) as announcement_count
             FROM content_items ci
             LEFT JOIN feature_announcements fa ON ci.source_id = fa.content_id
@@ -37,14 +41,14 @@ def get_releases(
             params.append(type)
 
         if year:
-            query += " AND strftime('%Y', ci.first_posted) = ?"
+            query += f" AND substr({_TITLE_DATE_SQL}, 1, 4) = ?"
             params.append(str(year))
 
         if search:
             query += " AND ci.title LIKE ?"
             params.append(f"%{search}%")
 
-        query += " GROUP BY ci.source_id ORDER BY ci.first_posted DESC"
+        query += f" GROUP BY ci.source_id ORDER BY {_TITLE_DATE_SQL} DESC"
 
         cursor.execute(query, params)
         releases = rows_to_list(cursor.fetchall())
@@ -60,7 +64,9 @@ def get_release_detail(content_id: str):
 
         # Get release/deploy note
         cursor.execute("""
-            SELECT source_id, url, title, content_type, summary, first_posted
+            SELECT source_id, url, title, content_type, summary,
+                   COALESCE(first_posted, published_date) as first_posted,
+                   published_date
             FROM content_items
             WHERE source_id = ?
             AND content_type IN ('release_note', 'deploy_note')
@@ -76,7 +82,9 @@ def get_release_detail(content_id: str):
                 fa.id, fa.h4_title, fa.anchor_id, fa.section, fa.category,
                 fa.description, fa.implications, fa.option_id,
                 fa.enable_location_account, fa.enable_location_course,
-                fo.beta_date, fo.production_date, fo.status as option_status
+                COALESCE(fa.beta_date, fo.beta_date) as beta_date,
+                COALESCE(fa.production_date, fo.production_date) as production_date,
+                fo.status as option_status
             FROM feature_announcements fa
             LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
             WHERE fa.content_id = ?

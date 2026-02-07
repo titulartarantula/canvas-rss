@@ -47,7 +47,7 @@ export default function ReleaseCard({ release, type, isLoading }: ReleaseCardPro
     <div className="card p-6 h-full flex flex-col">
       <CardHeader
         title={title}
-        subtitle={formatPublishDate(release.first_posted)}
+        subtitle={formatPublishDate(release.first_posted || release.published_date)}
         url={release.url}
       />
 
@@ -149,6 +149,13 @@ function AnnouncementItem({ announcement }: { announcement: Announcement }) {
             </span>
           )}
 
+          {/* Description */}
+          {announcement.description && (
+            <p className="mt-1 text-xs text-ink-500 leading-relaxed line-clamp-2">
+              {announcement.description}
+            </p>
+          )}
+
           {/* Lifecycle dates */}
           <div className="mt-1 flex items-center gap-3">
             {announcement.option_status && (
@@ -163,8 +170,13 @@ function AnnouncementItem({ announcement }: { announcement: Announcement }) {
   )
 }
 
-function formatPublishDate(dateStr: string): string {
-  const date = new Date(dateStr)
+function formatPublishDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  // Parse date portion directly to avoid timezone shift
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return ''
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  if (isNaN(date.getTime())) return ''
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',

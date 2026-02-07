@@ -37,8 +37,14 @@ export default function UpcomingChanges({ changes, isLoading }: UpcomingChangesP
 
   // Group changes by urgency
   const now = new Date()
+  const parseLocalDate = (dateStr: string): Date => {
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    return match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : new Date(dateStr)
+  }
   const sortedChanges = [...changes].sort(
-    (a, b) => new Date(a.change_date).getTime() - new Date(b.change_date).getTime()
+    (a, b) => parseLocalDate(a.change_date).getTime() - parseLocalDate(b.change_date).getTime()
   )
 
   return (
@@ -70,7 +76,11 @@ function Header({ count }: { count?: number }) {
 }
 
 function ChangeItem({ change, now }: { change: UpcomingChange; now: Date }) {
-  const changeDate = new Date(change.change_date)
+  const cdStr = change.change_date || ''
+  const cdMatch = cdStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  const changeDate = cdMatch
+    ? new Date(Number(cdMatch[1]), Number(cdMatch[2]) - 1, Number(cdMatch[3]))
+    : new Date(cdStr)
   const daysUntil = Math.ceil((changeDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 
   // Urgency levels

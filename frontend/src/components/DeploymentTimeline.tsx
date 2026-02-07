@@ -186,7 +186,12 @@ function getStageColor(key: string): string {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
+  // Parse date parts directly to avoid timezone shift
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  const d = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(dateStr)
+  return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
