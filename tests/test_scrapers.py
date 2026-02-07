@@ -2228,6 +2228,145 @@ class TestClassifyReleaseFeatures:
         is_new, new_feature_names = classify_release_features(page, temp_db, first_run_limit=3)
         assert len(new_feature_names) == 3  # Limited by first_run_limit
 
+    def test_creates_setting_when_no_canonical_name(self, temp_db):
+        """H4 entries without canonical_name create feature_settings, not options."""
+        from scrapers.instructure_community import (
+            classify_release_features, ReleaseNotePage, Feature, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"assignments": "Assignments"})
+
+        feature = Feature(
+            category="Assignments",
+            name="Speed Improvement for Large Courses",
+            anchor_id="speed-improvement-for-large-courses",
+            added_date=None,
+            raw_content="<p>Improved loading speed</p>",
+            table_data=FeatureTableData(canonical_name=None, affects_ui=True),
+            section="Updated Features",
+        )
+
+        # Need a content_item for FK
+        item = ContentItem(
+            source="community", source_id="release_note_setting_test",
+            title="Test Release", url="https://community.instructure.com/t5/release/1",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://community.instructure.com/t5/release/1",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"Updated Features": [feature]},
+        )
+
+        is_new, anchors = classify_release_features(page, temp_db)
+
+        # Should have created a feature_setting
+        setting = temp_db.get_feature_setting("speed-improvement-for-large-courses")
+        assert setting is not None
+        assert setting["name"] == "Speed Improvement for Large Courses"
+
+        # Should NOT have created a feature_option
+        option = temp_db.get_feature_option("speed-improvement-for-large-courses")
+        assert option is None
+
+    def test_creates_option_when_canonical_name_present(self, temp_db):
+        """H4 entries WITH canonical_name create feature_options."""
+        from scrapers.instructure_community import (
+            classify_release_features, ReleaseNotePage, Feature, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"assignments": "Assignments"})
+
+        feature = Feature(
+            category="Assignments",
+            name="Document Processing App",
+            anchor_id="document-processing-app",
+            added_date=None,
+            raw_content="<p>New document feature</p>",
+            table_data=FeatureTableData(
+                canonical_name="Document Processor",
+                enable_location_account="Disabled/Unlocked",
+            ),
+            section="New Features",
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="release_note_option_test",
+            title="Test Release 2", url="https://community.instructure.com/t5/release/2",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://community.instructure.com/t5/release/2",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]},
+        )
+
+        is_new, anchors = classify_release_features(page, temp_db)
+
+        # Should have created a feature_option (slugified from canonical_name)
+        option = temp_db.get_feature_option("document_processor")
+        assert option is not None
+
+    def test_creates_setting_when_canonical_name_is_na(self, temp_db):
+        """H4 entries with canonical_name='N/A' create feature_settings."""
+        from scrapers.instructure_community import (
+            classify_release_features, ReleaseNotePage, Feature, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"gradebook": "Gradebook"})
+
+        feature = Feature(
+            category="Gradebook",
+            name="Grade Export Fix",
+            anchor_id="grade-export-fix",
+            added_date=None,
+            raw_content="<p>Fixed export</p>",
+            table_data=FeatureTableData(canonical_name="N/A"),
+            section="Updated Features",
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="release_note_na_test",
+            title="Test Release NA", url="https://community.instructure.com/t5/release/3",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://community.instructure.com/t5/release/3",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"Updated Features": [feature]},
+        )
+
+        is_new, anchors = classify_release_features(page, temp_db)
+
+        setting = temp_db.get_feature_setting("grade-export-fix")
+        assert setting is not None
+
+        option = temp_db.get_feature_option("grade-export-fix")
+        assert option is None
+
 
 class TestClassifyDeployChanges:
     """Tests for classify_deploy_changes function (v2.0)."""
@@ -2254,6 +2393,105 @@ class TestClassifyDeployChanges:
         assert is_new is True
         # v2.0: Returns change names, not anchor IDs
         assert "Fix" in new_change_names
+
+    def test_creates_setting_when_no_canonical_name(self, temp_db):
+        """Deploy changes without canonical_name create feature_settings."""
+        from scrapers.instructure_community import (
+            classify_deploy_changes, DeployNotePage, DeployChange, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"gradebook": "Gradebook"})
+
+        change = DeployChange(
+            category="Gradebook",
+            name="Fixed sorting in grade export",
+            anchor_id="fixed-sorting-in-grade-export",
+            section="Bug Fixes",
+            raw_content="<p>Fixed a bug</p>",
+            table_data=FeatureTableData(canonical_name=None),
+            status=None,
+            status_date=None,
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="deploy_note_setting_test",
+            title="Test Deploy", url="https://community.instructure.com/t5/deploy/1",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-18)",
+            url="https://community.instructure.com/t5/deploy/1",
+            deploy_date=datetime(2026, 2, 18),
+            beta_date=datetime(2026, 2, 11),
+            changes=[change],
+            sections={"Bug Fixes": [change]},
+        )
+
+        is_new, names = classify_deploy_changes(page, temp_db)
+
+        setting = temp_db.get_feature_setting("fixed-sorting-in-grade-export")
+        assert setting is not None
+        assert setting["status"] == "active"
+
+        option = temp_db.get_feature_option("fixed-sorting-in-grade-export")
+        assert option is None
+
+    def test_creates_option_when_canonical_name_present(self, temp_db):
+        """Deploy changes WITH canonical_name create feature_options."""
+        from scrapers.instructure_community import (
+            classify_deploy_changes, DeployNotePage, DeployChange, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"assignments": "Assignments"})
+
+        change = DeployChange(
+            category="Assignments",
+            name="Enhanced Rubric Feature",
+            anchor_id="enhanced-rubric-feature",
+            section="New Features",
+            raw_content="<p>New rubric enhancement</p>",
+            table_data=FeatureTableData(
+                canonical_name="Enhanced Rubrics",
+                enable_location_account="Enabled/Locked",
+            ),
+            status=None,
+            status_date=None,
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="deploy_note_option_test",
+            title="Test Deploy 2", url="https://community.instructure.com/t5/deploy/2",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-18)",
+            url="https://community.instructure.com/t5/deploy/2",
+            deploy_date=datetime(2026, 2, 18),
+            beta_date=datetime(2026, 2, 11),
+            changes=[change],
+            sections={"New Features": [change]},
+        )
+
+        is_new, names = classify_deploy_changes(page, temp_db)
+
+        # Should have created a feature_option (slugified from canonical_name)
+        option = temp_db.get_feature_option("enhanced_rubrics")
+        assert option is not None
+        assert option["status"] == "released"
+
+        # Should NOT have created a feature_setting
+        setting = temp_db.get_feature_setting("enhanced_rubrics")
+        assert setting is None
 
 
 class TestGetNextSiblingContent:

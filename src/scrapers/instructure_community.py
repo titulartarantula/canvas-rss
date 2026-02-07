@@ -3,9 +3,11 @@
 import logging
 import time
 import re
+import yaml
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 if TYPE_CHECKING:
     from utils.database import Database
@@ -2294,6 +2296,20 @@ def classify_release_features(
     if not page or not page.features:
         return (False, [])
 
+    # Load classification overrides
+    overrides_path = Path(__file__).parent.parent.parent / "config" / "classification_overrides.yaml"
+    force_options = []
+    force_settings = []
+    try:
+        if overrides_path.exists():
+            with open(overrides_path, 'r', encoding='utf-8') as f:
+                overrides_data = yaml.safe_load(f) or {}
+                classification = overrides_data.get('classification_overrides', {})
+                force_options = classification.get('force_options', [])
+                force_settings = classification.get('force_settings', [])
+    except Exception as e:
+        logger.warning(f"Could not load classification overrides: {e}")
+
     # Generate content_id from the page URL
     content_id = extract_source_id(page.url, "release_note")
 
@@ -2316,38 +2332,67 @@ def classify_release_features(
         # Try to match to canonical feature based on category/name
         feature_id = _match_feature_id(feature.category, feature.name, CANVAS_FEATURES)
 
-        # Determine option_id from canonical_name (preferred) or anchor_id (fallback)
+        # Determine if this is a feature_option or feature_setting
+        # Check is_feature_option (True if canonical_name is a real value)
+        is_option = feature.table_data.is_feature_option if feature.table_data else False
+
+        # Determine entity_id from canonical_name (if option) or anchor_id (fallback)
         canonical_name = None
-        option_id = None
+        entity_id = None
 
-        if feature.table_data and feature.table_data.canonical_name:
+        if is_option and feature.table_data and feature.table_data.canonical_name:
             canonical_name = feature.table_data.canonical_name
-            option_id = _slugify(canonical_name)
+            entity_id = _slugify(canonical_name)
         elif feature.anchor_id:
-            option_id = feature.anchor_id
+            entity_id = feature.anchor_id
         else:
-            option_id = _slugify(feature.name)
+            entity_id = _slugify(feature.name)
 
-        # Create/update feature option record (canonical option)
-        if option_id:
-            db.upsert_feature_option(
-                option_id=option_id,
-                feature_id=feature_id,
-                name=feature.name,
-                canonical_name=canonical_name,
-                status='pending',  # Release notes announce pending features
-                config_level=feature.table_data.enable_location_account if feature.table_data else None,
-                default_state=feature.table_data.enable_location_account if feature.table_data else None,
-                first_announced=announced_at,
-            )
+        # Apply manual overrides
+        if entity_id in force_options:
+            is_option = True
+        elif entity_id in force_settings:
+            is_option = False
 
-            # Link content to feature option
-            db.add_content_feature_ref(
-                content_id=content_id,
-                feature_id=feature_id,
-                feature_option_id=option_id,
-                mention_type='announces',
-            )
+        # Create/update feature option or feature setting record
+        if entity_id:
+            if is_option:
+                # Create feature_option (canonical admin toggle)
+                db.upsert_feature_option(
+                    option_id=entity_id,
+                    feature_id=feature_id,
+                    name=feature.name,
+                    canonical_name=canonical_name,
+                    status='pending',  # Release notes announce pending features
+                    config_level=feature.table_data.enable_location_account if feature.table_data else None,
+                    default_state=feature.table_data.enable_location_account if feature.table_data else None,
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature option
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_option_id=entity_id,
+                    mention_type='announces',
+                )
+            else:
+                # Create feature_setting (non-toggle change)
+                db.upsert_feature_setting(
+                    setting_id=entity_id,
+                    feature_id=feature_id,
+                    name=feature.name,
+                    status='pending',  # Release notes announce pending changes
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature setting
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_setting_id=entity_id,
+                    mention_type='announces',
+                )
 
         # Insert feature announcement (H4 entry snapshot)
         table_data = feature.table_data
@@ -2355,7 +2400,9 @@ def classify_release_features(
             content_id=content_id,
             h4_title=feature.name,
             announced_at=announced_at,
-            option_id=option_id,
+            feature_id=feature_id,
+            option_id=entity_id if is_option else None,
+            setting_id=entity_id if not is_option else None,
             anchor_id=feature.anchor_id,
             section=feature.section or "New Features",
             category=feature.category,
@@ -2371,7 +2418,7 @@ def classify_release_features(
             added_date=feature.added_date.isoformat() if feature.added_date else None,
         )
 
-        new_anchor_ids.append(feature.anchor_id or option_id)
+        new_anchor_ids.append(feature.anchor_id or entity_id)
         processed_count += 1
 
     return (is_new_page, new_anchor_ids)
@@ -2455,6 +2502,20 @@ def classify_deploy_changes(
     if not page or not page.changes:
         return (False, [])
 
+    # Load classification overrides
+    overrides_path = Path(__file__).parent.parent.parent / "config" / "classification_overrides.yaml"
+    force_options = []
+    force_settings = []
+    try:
+        if overrides_path.exists():
+            with open(overrides_path, 'r', encoding='utf-8') as f:
+                overrides_data = yaml.safe_load(f) or {}
+                classification = overrides_data.get('classification_overrides', {})
+                force_options = classification.get('force_options', [])
+                force_settings = classification.get('force_settings', [])
+    except Exception as e:
+        logger.warning(f"Could not load classification overrides: {e}")
+
     # Generate content_id from the page URL
     content_id = extract_source_id(page.url, "deploy_note")
 
@@ -2475,33 +2536,71 @@ def classify_deploy_changes(
         if change.anchor_id and db.announcement_exists(content_id, change.anchor_id):
             continue
 
-        # Generate option_id from anchor_id or name
-        option_id = change.anchor_id if change.anchor_id else \
-            change.name.lower().replace(' ', '_').replace('-', '_')[:50]
-
         # Try to match to canonical feature based on category/name
         feature_id = _match_feature_id(change.category, change.name, CANVAS_FEATURES)
 
-        # Create/update feature option record
-        # Deploy notes typically represent released changes
-        db.upsert_feature_option(
-            option_id=option_id,
-            feature_id=feature_id,
-            name=change.name,
-            status='released',  # Deploy notes announce released changes
-            summary=None,
-            config_level=None,
-            default_state=None,
-            first_announced=announced_at,
-        )
+        # Determine if this is a feature_option or feature_setting
+        # Check is_feature_option (True if canonical_name is a real value)
+        is_option = change.table_data.is_feature_option if change.table_data else False
 
-        # Link content to feature
-        db.add_content_feature_ref(
-            content_id=content_id,
-            feature_id=feature_id,
-            feature_option_id=option_id,
-            mention_type='announces',
-        )
+        # Determine entity_id from canonical_name (if option) or anchor_id (fallback)
+        canonical_name = None
+        entity_id = None
+
+        if is_option and change.table_data and change.table_data.canonical_name:
+            canonical_name = change.table_data.canonical_name
+            entity_id = _slugify(canonical_name)
+        elif change.anchor_id:
+            entity_id = change.anchor_id
+        else:
+            entity_id = _slugify(change.name)
+
+        # Apply manual overrides
+        if entity_id in force_options:
+            is_option = True
+        elif entity_id in force_settings:
+            is_option = False
+
+        # Create/update feature option or feature setting record
+        if entity_id:
+            if is_option:
+                # Create feature_option (canonical admin toggle)
+                db.upsert_feature_option(
+                    option_id=entity_id,
+                    feature_id=feature_id,
+                    name=change.name,
+                    canonical_name=canonical_name,
+                    status='released',  # Deploy notes announce released changes
+                    summary=None,
+                    config_level=None,
+                    default_state=None,
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature option
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_option_id=entity_id,
+                    mention_type='announces',
+                )
+            else:
+                # Create feature_setting (non-toggle change)
+                db.upsert_feature_setting(
+                    setting_id=entity_id,
+                    feature_id=feature_id,
+                    name=change.name,
+                    status='active',  # Deploy notes announce active changes
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature setting
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_setting_id=entity_id,
+                    mention_type='announces',
+                )
 
         # Insert feature announcement (H4 entry snapshot)
         table_data = change.table_data
@@ -2510,7 +2609,8 @@ def classify_deploy_changes(
             h4_title=change.name,
             announced_at=announced_at,
             feature_id=feature_id,
-            option_id=option_id,
+            option_id=entity_id if is_option else None,
+            setting_id=entity_id if not is_option else None,
             anchor_id=change.anchor_id,
             section=change.section,
             category=change.category,
