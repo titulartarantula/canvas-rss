@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 
-from src.api.routes import dashboard, features, options, releases, search
+from src.api.routes import dashboard, features, options, releases, search, settings
 
 app = FastAPI(
     title="Canvas Feature Tracker API",
@@ -18,6 +18,7 @@ app.include_router(features.router)
 app.include_router(options.router)
 app.include_router(releases.router)
 app.include_router(search.router)
+app.include_router(settings.router)
 
 
 @app.get("/api/health")

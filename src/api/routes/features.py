@@ -101,6 +101,19 @@ def get_feature_detail(feature_id: str):
         """, (feature_id,))
         feature["options"] = rows_to_list(cursor.fetchall())
 
+        # Get associated settings
+        cursor.execute("""
+            SELECT
+                setting_id, name, description, meta_summary,
+                status, beta_date, production_date,
+                affected_areas, affects_ui,
+                first_seen, last_seen
+            FROM feature_settings
+            WHERE feature_id = ?
+            ORDER BY name
+        """, (feature_id,))
+        feature["settings"] = rows_to_list(cursor.fetchall())
+
         # Get recent announcements
         cursor.execute("""
             SELECT

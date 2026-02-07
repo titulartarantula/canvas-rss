@@ -897,7 +897,7 @@ class Database:
         conn.commit()
 
     def get_content_for_feature(self, feature_id: str) -> List[dict]:
-        """Get all content items related to a feature (direct + via options)."""
+        """Get all content items related to a feature (direct + via options + via settings)."""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -905,13 +905,14 @@ class Database:
             FROM content_items c
             JOIN content_feature_refs r ON c.source_id = r.content_id
             LEFT JOIN feature_options fo ON r.feature_option_id = fo.option_id
-            WHERE r.feature_id = ? OR fo.feature_id = ?
+            LEFT JOIN feature_settings fs ON r.feature_setting_id = fs.setting_id
+            WHERE r.feature_id = ? OR fo.feature_id = ? OR fs.feature_id = ?
             ORDER BY c.scraped_date DESC
-        """, (feature_id, feature_id))
+        """, (feature_id, feature_id, feature_id))
         return [dict(row) for row in cursor.fetchall()]
 
     def get_features_for_content(self, content_id: str) -> List[dict]:
-        """Get all features/options referenced by a content item."""
+        """Get all features/options/settings referenced by a content item."""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -920,10 +921,13 @@ class Database:
                 f.feature_id,
                 f.name as feature_name,
                 fo.option_id,
-                fo.name as option_name
+                fo.name as option_name,
+                fs.setting_id,
+                fs.name as setting_name
             FROM content_feature_refs r
             LEFT JOIN features f ON r.feature_id = f.feature_id
             LEFT JOIN feature_options fo ON r.feature_option_id = fo.option_id
+            LEFT JOIN feature_settings fs ON r.feature_setting_id = fs.setting_id
             WHERE r.content_id = ?
         """, (content_id,))
         return [dict(row) for row in cursor.fetchall()]
@@ -1222,7 +1226,7 @@ class Database:
         return announcements
 
     def get_announcements_for_feature(self, feature_id: str) -> List[dict]:
-        """Get all announcements for a feature (direct or via options).
+        """Get all announcements for a feature (direct or via options or settings).
 
         Args:
             feature_id: The feature ID.
@@ -1234,13 +1238,15 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT fa.*, ci.title as release_note_title, ci.url as release_note_url,
-                   fo.canonical_name, fo.status as option_status
+                   fo.canonical_name, fo.status as option_status,
+                   fs.name as setting_name, fs.status as setting_status
             FROM feature_announcements fa
             JOIN content_items ci ON fa.content_id = ci.source_id
             LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
-            WHERE fa.feature_id = ? OR fo.feature_id = ?
+            LEFT JOIN feature_settings fs ON fa.setting_id = fs.setting_id
+            WHERE fa.feature_id = ? OR fo.feature_id = ? OR fs.feature_id = ?
             ORDER BY fa.announced_at DESC
-        """, (feature_id, feature_id))
+        """, (feature_id, feature_id, feature_id))
 
         rows = cursor.fetchall()
         announcements = []
@@ -1266,10 +1272,13 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT fa.*, f.name as feature_name, fo.canonical_name, fo.status as option_status
+            SELECT fa.*, f.name as feature_name,
+                   fo.canonical_name, fo.status as option_status,
+                   fs.name as setting_name, fs.status as setting_status
             FROM feature_announcements fa
             LEFT JOIN features f ON fa.feature_id = f.feature_id
             LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
+            LEFT JOIN feature_settings fs ON fa.setting_id = fs.setting_id
             WHERE fa.content_id = ?
             ORDER BY fa.section, fa.category, fa.h4_title
         """, (content_id,))
