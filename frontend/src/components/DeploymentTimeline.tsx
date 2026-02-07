@@ -23,6 +23,7 @@ export default function DeploymentTimeline({
   deprecationDate,
 }: DeploymentTimelineProps) {
   const normalizedStatus = status?.toLowerCase().replace(/\s+/g, '_') || 'pending'
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD for lexicographic comparison
 
   // Build stages based on available dates and current status
   const stages: Stage[] = []
@@ -43,7 +44,7 @@ export default function DeploymentTimeline({
     label: 'Beta',
     date: betaDate,
     isActive: !!betaDate || normalizedStatus === 'beta',
-    isComplete: !!betaDate && normalizedStatus !== 'beta',
+    isComplete: !!betaDate && betaDate <= today && normalizedStatus !== 'beta',
     isCurrent: normalizedStatus === 'beta',
   })
 
@@ -54,7 +55,7 @@ export default function DeploymentTimeline({
     label: productionDate ? 'Production' : 'Optional',
     date: productionDate,
     isActive: !!productionDate || isProdPhase,
-    isComplete: !!productionDate && !isProdPhase,
+    isComplete: !!productionDate && productionDate <= today && !isProdPhase,
     isCurrent: isProdPhase,
   })
 

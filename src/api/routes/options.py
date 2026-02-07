@@ -143,7 +143,7 @@ def get_option_detail(option_id: str):
                 cfr.mention_type
             FROM content_feature_refs cfr
             JOIN content_items ci ON cfr.content_id = ci.source_id
-            WHERE cfr.option_id = ?
+            WHERE cfr.feature_option_id = ?
             AND ci.content_type IN ('blog', 'question')
             ORDER BY ci.first_posted DESC
             LIMIT 10
