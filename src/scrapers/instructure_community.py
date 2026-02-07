@@ -112,6 +112,18 @@ class FeatureTableData:
             if 'account' in self.enable_location.lower():
                 self.enable_location_account = self.enable_location
 
+    @property
+    def is_feature_option(self) -> bool:
+        """Whether this entry represents a canonical feature option (admin toggle).
+
+        True if canonical_name has a real value (not N/A, empty, or None).
+        """
+        return (
+            self.canonical_name is not None
+            and self.canonical_name.strip() != ""
+            and self.canonical_name.strip().upper() != "N/A"
+        )
+
 
 @dataclass
 class Feature:

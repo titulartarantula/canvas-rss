@@ -1794,6 +1794,37 @@ class TestFeatureTableData:
         assert table.enable_location == "Account Settings"
         assert "Assignments" in table.affected_areas
 
+    def test_is_feature_option_with_canonical_name(self):
+        """Test is_feature_option is True when canonical_name has a value."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name="Document Processor")
+        assert data.is_feature_option is True
+
+    def test_is_not_feature_option_when_na(self):
+        """Test is_feature_option is False when canonical_name is N/A."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name="N/A")
+        assert data.is_feature_option is False
+
+    def test_is_not_feature_option_when_none(self):
+        """Test is_feature_option is False when canonical_name is None."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name=None)
+        assert data.is_feature_option is False
+
+    def test_is_not_feature_option_when_empty(self):
+        """Test is_feature_option is False when canonical_name is empty."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name="")
+        assert data.is_feature_option is False
+
+    def test_is_not_feature_option_when_na_lowercase(self):
+        """Test is_feature_option is False for various N/A spellings."""
+        from scrapers.instructure_community import FeatureTableData
+        for val in ["n/a", "N/a", " N/A ", "  n/a  "]:
+            data = FeatureTableData(canonical_name=val)
+            assert data.is_feature_option is False, f"Expected False for '{val}'"
+
 
 class TestFeature:
     """Tests for Feature dataclass."""

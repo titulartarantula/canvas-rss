@@ -542,6 +542,35 @@ class TestFeaturesTable:
         assert names == sorted(names)
 
 
+class TestFeatureSettingsTable:
+    """Tests for v2.0 feature_settings table."""
+
+    def test_feature_settings_table_exists(self, temp_db):
+        """Test that feature_settings table is created."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_settings'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_feature_announcements_has_setting_id(self, temp_db):
+        """Test that feature_announcements table has setting_id column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
+        columns = [row[1] for row in cursor.fetchall()]
+        assert "setting_id" in columns
+
+    def test_content_feature_refs_has_setting_id(self, temp_db):
+        """Test that content_feature_refs table has feature_setting_id column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(content_feature_refs)")
+        columns = [row[1] for row in cursor.fetchall()]
+        assert "feature_setting_id" in columns
+
+
 class TestFeatureOptionsTable:
     """Tests for v2.0 feature_options table."""
 
@@ -762,11 +791,12 @@ class TestFeatureAnnouncements:
         cursor.execute("PRAGMA table_info(feature_announcements)")
         columns = {row[1] for row in cursor.fetchall()}
         expected = {
-            "id", "feature_id", "option_id", "content_id", "h4_title", "anchor_id",
+            "id", "feature_id", "option_id", "setting_id", "content_id", "h4_title", "anchor_id",
             "section", "category", "raw_content", "description", "implications", "summary",
             "enable_location_account", "enable_location_course",
             "subaccount_config", "account_course_setting", "permissions",
-            "affected_areas", "affects_ui", "added_date", "announced_at", "created_at"
+            "affected_areas", "affects_ui", "added_date", "announced_at", "created_at",
+            "beta_date", "production_date"
         }
         assert expected == columns
 
@@ -1280,3 +1310,75 @@ class TestLifecycleDateMethods:
 
         option = temp_db.get_feature_option('test_opt')
         assert 'feature preview' in option['implementation_status']
+
+
+class TestFeatureSettingsMethods:
+    """Tests for feature settings CRUD methods."""
+
+    def test_upsert_feature_setting(self, temp_db):
+        """Test inserting and updating a feature setting."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(
+            setting_id="speed-improvement",
+            feature_id="assignments",
+            name="Speed Improvement for Large Courses",
+        )
+        setting = temp_db.get_feature_setting("speed-improvement")
+        assert setting is not None
+        assert setting["name"] == "Speed Improvement for Large Courses"
+        assert setting["status"] == "active"
+
+        # Update should merge
+        temp_db.upsert_feature_setting(
+            setting_id="speed-improvement",
+            feature_id="assignments",
+            name="Speed Improvement for Large Courses",
+            affected_areas=["Assignments", "Gradebook"],
+        )
+        setting = temp_db.get_feature_setting("speed-improvement")
+        assert setting["affected_areas"] is not None
+
+    def test_get_feature_settings(self, temp_db):
+        """Test getting settings for a feature."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Setting 1")
+        temp_db.upsert_feature_setting(setting_id="s2", feature_id="assignments", name="Setting 2")
+        settings = temp_db.get_feature_settings("assignments")
+        assert len(settings) == 2
+
+    def test_get_all_feature_settings(self, temp_db):
+        """Test getting all feature settings."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Speed Improvement")
+        settings = temp_db.get_all_feature_settings()
+        assert len(settings) >= 1
+        assert settings[0]["name"] == "Speed Improvement"
+
+    def test_add_content_feature_ref_with_setting(self, temp_db):
+        """Test linking content to a feature setting."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Setting 1")
+        # Need a content item
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+        item = ContentItem(source="test", source_id="test-ref-setting", title="Test", url="https://example.com", content="Test", published_date=datetime.now())
+        temp_db.insert_item(item)
+        temp_db.add_content_feature_ref(content_id="test-ref-setting", feature_setting_id="s1", mention_type="announces")
+        # Should not raise
+
+    def test_insert_feature_announcement_with_setting_id(self, temp_db):
+        """Test inserting announcement with setting_id."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Setting 1")
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+        item = ContentItem(source="test", source_id="test-ann-setting", title="Test", url="https://example.com", content="Test", published_date=datetime.now())
+        temp_db.insert_item(item)
+        row_id = temp_db.insert_feature_announcement(
+            content_id="test-ann-setting",
+            h4_title="Setting 1",
+            announced_at=datetime.now().isoformat(),
+            feature_id="assignments",
+            setting_id="s1",
+        )
+        assert row_id > 0

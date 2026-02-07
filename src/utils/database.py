@@ -172,6 +172,35 @@ class Database:
             except sqlite3.OperationalError:
                 pass
 
+        # Feature settings table (non-toggle feature changes)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS feature_settings (
+                setting_id TEXT PRIMARY KEY,
+                feature_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                meta_summary TEXT,
+                meta_summary_updated_at TIMESTAMP,
+                implementation_status TEXT,
+                affected_areas TEXT,
+                affects_ui BOOLEAN,
+                affects_roles TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                beta_date DATE,
+                production_date DATE,
+                first_announced TIMESTAMP,
+                last_updated TIMESTAMP,
+                first_seen TIMESTAMP,
+                last_seen TIMESTAMP,
+                llm_generated_at TIMESTAMP,
+                FOREIGN KEY (feature_id) REFERENCES features(feature_id)
+            )
+        """)
+
+        # Indexes for feature_settings
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_settings_feature ON feature_settings(feature_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_settings_status ON feature_settings(status)")
+
         # Content-feature junction table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS content_feature_refs (
@@ -179,24 +208,38 @@ class Database:
                 content_id TEXT NOT NULL,
                 feature_id TEXT,
                 feature_option_id TEXT,
+                feature_setting_id TEXT,
                 mention_type TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (feature_id) REFERENCES features(feature_id),
                 FOREIGN KEY (feature_option_id) REFERENCES feature_options(option_id),
-                CHECK (feature_id IS NOT NULL OR feature_option_id IS NOT NULL)
+                FOREIGN KEY (feature_setting_id) REFERENCES feature_settings(setting_id),
+                CHECK (feature_id IS NOT NULL OR feature_option_id IS NOT NULL OR feature_setting_id IS NOT NULL)
             )
         """)
-        # Unique index to prevent duplicate refs (treating NULLs as empty strings for uniqueness)
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_content_feature_refs_unique
-            ON content_feature_refs(content_id, COALESCE(feature_id, ''), COALESCE(feature_option_id, ''))
-        """)
+        # Migration: Add feature_setting_id to content_feature_refs
+        try:
+            cursor.execute("ALTER TABLE content_feature_refs ADD COLUMN feature_setting_id TEXT REFERENCES feature_settings(setting_id)")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Migration: Update unique index to include feature_setting_id
+        try:
+            cursor.execute("DROP INDEX IF EXISTS idx_content_feature_refs_unique")
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_content_feature_refs_unique
+                ON content_feature_refs(content_id, COALESCE(feature_id, ''), COALESCE(feature_option_id, ''), COALESCE(feature_setting_id, ''))
+            """)
+        except sqlite3.OperationalError:
+            pass
 
         # Create indexes for feature tables
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_feature ON feature_options(feature_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_status ON feature_options(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_feature ON content_feature_refs(feature_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_option ON content_feature_refs(feature_option_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_setting ON content_feature_refs(feature_setting_id)")
 
         # Feature announcements table (each H4 entry from release/deploy notes)
         cursor.execute("""
@@ -204,6 +247,7 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 feature_id TEXT,
                 option_id TEXT,
+                setting_id TEXT,
                 content_id TEXT NOT NULL,
 
                 -- H4 metadata
@@ -238,6 +282,7 @@ class Database:
 
                 FOREIGN KEY (feature_id) REFERENCES features(feature_id),
                 FOREIGN KEY (option_id) REFERENCES feature_options(option_id),
+                FOREIGN KEY (setting_id) REFERENCES feature_settings(setting_id),
                 FOREIGN KEY (content_id) REFERENCES content_items(source_id)
             )
         """)
@@ -265,9 +310,17 @@ class Database:
             except sqlite3.OperationalError:
                 pass
 
+        # Migration: Add setting_id to feature_announcements
+        try:
+            cursor.execute("ALTER TABLE feature_announcements ADD COLUMN setting_id TEXT REFERENCES feature_settings(setting_id)")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         # Indexes for feature_announcements
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_feature ON feature_announcements(feature_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_option ON feature_announcements(option_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_setting ON feature_announcements(setting_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_content ON feature_announcements(content_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_date ON feature_announcements(announced_at)")
 
@@ -683,19 +736,24 @@ class Database:
 
         conn.commit()
 
-    def seed_features(self) -> int:
+    def seed_features(self, features_dict: dict = None) -> int:
         """Seed the features table with canonical Canvas features.
+
+        Args:
+            features_dict: Optional dict of {feature_id: name} to seed. If None, uses CANVAS_FEATURES.
 
         Returns:
             Number of features inserted.
         """
-        from src.constants import CANVAS_FEATURES
+        if features_dict is None:
+            from src.constants import CANVAS_FEATURES
+            features_dict = CANVAS_FEATURES
 
         conn = self._get_connection()
         cursor = conn.cursor()
         inserted = 0
 
-        for feature_id, name in CANVAS_FEATURES.items():
+        for feature_id, name in features_dict.items():
             try:
                 cursor.execute(
                     "INSERT OR IGNORE INTO features (feature_id, name) VALUES (?, ?)",
@@ -822,19 +880,20 @@ class Database:
         content_id: str,
         feature_id: str = None,
         feature_option_id: str = None,
+        feature_setting_id: str = None,
         mention_type: str = 'discusses',
     ) -> None:
-        """Link content to a feature or feature option."""
-        if not feature_id and not feature_option_id:
-            raise ValueError("Must provide feature_id or feature_option_id")
+        """Link content to a feature, feature option, or feature setting."""
+        if not feature_id and not feature_option_id and not feature_setting_id:
+            raise ValueError("Must provide feature_id, feature_option_id, or feature_setting_id")
 
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR IGNORE INTO content_feature_refs
-                (content_id, feature_id, feature_option_id, mention_type)
-            VALUES (?, ?, ?, ?)
-        """, (content_id, feature_id, feature_option_id, mention_type))
+                (content_id, feature_id, feature_option_id, feature_setting_id, mention_type)
+            VALUES (?, ?, ?, ?, ?)
+        """, (content_id, feature_id, feature_option_id, feature_setting_id, mention_type))
         conn.commit()
 
     def get_content_for_feature(self, feature_id: str) -> List[dict]:
@@ -870,6 +929,140 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     # -------------------------------------------------------------------------
+    # Feature Settings (non-toggle feature changes)
+    # -------------------------------------------------------------------------
+
+    def upsert_feature_setting(
+        self,
+        setting_id: str,
+        feature_id: str,
+        name: str,
+        status: str = 'active',
+        affected_areas: List[str] = None,
+        affects_ui: bool = None,
+        affects_roles: List[str] = None,
+        first_announced: str = None,
+    ) -> None:
+        """Insert or update a feature setting."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+
+        affected_areas_json = json.dumps(affected_areas) if affected_areas else None
+        affects_roles_json = json.dumps(affects_roles) if affects_roles else None
+
+        cursor.execute("""
+            INSERT INTO feature_settings
+                (setting_id, feature_id, name, status,
+                 affected_areas, affects_ui, affects_roles,
+                 first_announced, last_updated, first_seen, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(setting_id) DO UPDATE SET
+                name = COALESCE(excluded.name, feature_settings.name),
+                status = excluded.status,
+                affected_areas = COALESCE(excluded.affected_areas, feature_settings.affected_areas),
+                affects_ui = COALESCE(excluded.affects_ui, feature_settings.affects_ui),
+                affects_roles = COALESCE(excluded.affects_roles, feature_settings.affects_roles),
+                last_updated = ?,
+                last_seen = ?
+        """, (
+            setting_id, feature_id, name, status,
+            affected_areas_json, affects_ui, affects_roles_json,
+            first_announced, now, now, now, now, now
+        ))
+        conn.commit()
+
+    def get_feature_setting(self, setting_id: str) -> Optional[dict]:
+        """Get a feature setting by ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM feature_settings WHERE setting_id = ?", (setting_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_feature_settings(self, feature_id: str) -> List[dict]:
+        """Get all feature settings for a feature."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM feature_settings WHERE feature_id = ? ORDER BY first_announced DESC",
+            (feature_id,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_feature_settings(self) -> List[dict]:
+        """Get all feature settings for text matching."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT setting_id, feature_id, name
+            FROM feature_settings
+            ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_active_feature_settings(self) -> List[dict]:
+        """Get all non-deprecated feature settings."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT fs.*, f.name as feature_name
+            FROM feature_settings fs
+            JOIN features f ON fs.feature_id = f.feature_id
+            WHERE fs.status = 'active'
+            ORDER BY fs.first_announced DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_feature_setting_meta_summary(self, setting_id: str, meta_summary: str) -> None:
+        """Update a feature setting's meta_summary."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_settings
+            SET meta_summary = ?, meta_summary_updated_at = ?
+            WHERE setting_id = ?
+        """, (meta_summary, datetime.now().isoformat(), setting_id))
+        conn.commit()
+
+    def update_feature_setting_lifecycle_dates(
+        self,
+        setting_id: str,
+        beta_date: Optional[date] = None,
+        production_date: Optional[date] = None,
+    ) -> None:
+        """Update lifecycle dates for a feature setting."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        updates = []
+        params = []
+        if beta_date is not None:
+            updates.append("beta_date = ?")
+            params.append(beta_date.isoformat())
+        if production_date is not None:
+            updates.append("production_date = ?")
+            params.append(production_date.isoformat())
+        if not updates:
+            return
+        params.append(setting_id)
+        cursor.execute(
+            f"UPDATE feature_settings SET {', '.join(updates)} WHERE setting_id = ?",
+            params
+        )
+        conn.commit()
+
+    def get_feature_settings_missing_description(self) -> List[dict]:
+        """Get all feature settings that don't have LLM descriptions yet."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM feature_settings
+            WHERE description IS NULL OR description = ''
+            ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    # -------------------------------------------------------------------------
     # Feature Announcements (H4 entries from release notes)
     # -------------------------------------------------------------------------
 
@@ -880,6 +1073,7 @@ class Database:
         announced_at: str,
         feature_id: str = None,
         option_id: str = None,
+        setting_id: str = None,
         anchor_id: str = None,
         section: str = None,
         category: str = None,
@@ -927,13 +1121,13 @@ class Database:
 
         cursor.execute("""
             INSERT INTO feature_announcements
-                (feature_id, option_id, content_id, h4_title, anchor_id, section, category,
+                (feature_id, option_id, setting_id, content_id, h4_title, anchor_id, section, category,
                  raw_content, summary, enable_location_account, enable_location_course,
                  subaccount_config, account_course_setting, permissions, affected_areas,
                  affects_ui, added_date, announced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            feature_id, option_id, content_id, h4_title, anchor_id, section, category,
+            feature_id, option_id, setting_id, content_id, h4_title, anchor_id, section, category,
             raw_content, summary, enable_location_account, enable_location_course,
             subaccount_config, account_course_setting, permissions, affected_areas_json,
             affects_ui, added_date, announced_at

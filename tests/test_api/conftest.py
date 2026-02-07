@@ -72,10 +72,33 @@ def test_db(tmp_path):
             included_in_feed BOOLEAN
         );
 
+        CREATE TABLE feature_settings (
+            setting_id TEXT PRIMARY KEY,
+            feature_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            meta_summary TEXT,
+            meta_summary_updated_at TIMESTAMP,
+            implementation_status TEXT,
+            affected_areas TEXT,
+            affects_ui BOOLEAN,
+            affects_roles TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            beta_date DATE,
+            production_date DATE,
+            first_announced TIMESTAMP,
+            last_updated TIMESTAMP,
+            first_seen TIMESTAMP,
+            last_seen TIMESTAMP,
+            llm_generated_at TIMESTAMP,
+            FOREIGN KEY (feature_id) REFERENCES features(feature_id)
+        );
+
         CREATE TABLE feature_announcements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             feature_id TEXT,
             option_id TEXT,
+            setting_id TEXT,
             content_id TEXT NOT NULL,
             h4_title TEXT NOT NULL,
             anchor_id TEXT,
@@ -95,8 +118,11 @@ def test_db(tmp_path):
             added_date DATE,
             announced_at TIMESTAMP NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            beta_date DATE,
+            production_date DATE,
             FOREIGN KEY (feature_id) REFERENCES features(feature_id),
             FOREIGN KEY (option_id) REFERENCES feature_options(option_id),
+            FOREIGN KEY (setting_id) REFERENCES feature_settings(setting_id),
             FOREIGN KEY (content_id) REFERENCES content_items(source_id)
         );
 
@@ -104,12 +130,14 @@ def test_db(tmp_path):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content_id TEXT NOT NULL,
             feature_id TEXT,
-            option_id TEXT,
+            feature_option_id TEXT,
+            feature_setting_id TEXT,
             mention_type TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (content_id) REFERENCES content_items(source_id),
             FOREIGN KEY (feature_id) REFERENCES features(feature_id),
-            FOREIGN KEY (option_id) REFERENCES feature_options(option_id)
+            FOREIGN KEY (feature_option_id) REFERENCES feature_options(option_id),
+            FOREIGN KEY (feature_setting_id) REFERENCES feature_settings(setting_id)
         );
 
         CREATE TABLE upcoming_changes (
@@ -171,7 +199,7 @@ def populated_db(test_db):
             ('assignments', 'document_processor', 'release_note_2026-02-21', 'Document Processing App', 'New Features', 'Assignments', 'New document annotation feature', 'Admins should evaluate for rollout', '2026-02-21 00:00:00'),
             ('gradebook', 'enhanced_filters', 'release_note_2026-02-21', 'Enhanced Gradebook Filters', 'Updated Features', 'Gradebook', 'Additional filter options', 'May help instructors manage large courses', '2026-02-21 00:00:00');
 
-        INSERT INTO content_feature_refs (content_id, feature_id, option_id, mention_type)
+        INSERT INTO content_feature_refs (content_id, feature_id, feature_option_id, mention_type)
         VALUES
             ('question_67890', 'speedgrader', NULL, 'questions'),
             ('blog_12345', 'assignments', 'document_processor', 'discusses');
