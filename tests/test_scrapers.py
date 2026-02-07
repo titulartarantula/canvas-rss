@@ -3187,6 +3187,28 @@ class TestExtractFeatureRefs:
         assert "speedgrader" in feature_ids
         assert "rubrics" in feature_ids
 
+    def test_extract_feature_refs_matches_settings(self, temp_db):
+        """Test that extract_feature_refs finds matches in feature_settings."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+        temp_db.upsert_feature_setting(
+            setting_id="fixed-sorting-export",
+            feature_id="gradebook",
+            name="Fixed Sorting in Grade Export",
+        )
+
+        refs = extract_feature_refs(
+            title="Question about fixed sorting in grade export",
+            content="This is a question",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should match the setting via name -> feature_id
+        assert any(r[0] == "gradebook" for r in refs)
+
 
 class TestClassifyDiscussionPostsWithRefs:
     """Tests for classify_discussion_posts with feature ref extraction."""

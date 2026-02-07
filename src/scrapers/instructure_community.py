@@ -2689,7 +2689,19 @@ def extract_feature_refs(
         elif match_text in content_lower:
             refs.append((option["feature_id"], option["option_id"], content_mention_type))
 
-    # 2. Match against CANVAS_FEATURES
+    # 2. Match against existing feature_settings
+    existing_settings = db.get_all_feature_settings()
+    for setting in existing_settings:
+        name = (setting.get("name") or "").lower()
+        if not name:
+            continue
+
+        if name in title_lower:
+            refs.append((setting["feature_id"], None, title_mention_type))
+        elif name in content_lower:
+            refs.append((setting["feature_id"], None, content_mention_type))
+
+    # 3. Match against CANVAS_FEATURES
     for feature_id, feature_name in CANVAS_FEATURES.items():
         feature_name_lower = feature_name.lower()
 
@@ -2698,7 +2710,7 @@ def extract_feature_refs(
         elif feature_name_lower in content_lower or feature_id in content_lower:
             refs.append((feature_id, None, content_mention_type))
 
-    # 3. LLM fallback if no matches and processor available
+    # 4. LLM fallback if no matches and processor available
     if not refs and processor:
         try:
             llm_features = processor.extract_features_with_llm(title, content)
@@ -2709,11 +2721,11 @@ def extract_feature_refs(
         except Exception as e:
             logger.warning(f"LLM feature extraction failed: {e}")
 
-    # 4. Fall back to 'general' if still no matches
+    # 5. Fall back to 'general' if still no matches
     if not refs:
         refs.append(("general", None, "mentions"))
 
-    # 5. Deduplicate, keeping strongest mention_type per (feature_id, option_id) pair
+    # 6. Deduplicate, keeping strongest mention_type per (feature_id, option_id) pair
     return _deduplicate_refs(refs)
 
 
