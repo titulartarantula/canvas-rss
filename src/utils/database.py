@@ -307,6 +307,140 @@ class Database:
 
         conn.commit()
 
+        # Migration: Merge feature_options with annotation-polluted option_ids
+        self._migrate_merge_annotated_option_ids(conn)
+
+    def _migrate_merge_annotated_option_ids(self, conn):
+        """Merge feature_options whose option_id contains bracket annotation slugs.
+
+        Canvas H4 data-id attributes include slugified bracket annotations like
+        'canvas-apps-link-added-2026-01-28' that should just be 'canvas-apps-link'.
+        This migration merges all annotation variants into a single clean option_id.
+        """
+        import re
+
+        cursor = conn.cursor()
+
+        # Check if migration already ran (use a simple sentinel)
+        cursor.execute(
+            "SELECT COUNT(*) FROM feature_options WHERE option_id LIKE '%-added-____-__-__'"
+        )
+        if cursor.fetchone()[0] == 0:
+            # Also check other patterns
+            cursor.execute(
+                "SELECT COUNT(*) FROM feature_options WHERE option_id LIKE '%-this-feature-is-currently-delayed%'"
+            )
+            if cursor.fetchone()[0] == 0:
+                return  # Nothing to migrate
+
+        annotation_patterns = [
+            r'-added-\d{4}-\d{2}-\d{2}$',
+            r'-added-on-\d{4}-\d{2}-\d{2}$',
+            r'-delayed-as-of-\d{4}-\d{2}-\d{2}$',
+            r'-reverted-and-delayed-in-all-environments-as-of-\d{4}-\d{2}-\d{2}$',
+            r'-this-feature-is-currently-delayed.*$',
+        ]
+
+        cursor.execute("SELECT option_id, feature_id, name, canonical_name, status, "
+                        "beta_date, production_date, first_seen, last_seen FROM feature_options")
+        all_options = cursor.fetchall()
+
+        # Group dirty option_ids by their clean version
+        merge_groups = {}  # clean_id -> [(dirty_id, row_data), ...]
+        for row in all_options:
+            oid = row[0]
+            cleaned = oid
+            for p in annotation_patterns:
+                cleaned = re.sub(p, '', cleaned)
+            if cleaned != oid:
+                if cleaned not in merge_groups:
+                    merge_groups[cleaned] = []
+                merge_groups[cleaned].append(row)
+
+        if not merge_groups:
+            return
+
+        for clean_id, dirty_rows in merge_groups.items():
+            # Check if clean_id already exists
+            cursor.execute("SELECT option_id, feature_id, name, canonical_name, status, "
+                            "beta_date, production_date, first_seen, last_seen "
+                            "FROM feature_options WHERE option_id = ?", (clean_id,))
+            existing = cursor.fetchone()
+
+            # Pick the best name (shortest = without annotations)
+            all_rows = list(dirty_rows)
+            if existing:
+                all_rows.append(existing)
+
+            # Use the shortest name (without annotations) and strip any remaining brackets
+            best_name = min((r[2] for r in all_rows), key=len)
+            best_name = re.sub(r'\s*\[[^\]]*\]', '', best_name).strip()  # strip brackets
+            best_canonical = next((r[3] for r in all_rows if r[3]), None)
+            best_feature_id = all_rows[0][1]
+            best_beta = next((r[5] for r in all_rows if r[5]), None)
+            best_prod = next((r[6] for r in all_rows if r[6]), None)
+            earliest_seen = min((r[7] for r in all_rows if r[7]), default=None)
+            latest_seen = max((r[8] for r in all_rows if r[8]), default=None)
+
+            dirty_ids = [r[0] for r in dirty_rows]
+
+            if existing:
+                # Update the existing clean row with best available data
+                cursor.execute("""
+                    UPDATE feature_options SET
+                        name = COALESCE(?, name),
+                        canonical_name = COALESCE(?, canonical_name),
+                        beta_date = COALESCE(?, beta_date),
+                        production_date = COALESCE(?, production_date),
+                        first_seen = CASE WHEN ? < first_seen THEN ? ELSE first_seen END,
+                        last_seen = CASE WHEN ? > last_seen THEN ? ELSE last_seen END
+                    WHERE option_id = ?
+                """, (best_name, best_canonical, best_beta, best_prod,
+                      earliest_seen, earliest_seen, latest_seen, latest_seen, clean_id))
+            else:
+                # Create the clean row from the best dirty data
+                cursor.execute("""
+                    INSERT INTO feature_options (option_id, feature_id, name, canonical_name,
+                        status, beta_date, production_date, first_seen, last_seen)
+                    VALUES (?, ?, ?, ?, 'released', ?, ?, ?, ?)
+                """, (clean_id, best_feature_id, best_name, best_canonical,
+                      best_beta, best_prod, earliest_seen, latest_seen))
+
+            # Re-point feature_announcements from dirty -> clean
+            for dirty_id in dirty_ids:
+                cursor.execute(
+                    "UPDATE feature_announcements SET option_id = ? WHERE option_id = ?",
+                    (clean_id, dirty_id))
+
+            # Re-point content_feature_refs from dirty -> clean
+            for dirty_id in dirty_ids:
+                # Delete refs that would cause unique constraint violations
+                cursor.execute("""
+                    DELETE FROM content_feature_refs
+                    WHERE feature_option_id = ?
+                    AND content_id IN (
+                        SELECT content_id FROM content_feature_refs
+                        WHERE feature_option_id = ?
+                    )
+                """, (dirty_id, clean_id))
+                cursor.execute(
+                    "UPDATE content_feature_refs SET feature_option_id = ? WHERE feature_option_id = ?",
+                    (clean_id, dirty_id))
+
+            # Delete the dirty feature_options rows
+            for dirty_id in dirty_ids:
+                cursor.execute("DELETE FROM feature_options WHERE option_id = ?", (dirty_id,))
+
+        # Also clean bracket annotations from any remaining feature_options names
+        cursor.execute("SELECT option_id, name FROM feature_options WHERE name LIKE '%[%'")
+        for row in cursor.fetchall():
+            cleaned_name = re.sub(r'\s*\[[^\]]*\]', '', row[1]).strip()
+            if cleaned_name != row[1] and cleaned_name:
+                cursor.execute("UPDATE feature_options SET name = ? WHERE option_id = ?",
+                               (cleaned_name, row[0]))
+
+        conn.commit()
+
     def item_exists(self, source_id: str) -> bool:
         """Check if an item already exists in the database."""
         conn = self._get_connection()

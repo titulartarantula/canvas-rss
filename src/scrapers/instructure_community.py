@@ -1739,7 +1739,10 @@ class InstructureScraper:
                         added_match = re.search(r'\[Added (\d{4}-\d{2}-\d{2})\]', text)
                         if added_match:
                             added_date = datetime.strptime(added_match.group(1), "%Y-%m-%d")
-                            text = re.sub(r'\s*\[Added \d{4}-\d{2}-\d{2}\]', '', text)
+
+                        # Strip all bracketed annotations from name and anchor_id
+                        text = _strip_bracket_annotations(text)
+                        data_id = _strip_anchor_annotations(data_id)
 
                         # Task 12: Use _get_next_sibling_content for full content extraction
                         raw_content = self._get_next_sibling_content(heading)
@@ -1876,7 +1879,10 @@ class InstructureScraper:
                         if delayed_match:
                             status = "delayed"
                             status_date = datetime.strptime(delayed_match.group(1), "%Y-%m-%d")
-                            text = re.sub(r'\s*\[Delayed as of \d{4}-\d{2}-\d{2}\]', '', text)
+
+                        # Strip all bracketed annotations from name and anchor_id
+                        text = _strip_bracket_annotations(text)
+                        data_id = _strip_anchor_annotations(data_id)
 
                         # Get content after heading
                         raw_content = self._get_next_sibling_content(heading)
@@ -2182,6 +2188,53 @@ def classify_discussion_posts(
                 db.update_comment_count(source_id, current_comment_count)
 
     return updates
+
+
+def _strip_bracket_annotations(text: str) -> str:
+    """Strip all bracketed annotations from text.
+
+    Canvas release notes add annotations like [Added 2026-01-28],
+    [Reverted and Delayed in all environments as of 2025-10-23],
+    [This feature is currently delayed...], etc.
+
+    Args:
+        text: Text that may contain [...] annotations.
+
+    Returns:
+        Text with all [...] annotations removed and whitespace cleaned up.
+    """
+    if not text:
+        return text
+    cleaned = re.sub(r'\s*\[[^\]]*\]', '', text)
+    return cleaned.strip()
+
+
+def _strip_anchor_annotations(anchor_id: str) -> str:
+    """Strip bracketed annotation slugs from an anchor_id.
+
+    Canvas H4 data-id attributes include slugified bracket annotations,
+    e.g. "canvas-apps-link-added-2026-01-28" should become "canvas-apps-link".
+
+    Args:
+        anchor_id: The data-id attribute value from an H4 heading.
+
+    Returns:
+        Anchor ID with annotation suffixes removed.
+    """
+    if not anchor_id:
+        return anchor_id
+    # Strip common annotation patterns from hyphenated anchor_ids
+    patterns = [
+        r'-added-\d{4}-\d{2}-\d{2}$',
+        r'-added-on-\d{4}-\d{2}-\d{2}$',
+        r'-delayed-as-of-\d{4}-\d{2}-\d{2}$',
+        r'-reverted-and-delayed-in-all-environments-as-of-\d{4}-\d{2}-\d{2}$',
+        r'-this-feature-is-currently-delayed.*$',
+    ]
+    cleaned = anchor_id
+    for pattern in patterns:
+        cleaned = re.sub(pattern, '', cleaned)
+    return cleaned
 
 
 def _slugify(text: str) -> str:
