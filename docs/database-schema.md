@@ -1,16 +1,17 @@
 # Database Schema
 
-**Last Updated:** 2026-02-05
-**Schema Version:** 2.0
+**Last Updated:** 2026-02-07
+**Schema Version:** 2.1
 
 ## Overview
 
-This document describes the database schema for tracking Canvas LMS release notes, features, and community content. The schema uses a **three-tier hierarchy** for feature tracking:
+This document describes the database schema for tracking Canvas LMS release notes, features, and community content. The schema uses a **four-tier hierarchy** for feature tracking:
 
 1. **features** - Canonical Canvas features (~45 top-level features like "Assignments", "Gradebook")
-2. **feature_options** - Canonical feature options (from "Feature Option to Enable" table cell)
-3. **feature_announcements** - Each H4 announcement about a feature option over time
-4. **content_comments** - Comments from blog/Q&A posts (v2.0)
+2. **feature_options** - Canonical feature options (admin/instructor toggles from "Feature Option to Enable" table cell)
+3. **feature_settings** - Non-toggle feature changes (bug fixes, UI improvements, backend changes)
+4. **feature_announcements** - Each H4 announcement about a feature option or setting over time
+5. **content_comments** - Comments from blog/Q&A posts (v2.0)
 
 ## v2.0 Changes
 
@@ -39,6 +40,29 @@ The v2.0 schema adds LLM-generated summaries and lifecycle date tracking:
 ### New Table: content_comments
 
 Stores comments from blog/Q&A posts for implications regeneration. **No author field** (anonymity principle).
+
+## v2.1 Changes
+
+The v2.1 schema separates canonical feature options (admin toggles) from non-toggle feature changes.
+
+### New Table: feature_settings
+
+Non-toggle feature changes — bug fixes, UI improvements, backend changes that don't have a "Feature Option to Enable" value. Classified by checking whether the H4 entry's table cell has a real canonical name or is N/A/empty.
+
+### New Columns
+
+**feature_announcements:**
+- `setting_id TEXT` - FK to feature_settings (nullable, mutually exclusive with option_id)
+
+**content_feature_refs:**
+- `feature_setting_id TEXT` - FK to feature_settings (nullable)
+
+### Classification Logic
+
+Entries are classified as feature options or settings based on the "Feature Option to Enable" (release notes) or "Feature Option Name to Enable" (deploy notes) table cell:
+- **Feature option**: Cell has a real canonical name value
+- **Feature setting**: Cell is N/A, empty, or absent
+- **Manual overrides**: `config/classification_overrides.yaml` can force-classify edge cases
 
 ---
 
@@ -89,10 +113,25 @@ erDiagram
         TIMESTAMP last_seen
     }
 
+    feature_settings {
+        TEXT setting_id PK "slugified from name"
+        TEXT feature_id FK
+        TEXT name "display name"
+        TEXT status "active|deprecated"
+        TEXT affected_areas "JSON array"
+        BOOLEAN affects_ui
+        TEXT affects_roles "JSON array"
+        DATE beta_date
+        DATE production_date
+        TIMESTAMP first_seen
+        TIMESTAMP last_seen
+    }
+
     feature_announcements {
         INTEGER id PK
         TEXT feature_id FK "maps H3 category to canonical feature"
-        TEXT option_id FK "nullable if not a feature option"
+        TEXT option_id FK "nullable - for feature options"
+        TEXT setting_id FK "nullable - for feature settings"
         TEXT content_id FK "release note source_id"
         TEXT h4_title "Document Processing App"
         TEXT anchor_id "document-processing-app"
@@ -130,7 +169,8 @@ erDiagram
         INTEGER id PK
         TEXT content_id FK
         TEXT feature_id FK "nullable"
-        TEXT option_id FK "nullable"
+        TEXT feature_option_id FK "nullable"
+        TEXT feature_setting_id FK "nullable"
         TEXT mention_type "announces|discusses|questions|feedback"
         TIMESTAMP created_at
     }
@@ -161,11 +201,14 @@ erDiagram
     }
 
     features ||--o{ feature_options : "has"
+    features ||--o{ feature_settings : "has"
     features ||--o{ feature_announcements : "categorizes"
     feature_options ||--o{ feature_announcements : "announced by"
+    feature_settings ||--o{ feature_announcements : "announced by"
     content_items ||--o{ feature_announcements : "contains"
     features ||--o{ content_feature_refs : "referenced by"
     feature_options ||--o{ content_feature_refs : "referenced by"
+    feature_settings ||--o{ content_feature_refs : "referenced by"
     content_items ||--o{ content_feature_refs : "links to"
     content_items ||--o{ upcoming_changes : "announces"
     content_items ||--o{ content_comments : "has"
@@ -239,15 +282,56 @@ CREATE INDEX idx_feature_options_feature ON feature_options(feature_id);
 CREATE INDEX idx_feature_options_status ON feature_options(status);
 ```
 
+### feature_settings (v2.1)
+
+Non-toggle feature changes — bug fixes, UI improvements, backend changes without a "Feature Option to Enable" value.
+
+```sql
+CREATE TABLE feature_settings (
+    setting_id TEXT PRIMARY KEY,      -- slugified from name
+    feature_id TEXT NOT NULL,         -- FK to features
+    name TEXT NOT NULL,               -- Display name (from H4 title)
+
+    -- LLM-generated summaries
+    description TEXT,                 -- 1-2 sentence description
+    meta_summary TEXT,                -- 3-4 sentence deployment readiness
+    meta_summary_updated_at TIMESTAMP,
+    implementation_status TEXT,       -- Template-generated status text
+
+    -- Impact tracking
+    affected_areas TEXT,              -- JSON array: ["Grades", "SpeedGrader"]
+    affects_ui BOOLEAN,               -- Does it affect user interface?
+    affects_roles TEXT,               -- JSON array: ["admin", "instructor"]
+
+    -- Lifecycle
+    status TEXT NOT NULL DEFAULT 'active',  -- 'active', 'deprecated'
+    beta_date DATE,                   -- When available in beta
+    production_date DATE,             -- When available in production
+
+    -- Tracking timestamps
+    first_announced TIMESTAMP,
+    last_updated TIMESTAMP,
+    first_seen TIMESTAMP,
+    last_seen TIMESTAMP,
+    llm_generated_at TIMESTAMP,
+
+    FOREIGN KEY (feature_id) REFERENCES features(feature_id)
+);
+
+CREATE INDEX idx_feature_settings_feature ON feature_settings(feature_id);
+CREATE INDEX idx_feature_settings_status ON feature_settings(status);
+```
+
 ### feature_announcements
 
-Each H4 entry from release notes, tracking announcements about feature options over time.
+Each H4 entry from release notes, tracking announcements about feature options or settings over time.
 
 ```sql
 CREATE TABLE feature_announcements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     feature_id TEXT,                  -- FK to features (maps H3 category to canonical feature)
-    option_id TEXT,                   -- FK to feature_options (nullable for non-option announcements)
+    option_id TEXT,                   -- FK to feature_options (nullable)
+    setting_id TEXT,                  -- v2.1: FK to feature_settings (nullable)
     content_id TEXT NOT NULL,         -- FK to content_items.source_id
 
     -- H4 metadata
@@ -278,11 +362,13 @@ CREATE TABLE feature_announcements (
 
     FOREIGN KEY (feature_id) REFERENCES features(feature_id),
     FOREIGN KEY (option_id) REFERENCES feature_options(option_id),
+    FOREIGN KEY (setting_id) REFERENCES feature_settings(setting_id),
     FOREIGN KEY (content_id) REFERENCES content_items(source_id)
 );
 
 CREATE INDEX idx_announcements_feature ON feature_announcements(feature_id);
 CREATE INDEX idx_announcements_option ON feature_announcements(option_id);
+CREATE INDEX idx_announcements_setting ON feature_announcements(setting_id);
 CREATE INDEX idx_announcements_content ON feature_announcements(content_id);
 CREATE INDEX idx_announcements_date ON feature_announcements(announced_at);
 ```
@@ -329,25 +415,27 @@ CREATE INDEX idx_first_posted ON content_items(first_posted);
 
 ### content_feature_refs
 
-Junction table linking content to features and/or feature options.
+Junction table linking content to features, feature options, and/or feature settings.
 
 ```sql
 CREATE TABLE content_feature_refs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     content_id TEXT NOT NULL,
     feature_id TEXT,                  -- FK to features (nullable)
-    option_id TEXT,                   -- FK to feature_options (nullable)
+    feature_option_id TEXT,           -- FK to feature_options (nullable)
+    feature_setting_id TEXT,          -- v2.1: FK to feature_settings (nullable)
     mention_type TEXT,                -- 'announces', 'discusses', 'questions', 'feedback'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (content_id) REFERENCES content_items(source_id),
     FOREIGN KEY (feature_id) REFERENCES features(feature_id),
-    FOREIGN KEY (option_id) REFERENCES feature_options(option_id),
-    CHECK (feature_id IS NOT NULL OR option_id IS NOT NULL)
+    FOREIGN KEY (feature_option_id) REFERENCES feature_options(option_id),
+    FOREIGN KEY (feature_setting_id) REFERENCES feature_settings(setting_id),
+    CHECK (feature_id IS NOT NULL OR feature_option_id IS NOT NULL OR feature_setting_id IS NOT NULL)
 );
 
 CREATE UNIQUE INDEX idx_content_feature_refs_unique
-    ON content_feature_refs(content_id, COALESCE(feature_id, ''), COALESCE(option_id, ''));
+    ON content_feature_refs(content_id, COALESCE(feature_id, ''), COALESCE(feature_option_id, ''), COALESCE(feature_setting_id, ''));
 ```
 
 ### upcoming_changes
@@ -514,13 +602,16 @@ scrape_release_notes()
     │       │
     │       └── For each H4:
     │           ├── Extract table → FeatureTableData (enhanced)
+    │           ├── Check is_feature_option property
     │           └── Create Feature object
     │
     └── classify_release_features()
             │
-            ├── Extract canonical_name from table
-            ├── Upsert feature_options (canonical)
-            ├── Insert feature_announcements (H4 snapshot)
+            ├── Check is_feature_option (canonical name present?)
+            ├── Check classification_overrides.yaml
+            ├── If option: Upsert feature_options
+            ├── If setting: Upsert feature_settings
+            ├── Insert feature_announcements (with option_id or setting_id)
             └── Insert content_feature_refs (linkage)
 ```
 
@@ -559,6 +650,17 @@ FROM feature_options fo
 JOIN features f ON fo.feature_id = f.feature_id
 WHERE fo.status IN ('pending', 'preview', 'optional')
 ORDER BY fo.first_seen DESC;
+```
+
+### Find all active feature settings for a feature
+
+```sql
+SELECT fs.*, f.name as feature_name
+FROM feature_settings fs
+JOIN features f ON fs.feature_id = f.feature_id
+WHERE fs.feature_id = 'assignments'
+AND fs.status = 'active'
+ORDER BY fs.last_updated DESC;
 ```
 
 ### Get recent content with new comment activity
