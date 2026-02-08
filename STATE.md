@@ -2,23 +2,15 @@
 
 ## Current Phase
 
-**Phase 10: v2.0 - Database Schema Redesign** - In Progress. Feature-centric data model.
+**Phase 10: v2.0 - Database Schema Redesign** - In Progress. Feature-centric data model with feature_settings separation.
 
 ## Active Tasks
 
 | Task                                | Agent   | Status   | Notes                          |
 |-------------------------------------|---------|----------|--------------------------------|
-| Docker deployment                   | DevOps  | Complete | All containers working         |
-| GitHub README                       | Docs    | Complete | README.md created              |
-| Fix Deploys tab click               | Coding  | Complete | Improved selectors, dual-view  |
-| Update tests for Deploys tab fix   | Testing | Complete | 47 scraper tests pass          |
-| Release v1.1.1 documentation        | Docs    | Complete | VERSION, CHANGELOG updated     |
-| Full discussion tracking            | Coding  | Complete | All blog/Q&A posts captured    |
-| Release v1.2.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, STATE.md   |
-| Security audit                      | Coding  | Complete | Full audit of 4 areas          |
-| Security remediation                | Coding  | Complete | All high-severity issues fixed |
-| v1.3.0 unified implementation       | Coding  | Complete | 30 tasks, 251 tests pass       |
-| Release v1.3.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, README     |
+| Feature settings implementation     | Coding  | Complete | 13 tasks, 440 tests total      |
+| Feature tracker API + frontend      | Coding  | Complete | FastAPI + React SPA on :8986   |
+| v2.0 schema redesign               | Coding  | Complete | Four-tier data model           |
 
 ## Completed
 
@@ -27,31 +19,38 @@
 **Schema changes complete:**
 - [x] Added `feature_id` column to `feature_announcements` table (links H3 categories to canonical features)
 - [x] Added `user_group_url` column to `feature_options` table (Feature Preview community groups)
-- [x] Expanded `CANVAS_FEATURES` in constants.py with missing entries:
-  - `canvas_apps`, `developer_keys`, `reports` (Administration)
-  - `courses`, `settings`, `navigation` (Generic catch-all categories)
+- [x] Expanded `CANVAS_FEATURES` in constants.py with missing entries
 - [x] Updated `upsert_feature_option()` and `insert_feature_announcement()` functions
 - [x] Added migrations for existing databases
-- [x] Documentation updated in `docs/database-schema.md`
-- [x] All 313 tests pass
+- [x] v2.0 LLM summaries: description, meta_summary, implications on features/options/announcements
+- [x] Lifecycle date tracking: beta_date, production_date, deprecation_date
+- [x] Feature tracker API (FastAPI) + React frontend on port 8986
+- [x] Docker deployment with single container serving API + frontend
 
-**Key design decisions documented:**
-- Three-tier data model: `features` → `feature_options` → `feature_announcements`
-- H2 sections map to `feature_announcements.section` ("New Features", "Updated Features", "Feature Preview Change Log updates")
-- H3 categories map to `feature_announcements.feature_id` via canonical feature lookup
-- H4 headlines stored in `feature_announcements.h4_title` with `anchor_id` for deep linking
-- Feature Preview user groups stored in `feature_options.user_group_url` (persists beyond preview stage)
+**Feature settings separation (v2.1, branch: feature/v2.0-database-schema):**
+- [x] New `feature_settings` table for non-toggle feature changes
+- [x] `is_feature_option` classification property on `FeatureTableData`
+- [x] Classification overrides via `config/classification_overrides.yaml`
+- [x] Updated `classify_release_features()` and `classify_deploy_changes()` to route entries
+- [x] Updated `extract_feature_refs()` to search feature_settings
+- [x] New `/api/settings` endpoints (list + detail)
+- [x] Feature detail API includes settings array
+- [x] Updated database joins (content_feature_refs, feature_announcements)
+- [x] Schema documentation updated to v2.1
+- [x] 440 tests total (436 pass, 4 pre-existing failures)
 
-**Next: Community post scraping**
-- [ ] Map Q&A and Blog posts to features/feature_options via `content_feature_refs`
-- [ ] Implement H3 → `feature_id` mapping logic in scraper
-- [ ] Parse "Feature Preview to Enable" vs "Feature Option Name to Enable" table labels
-- [ ] Extract `user_group_url` from Feature Preview tables
+**Key design decisions:**
+- Four-tier data model: `features` → `feature_options`/`feature_settings` → `feature_announcements`
+- Feature options = canonical admin toggles (have "Feature Option to Enable" value)
+- Feature settings = non-toggle changes (N/A, empty, or absent canonical name)
+- Manual overrides in YAML for edge cases
+- Separate tables (not type column) for clean queries and distinct schemas
 
 **Reference docs:**
-- `docs/database-schema.md` - Full schema with mermaid diagram
-- `docs/plans/2026-02-03-database-schema-redesign.md` - Original design plan
-- `src/constants.py` - `CANVAS_FEATURES`, `FEATURE_OPTION_STATUSES`, `MENTION_TYPES`
+- `docs/database-schema.md` - Full schema with mermaid diagram (v2.1)
+- `docs/plans/2026-02-07-feature-settings-design.md` - Feature settings design
+- `docs/plans/2026-02-07-feature-settings-implementation.md` - 13-task implementation plan
+- `docs/plans/2026-02-03-database-schema-redesign.md` - Original v2.0 design plan
 
 ### Phase 9: v1.3.0 - Unified Tracking (Complete)
 
@@ -135,13 +134,14 @@
 |-------|--------|-------------|
 | 1. Scaffolding | Complete | Directory structure, configs |
 | 2. Infrastructure | Complete | Logger, database, models, tests |
-| 3. Scrapers | Complete | Status page (complete), Reddit (complete), Instructure (complete) |
+| 3. Scrapers | Complete | Status page, Reddit, Instructure |
 | 4. Processing | Complete | Gemini integration, sanitization |
 | 5. RSS Generation | Complete | feedgen RSS builder |
 | 6. Main App | Complete | Orchestration |
 | 7. Docker | Complete | Container setup, cron scheduling |
 | 8. Security | Complete | Audit and hardening |
 | 9. v1.3.0 Tracking | Complete | [NEW]/[UPDATE] badges, granular tracking |
+| 10. v2.0 Schema | In Progress | Feature tracker API, feature_settings separation |
 
 ---
 
@@ -197,6 +197,19 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-02-07: Feature settings separation (v2.1) - Coding Agent
+  - New `feature_settings` table separating canonical toggles from non-toggle changes
+  - Classification logic based on "Feature Option to Enable" table cell
+  - New `/api/settings` endpoints and updated feature detail API
+  - Updated scraper routing in classify_release_features/classify_deploy_changes
+  - Manual classification overrides via config/classification_overrides.yaml
+  - Schema documentation updated to v2.1 with ER diagram
+  - 440 tests (436 pass, 4 pre-existing failures unrelated to changes)
+- 2026-02-05: v2.0 Feature tracker API and frontend
+  - FastAPI backend with endpoints for features, options, releases, search, dashboard
+  - React + Vite frontend SPA with client-side routing
+  - Docker deployment on port 8986
+  - LLM-generated summaries and lifecycle date tracking
 - 2026-02-01: v1.3.0 Unified Tracking Implementation - Coding Agent
   - Added [NEW]/[UPDATE] badges to RSS feed titles
   - Implemented granular feature tracking for Release Notes
@@ -254,9 +267,9 @@ canvas-rss/
 
 ---
 
-## Test Results (2026-02-01)
+## Test Results (2026-02-07)
 
-320+ tests total (251 for v1.3.0 features alone)
+440 tests total (436 pass, 4 pre-existing failures)
 
 ### test_database.py (20 tests)
 
