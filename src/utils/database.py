@@ -1497,6 +1497,17 @@ class Database:
         """, (description, datetime.now().isoformat(), option_id))
         conn.commit()
 
+    def update_feature_setting_description(self, setting_id: str, description: str) -> None:
+        """Update a feature setting's description (propagated from announcements)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE feature_settings
+            SET description = ?
+            WHERE setting_id = ?
+        """, (description, setting_id))
+        conn.commit()
+
     def get_feature_option(self, option_id: str) -> Optional[dict]:
         """Get a feature option by ID."""
         conn = self._get_connection()

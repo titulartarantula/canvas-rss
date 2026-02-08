@@ -118,13 +118,30 @@ class FeatureTableData:
     def is_feature_option(self) -> bool:
         """Whether this entry represents a canonical feature option (admin toggle).
 
-        True if canonical_name has a real value (not N/A, empty, or None).
+        True if canonical_name has a real value that looks like an actual
+        feature name (not config metadata, helper text, or annotations).
         """
-        return (
-            self.canonical_name is not None
-            and self.canonical_name.strip() != ""
-            and self.canonical_name.strip().upper() != "N/A"
-        )
+        if self.canonical_name is None:
+            return False
+        name = self.canonical_name.strip()
+        if not name or name.upper() == "N/A":
+            return False
+        # Reject config location values like "Account (Disabled/Unlocked)"
+        if "(Disabled" in name or "(Enabled" in name or "(Unlocked" in name:
+            return False
+        # Reject config labels like "Beta: Account/Course ..."
+        if name.startswith("Beta:"):
+            return False
+        # Reject helper text paragraphs
+        if name.startswith("See the Canvas"):
+            return False
+        # Reject availability annotations embedded in name
+        if "Feature Option Available" in name:
+            return False
+        # Reject multi-line values (not clean feature names)
+        if "\n" in name:
+            return False
+        return True
 
 
 @dataclass
@@ -1128,7 +1145,8 @@ class InstructureScraper:
                 cell = data_html[feature_option_key]
                 first_p = cell.find('p')
                 if first_p:
-                    canonical_name = first_p.get_text().strip()
+                    # Normalize whitespace (strip newlines/tabs from HTML text)
+                    canonical_name = " ".join(first_p.get_text().split()).strip()
                 else:
                     # No <p> tags, use entire cell text but stop at newline
                     text = data[feature_option_key]
