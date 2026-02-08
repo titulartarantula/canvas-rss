@@ -425,7 +425,7 @@ Keep it concise and jargon-free."""
             # Fallback: strip HTML and return plain text
             from bs4 import BeautifulSoup
             text = BeautifulSoup(feature.raw_content, 'html.parser').get_text(separator=' ', strip=True)
-            return text[:300] if len(text) > 300 else text
+            return text[:800] if len(text) > 800 else text
 
         try:
             prompt = self.FEATURE_SUMMARIZATION_PROMPT.format(
@@ -438,7 +438,7 @@ Keep it concise and jargon-free."""
                 contents=prompt,
                 config=self.generation_config
             )
-            return response.text.strip()[:500]
+            return response.text.strip()[:1000]
         except Exception as e:
             logger.error(f"Feature summarization failed: {e}")
             return ""
@@ -459,7 +459,7 @@ Keep it concise and jargon-free."""
             # Fallback: strip HTML and return plain text
             from bs4 import BeautifulSoup
             text = BeautifulSoup(change.raw_content, 'html.parser').get_text(separator=' ', strip=True)
-            return text[:300] if len(text) > 300 else text
+            return text[:800] if len(text) > 800 else text
 
         try:
             prompt = self.DEPLOY_CHANGE_PROMPT.format(
@@ -473,7 +473,7 @@ Keep it concise and jargon-free."""
                 contents=prompt,
                 config=self.generation_config
             )
-            return response.text.strip()[:500]
+            return response.text.strip()[:1000]
         except Exception as e:
             logger.error(f"Deploy change summarization failed: {e}")
             return ""
@@ -795,7 +795,7 @@ Describe what {feature_name} is in 1-2 sentences. Be concise and factual.
 Context from recent content:
 {content_snippet[:2000]}"""
 
-        return self._call_llm(prompt, max_chars=300)
+        return self._call_llm(prompt, max_chars=800)
 
     def summarize_feature_option_description(
         self, option_name: str, feature_name: str, raw_content: str
@@ -823,7 +823,7 @@ Describe what this feature option does in 1-2 sentences. Be concise and factual.
 Context:
 {raw_content[:2000]}"""
 
-        return self._call_llm(prompt, max_chars=300)
+        return self._call_llm(prompt, max_chars=800)
 
     def summarize_announcement_description(self, h4_title: str, raw_content: str) -> str:
         """Generate a 1-2 sentence description for a feature announcement.
@@ -843,7 +843,7 @@ Context:
 Title: {h4_title}
 Content: {raw_content[:2000]}"""
 
-        return self._call_llm(prompt, max_chars=300)
+        return self._call_llm(prompt, max_chars=800)
 
     def summarize_announcement_implications(
         self, h4_title: str, raw_content: str, feature_name: str
@@ -867,7 +867,7 @@ Title: {h4_title}
 Content: {raw_content[:2000]}
 Feature: {feature_name}"""
 
-        return self._call_llm(prompt, max_chars=500)
+        return self._call_llm(prompt, max_chars=1000)
 
     def summarize_announcement_implications_from_comments(
         self, title: str, initial_content: str, comments: List[dict]
@@ -899,7 +899,7 @@ Initial post: {initial_content[:1000]}
 Comments (newest first):
 {comments_text}"""
 
-        return self._call_llm(prompt, max_chars=500)
+        return self._call_llm(prompt, max_chars=1000)
 
     def generate_meta_summary(
         self,
@@ -939,7 +939,7 @@ Recent activity (newest first):
 
 In 3-4 sentences, summarize the current state of this feature option for ed techs considering deployment. Cover: readiness for wide rollout, recent changes (especially status transitions like beta→production), community sentiment, and any concerns. Be direct and actionable."""
 
-        return self._call_llm(prompt, max_chars=600)
+        return self._call_llm(prompt, max_chars=1000)
 
     def sanitize_html(self, content: str) -> str:
         """Remove potentially malicious HTML/scripts.

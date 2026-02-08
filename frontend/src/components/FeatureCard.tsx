@@ -30,7 +30,7 @@ export default function FeatureCard({ feature, index = 0 }: FeatureCardProps) {
 
       {/* Description */}
       {feature.description && (
-        <p className="mt-2 text-sm text-ink-600 leading-relaxed line-clamp-2 flex-1">
+        <p className="mt-2 text-sm text-ink-600 leading-relaxed flex-1">
           {feature.description}
         </p>
       )}

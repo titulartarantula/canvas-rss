@@ -48,7 +48,7 @@ export default function OptionRow({ option, index = 0 }: OptionRowProps) {
 
       {/* Description */}
       {(option.description || option.meta_summary) && (
-        <p className="mt-3 text-sm text-ink-600 leading-relaxed line-clamp-2">
+        <p className="mt-3 text-sm text-ink-600 leading-relaxed">
           {option.description || option.meta_summary}
         </p>
       )}

@@ -44,7 +44,7 @@ function OptionRow({ option, index }: { option: FeatureOption; index: number }) 
 
         {/* Description */}
         {option.description && (
-          <p className="mt-1.5 text-sm text-ink-600 line-clamp-2 leading-relaxed">
+          <p className="mt-1.5 text-sm text-ink-600 leading-relaxed">
             {option.description}
           </p>
         )}

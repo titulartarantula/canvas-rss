@@ -54,7 +54,7 @@ export default function ReleaseRow({ release, index = 0 }: ReleaseRowProps) {
           {release.title}
         </h4>
         {release.summary && (
-          <p className="mt-0.5 text-sm text-ink-500 truncate">
+          <p className="mt-0.5 text-sm text-ink-500">
             {release.summary}
           </p>
         )}

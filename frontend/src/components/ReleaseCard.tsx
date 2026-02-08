@@ -53,7 +53,7 @@ export default function ReleaseCard({ release, type, isLoading }: ReleaseCardPro
 
       {/* Summary */}
       {release.summary && (
-        <p className="mt-4 text-sm text-ink-600 leading-relaxed line-clamp-3">
+        <p className="mt-4 text-sm text-ink-600 leading-relaxed">
           {release.summary}
         </p>
       )}
@@ -151,7 +151,7 @@ function AnnouncementItem({ announcement }: { announcement: Announcement }) {
 
           {/* Description */}
           {announcement.description && (
-            <p className="mt-1 text-xs text-ink-500 leading-relaxed line-clamp-2">
+            <p className="mt-1 text-xs text-ink-500 leading-relaxed">
               {announcement.description}
             </p>
           )}
