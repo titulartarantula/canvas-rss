@@ -313,14 +313,16 @@ def store_release_notes(
         # Store upcoming changes from this release note (even for existing items)
         if page.upcoming_changes:
             for change in page.upcoming_changes:
+                # Normalize to YYYY-MM-DD to avoid date/datetime format mismatches
+                change_date = change.date.strftime("%Y-%m-%d") if change.date else None
                 if not db.upcoming_change_exists(
                     item.source_id,
-                    change.date.isoformat() if change.date else None,
+                    change_date,
                     change.description
                 ):
                     db.insert_upcoming_change(
                         content_id=item.source_id,
-                        change_date=change.date.isoformat() if change.date else None,
+                        change_date=change_date,
                         description=change.description,
                     )
             logger.debug(f"Stored {len(page.upcoming_changes)} upcoming changes")

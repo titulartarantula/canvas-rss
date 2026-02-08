@@ -1298,6 +1298,10 @@ class Database:
     def announcement_exists(self, content_id: str, anchor_id: str) -> bool:
         """Check if an announcement already exists for this content and anchor.
 
+        Checks for exact match first, then falls back to prefix match
+        to handle legacy rows stored with un-stripped annotation suffixes
+        (e.g. "canvas-apps-link-added-2026-01-28" matches "canvas-apps-link").
+
         Args:
             content_id: The content item source_id.
             anchor_id: The H4 data-id anchor.
@@ -1307,8 +1311,16 @@ class Database:
         """
         conn = self._get_connection()
         cursor = conn.cursor()
+        # Exact match
         cursor.execute(
             "SELECT 1 FROM feature_announcements WHERE content_id = ? AND anchor_id = ?",
+            (content_id, anchor_id)
+        )
+        if cursor.fetchone() is not None:
+            return True
+        # Prefix match: existing anchor starts with the stripped anchor_id
+        cursor.execute(
+            "SELECT 1 FROM feature_announcements WHERE content_id = ? AND anchor_id LIKE ? || '-%'",
             (content_id, anchor_id)
         )
         return cursor.fetchone() is not None
@@ -1371,9 +1383,12 @@ class Database:
     def upcoming_change_exists(self, content_id: str, change_date: str, description: str) -> bool:
         """Check if an upcoming change already exists.
 
+        Uses date prefix match (first 10 chars) to handle legacy rows stored
+        with datetime format (YYYY-MM-DDTHH:MM:SS) vs date format (YYYY-MM-DD).
+
         Args:
             content_id: The content item source_id.
-            change_date: The change date.
+            change_date: The change date (YYYY-MM-DD).
             description: The change description.
 
         Returns:
@@ -1381,9 +1396,11 @@ class Database:
         """
         conn = self._get_connection()
         cursor = conn.cursor()
+        # Match on date prefix (first 10 chars) to handle YYYY-MM-DD vs YYYY-MM-DDTHH:MM:SS
+        date_prefix = change_date[:10] if change_date else change_date
         cursor.execute(
-            "SELECT 1 FROM upcoming_changes WHERE content_id = ? AND change_date = ? AND description = ?",
-            (content_id, change_date, description)
+            "SELECT 1 FROM upcoming_changes WHERE content_id = ? AND substr(change_date, 1, 10) = ? AND description = ?",
+            (content_id, date_prefix, description)
         )
         return cursor.fetchone() is not None
 
