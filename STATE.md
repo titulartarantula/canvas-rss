@@ -9,8 +9,10 @@
 | Task                                | Agent   | Status   | Notes                          |
 |-------------------------------------|---------|----------|--------------------------------|
 | Feature settings implementation     | Coding  | Complete | 13 tasks, 440 tests total      |
+| Feature settings backend parity     | Coding  | Complete | 7 tasks, 448 tests total       |
 | Feature tracker API + frontend      | Coding  | Complete | FastAPI + React SPA on :8986   |
 | v2.0 schema redesign               | Coding  | Complete | Four-tier data model           |
+| Frontend settings page              | Coding  | Pending  | Settings not yet visible in UI |
 
 ## Completed
 
@@ -39,6 +41,22 @@
 - [x] Schema documentation updated to v2.1
 - [x] 440 tests total (436 pass, 4 pre-existing failures)
 
+**Feature settings backend parity (v2.1.1, branch: feature/v2.0-database-schema):**
+- [x] `get_latest_content_for_setting()` DB method for content retrieval
+- [x] `summarize_feature_setting_description()` LLM method for settings
+- [x] `generate_meta_summary()` accepts `entity_type` param (option/setting)
+- [x] CLI commands: `regenerate setting`, `settings`, `setting-meta-summary`
+- [x] Lifecycle date propagation in pipeline now includes settings
+- [x] Docker entrypoint runs `backfill_summaries.py` after each aggregation
+- [x] CLI loads `.env` automatically (matches main.py behavior)
+- [x] Generated meta-summaries for all 79 settings and 10 options
+- [x] 448 tests total (441 pass, 7 pre-existing failures)
+
+**Remaining frontend gap:**
+- [ ] Frontend has no Settings page — backend API `/api/settings` exists but is unconsumed
+- [ ] No "Settings" nav link in Layout.tsx
+- [ ] No FeatureSetting types in frontend
+
 **Key design decisions:**
 - Four-tier data model: `features` → `feature_options`/`feature_settings` → `feature_announcements`
 - Feature options = canonical admin toggles (have "Feature Option to Enable" value)
@@ -50,6 +68,7 @@
 - `docs/database-schema.md` - Full schema with mermaid diagram (v2.1)
 - `docs/plans/2026-02-07-feature-settings-design.md` - Feature settings design
 - `docs/plans/2026-02-07-feature-settings-implementation.md` - 13-task implementation plan
+- `docs/plans/2026-02-09-feature-settings-backend-parity.md` - Backend parity plan (7 tasks)
 - `docs/plans/2026-02-03-database-schema-redesign.md` - Original v2.0 design plan
 
 ### Phase 9: v1.3.0 - Unified Tracking (Complete)
@@ -197,6 +216,15 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-02-09: Feature settings backend parity (v2.1.1) - Coding Agent
+  - Added `get_latest_content_for_setting()` DB method
+  - Added `summarize_feature_setting_description()` and adapted `generate_meta_summary()` for settings
+  - Added CLI commands: `regenerate setting`, `settings --missing`, `setting-meta-summary`
+  - Lifecycle dates now propagate to settings in pipeline
+  - Docker entrypoint chains `backfill_summaries.py` after aggregation
+  - CLI loads `.env` automatically
+  - Generated meta-summaries for all 79 settings + 10 options (89/89 complete)
+  - 448 tests (441 pass, 7 pre-existing failures)
 - 2026-02-07: Feature settings separation (v2.1) - Coding Agent
   - New `feature_settings` table separating canonical toggles from non-toggle changes
   - Classification logic based on "Feature Option to Enable" table cell
@@ -267,9 +295,9 @@ canvas-rss/
 
 ---
 
-## Test Results (2026-02-07)
+## Test Results (2026-02-09)
 
-440 tests total (436 pass, 4 pre-existing failures)
+448 tests total (441 pass, 7 pre-existing failures)
 
 ### test_database.py (20 tests)
 
