@@ -47,7 +47,8 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
         # Get release note — order by date extracted from title for correct chronological order
         if date:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date
+                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                       {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'release_note'
                 AND {_TITLE_DATE_SQL} = ?
@@ -56,7 +57,8 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
             """, (date,))
         else:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date
+                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                       {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'release_note'
                 ORDER BY {_TITLE_DATE_SQL} DESC
@@ -67,7 +69,8 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
         # Get deploy note
         if date:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date
+                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                       {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'deploy_note'
                 AND {_TITLE_DATE_SQL} = ?
@@ -76,7 +79,8 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
             """, (date,))
         else:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date
+                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                       {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'deploy_note'
                 ORDER BY {_TITLE_DATE_SQL} DESC

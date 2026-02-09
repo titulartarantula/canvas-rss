@@ -12,7 +12,7 @@ export default function ReleaseRow({ release, index = 0 }: ReleaseRowProps) {
   const typeLabel = isDeployNote ? 'Deploy' : 'Release'
   const typeColor = isDeployNote ? 'text-status-optional bg-status-optional/10' : 'text-status-beta bg-status-beta/10'
 
-  const dateStr = release.first_posted || release.published_date || ''
+  const dateStr = release.production_date || release.published_date || ''
   // Parse date portion directly to avoid timezone shift
   const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
   const date = match

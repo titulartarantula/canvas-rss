@@ -47,7 +47,7 @@ export default function ReleaseCard({ release, type, isLoading }: ReleaseCardPro
     <div className="card p-6 h-full flex flex-col">
       <CardHeader
         title={title}
-        subtitle={formatPublishDate(release.first_posted || release.published_date)}
+        subtitle={formatPublishDate(release.production_date || release.published_date)}
         url={release.url}
       />
 

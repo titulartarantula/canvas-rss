@@ -89,6 +89,7 @@ export interface Release {
   summary: string | null;
   first_posted: string | null;
   published_date: string | null;
+  production_date: string | null;
   announcement_count?: number;
   announcements?: Announcement[];
   upcoming_changes?: UpcomingChange[];

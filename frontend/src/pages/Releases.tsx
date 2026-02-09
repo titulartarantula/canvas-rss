@@ -82,7 +82,7 @@ export default function Releases() {
     const monthMap = new Map<string, Release[]>()
 
     data.releases.forEach(release => {
-      const dateStr = release.first_posted || release.published_date || ''
+      const dateStr = release.production_date || release.published_date || ''
       const dateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
       const date = dateMatch
         ? new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))

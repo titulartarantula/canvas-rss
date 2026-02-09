@@ -27,8 +27,9 @@ def get_releases(
                 ci.title,
                 ci.content_type,
                 ci.summary,
-                COALESCE(ci.first_posted, ci.published_date) as first_posted,
+                ci.first_posted,
                 ci.published_date,
+                {_TITLE_DATE_SQL} as production_date,
                 COUNT(fa.id) as announcement_count
             FROM content_items ci
             LEFT JOIN feature_announcements fa ON ci.source_id = fa.content_id
@@ -63,13 +64,14 @@ def get_release_detail(content_id: str):
         cursor = conn.cursor()
 
         # Get release/deploy note
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT source_id, url, title, content_type, summary,
-                   COALESCE(first_posted, published_date) as first_posted,
-                   published_date
-            FROM content_items
-            WHERE source_id = ?
-            AND content_type IN ('release_note', 'deploy_note')
+                   first_posted,
+                   published_date,
+                   {_TITLE_DATE_SQL} as production_date
+            FROM content_items ci
+            WHERE ci.source_id = ?
+            AND ci.content_type IN ('release_note', 'deploy_note')
         """, (content_id,))
         release = row_to_dict(cursor.fetchone())
 

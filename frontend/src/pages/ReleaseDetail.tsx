@@ -81,7 +81,7 @@ export default function ReleaseDetail() {
   const typeLabel = isDeployNote ? 'Deploy Notes' : 'Release Notes'
   const typeColor = isDeployNote ? 'text-status-optional bg-status-optional/10' : 'text-status-beta bg-status-beta/10'
 
-  const pubStr = data.first_posted || data.published_date || ''
+  const pubStr = data.production_date || data.published_date || ''
   const pubMatch = pubStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
   const publishDate = pubMatch
     ? new Date(Number(pubMatch[1]), Number(pubMatch[2]) - 1, Number(pubMatch[3]))
