@@ -2,7 +2,11 @@
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Optional, List
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 from src.utils.database import Database
 from src.processor.content_processor import ContentProcessor
