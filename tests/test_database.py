@@ -1382,3 +1382,56 @@ class TestFeatureSettingsMethods:
             setting_id="s1",
         )
         assert row_id > 0
+
+    def test_get_latest_content_for_setting(self, temp_db):
+        """Test getting latest content items referencing a feature setting."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_setting('test_setting', 'speedgrader', 'Test Setting')
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="instructure_community",
+            source_id="test-content-1",
+            title="Test Release Note",
+            url="https://example.com",
+            content="Test content",
+            published_date="2026-01-15",
+        )
+        temp_db.insert_item(item)
+
+        temp_db.add_content_feature_ref(
+            content_id="test-content-1",
+            feature_id="speedgrader",
+            feature_setting_id="test_setting",
+            mention_type="announces",
+        )
+
+        temp_db.insert_feature_announcement(
+            content_id="test-content-1",
+            h4_title="Test Setting",
+            announced_at="2026-01-15",
+            feature_id="speedgrader",
+            setting_id="test_setting",
+            anchor_id="test-anchor-1",
+        )
+
+        temp_db.update_announcement_summary(
+            content_id="test-content-1",
+            anchor_id="test-anchor-1",
+            description="A test description",
+            implications="Some implications",
+        )
+
+        content = temp_db.get_latest_content_for_setting("test_setting", limit=5)
+        assert len(content) == 1
+        assert content[0]["source_id"] == "test-content-1"
+        assert content[0]["announcement_description"] == "A test description"
+        assert content[0]["implications"] == "Some implications"
+
+    def test_get_latest_content_for_setting_empty(self, temp_db):
+        """Test returns empty list when no content linked."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_setting('orphan', 'speedgrader', 'Orphan Setting')
+
+        content = temp_db.get_latest_content_for_setting("orphan")
+        assert content == []

@@ -1608,3 +1608,56 @@ class TestV2Prompts:
             ]
         )
         assert isinstance(result, str)
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_summarize_feature_setting_description(self, mock_genai):
+        """Test generating description for a feature setting."""
+        from processor.content_processor import ContentProcessor
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This setting enables scheduled feedback delivery."
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
+
+        processor = ContentProcessor(gemini_api_key="test-key")
+        result = processor.summarize_feature_setting_description(
+            setting_name="Scheduled Feedback",
+            feature_name="Gradebook",
+            raw_content="Allows instructors to schedule feedback release."
+        )
+
+        assert result == "This setting enables scheduled feedback delivery."
+        mock_client.models.generate_content.assert_called_once()
+
+    @patch('processor.content_processor.GENAI_AVAILABLE', True)
+    @patch('processor.content_processor.genai')
+    def test_generate_meta_summary_for_setting(self, mock_genai):
+        """Test meta_summary generation works for settings (entity_type param)."""
+        from processor.content_processor import ContentProcessor
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This change is now active in production."
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
+
+        processor = ContentProcessor(gemini_api_key="test-key")
+        result = processor.generate_meta_summary(
+            option_name="Scheduled Feedback",
+            feature_name="Gradebook",
+            implementation_status="active",
+            content_summaries=[{
+                'date': '2026-01-15',
+                'title': 'January Release',
+                'description': 'Scheduled feedback is now available.',
+                'implications': 'Instructors can schedule feedback.'
+            }],
+            entity_type="setting",
+        )
+
+        assert result == "This change is now active in production."
+        call_args = mock_client.models.generate_content.call_args
+        prompt_text = str(call_args)
+        assert "feature change" in prompt_text.lower()

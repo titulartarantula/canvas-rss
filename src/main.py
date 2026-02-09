@@ -238,19 +238,29 @@ def store_release_notes(
         beta_date = lifecycle_dates.get('beta_date')
         production_date = lifecycle_dates.get('production_date')
 
-        # Update lifecycle dates on all feature options from this page
+        # Update lifecycle dates on feature options AND settings from this page
         if beta_date or production_date:
             for feature in page.features:
-                option_id = feature.anchor_id
-                if option_id:
-                    try:
-                        db.update_feature_option_lifecycle_dates(
-                            option_id=option_id,
-                            beta_date=beta_date,
-                            production_date=production_date,
-                        )
-                    except Exception as e:
-                        logger.debug(f"Failed to update lifecycle dates for {option_id}: {e}")
+                entity_id = feature.anchor_id
+                if not entity_id:
+                    continue
+                # Try updating as option first, then as setting
+                try:
+                    db.update_feature_option_lifecycle_dates(
+                        option_id=entity_id,
+                        beta_date=beta_date,
+                        production_date=production_date,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to update option lifecycle dates for {entity_id}: {e}")
+                try:
+                    db.update_feature_setting_lifecycle_dates(
+                        setting_id=entity_id,
+                        beta_date=beta_date,
+                        production_date=production_date,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to update setting lifecycle dates for {entity_id}: {e}")
 
         # Update per-announcement lifecycle dates (avoids shared option_id collision)
         content_id = note.source_id

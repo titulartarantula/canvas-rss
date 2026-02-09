@@ -1005,6 +1005,32 @@ class Database:
         """)
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_latest_content_for_setting(self, setting_id: str, limit: int = 5) -> List[dict]:
+        """Get the latest content items referencing a feature setting.
+
+        Used to generate meta_summary for settings.
+
+        Args:
+            setting_id: The feature setting ID.
+            limit: Maximum number of items to return.
+
+        Returns:
+            List of content item dicts with announcement data, newest first.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT ci.*, fa.description as announcement_description, fa.implications
+            FROM content_items ci
+            JOIN content_feature_refs cfr ON ci.source_id = cfr.content_id
+            LEFT JOIN feature_announcements fa ON ci.source_id = fa.content_id
+                AND fa.setting_id = ?
+            WHERE cfr.feature_setting_id = ?
+            ORDER BY ci.first_posted DESC
+            LIMIT ?
+        """, (setting_id, setting_id, limit))
+        return [dict(row) for row in cursor.fetchall()]
+
     def get_active_feature_settings(self) -> List[dict]:
         """Get all non-deprecated feature settings."""
         conn = self._get_connection()

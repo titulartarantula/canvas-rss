@@ -15,7 +15,7 @@ if [ "$1" = "cron" ]; then
     rm -f /tmp/env.sh
 
     # Create the crontab file for supercronic
-    echo "${CRON_SCHEDULE} cd /app && . /app/env.sh && python -m src.main >> /app/logs/cron.log 2>&1" > /app/crontab
+    echo "${CRON_SCHEDULE} cd /app && . /app/env.sh && python -m src.main && python src/backfill_summaries.py >> /app/logs/cron.log 2>&1" > /app/crontab
     chown appuser:appuser /app/crontab
 
     echo "Cron scheduled: ${CRON_SCHEDULE} (TZ=${TZ:-UTC})"
@@ -23,7 +23,7 @@ if [ "$1" = "cron" ]; then
 
     # Run once immediately on startup as appuser
     echo "Running initial aggregation..."
-    gosu appuser bash -c "cd /app && . /app/env.sh && python -m src.main"
+    gosu appuser bash -c "cd /app && . /app/env.sh && python -m src.main && python src/backfill_summaries.py"
 
     echo "Starting supercronic (non-root cron)..."
     # Run supercronic as appuser - no root process needed

@@ -232,3 +232,94 @@ class TestGeneralTriage:
         title_conf = next(s['confidence'] for s in title_match if s['feature_id'] == 'rich_content_editor')
         content_conf = next(s['confidence'] for s in content_only if s['feature_id'] == 'rich_content_editor')
         assert title_conf > content_conf
+
+
+class TestRegenerateSettingCommands:
+    """Tests for regenerate setting commands."""
+
+    @patch('src.cli.ContentProcessor')
+    @patch('src.cli.Database')
+    def test_handle_regenerate_setting(self, mock_db_cls, mock_proc_cls):
+        """Test regenerate single setting description."""
+        from src.cli import handle_regenerate_setting
+
+        mock_db = MagicMock()
+        mock_db.get_feature_setting.return_value = {
+            'setting_id': 'scheduled-feedback', 'feature_id': 'gradebook', 'name': 'Scheduled Feedback'
+        }
+        mock_db.get_feature.return_value = {'feature_id': 'gradebook', 'name': 'Gradebook'}
+        mock_db.get_latest_content_for_setting.return_value = [
+            {'raw_content': 'test content', 'content': 'test'}
+        ]
+        mock_db_cls.return_value = mock_db
+
+        mock_proc = MagicMock()
+        mock_proc.summarize_feature_setting_description.return_value = 'Generated description'
+        mock_proc_cls.return_value = mock_proc
+
+        result = handle_regenerate_setting('scheduled-feedback')
+
+        assert result == 0
+        mock_proc.summarize_feature_setting_description.assert_called_once()
+        mock_db.update_feature_setting_description.assert_called_once()
+
+    @patch('src.cli.ContentProcessor')
+    @patch('src.cli.Database')
+    def test_handle_regenerate_setting_not_found(self, mock_db_cls, mock_proc_cls):
+        """Test regenerate setting that doesn't exist."""
+        from src.cli import handle_regenerate_setting
+
+        mock_db = MagicMock()
+        mock_db.get_feature_setting.return_value = None
+        mock_db_cls.return_value = mock_db
+
+        result = handle_regenerate_setting('nonexistent')
+        assert result == 1
+
+    @patch('src.cli.ContentProcessor')
+    @patch('src.cli.Database')
+    def test_handle_regenerate_setting_meta_summary(self, mock_db_cls, mock_proc_cls):
+        """Test regenerate meta-summary for a setting."""
+        from src.cli import handle_regenerate_setting_meta_summary
+
+        mock_db = MagicMock()
+        mock_db.get_feature_setting.return_value = {
+            'setting_id': 'scheduled-feedback', 'feature_id': 'gradebook',
+            'name': 'Scheduled Feedback', 'implementation_status': 'active'
+        }
+        mock_db.get_feature.return_value = {'feature_id': 'gradebook', 'name': 'Gradebook'}
+        mock_db.get_latest_content_for_setting.return_value = [{
+            'first_posted': '2026-01-15T00:00:00',
+            'title': 'Release Note',
+            'announcement_description': 'Description',
+            'implications': 'Some implications',
+        }]
+        mock_db_cls.return_value = mock_db
+
+        mock_proc = MagicMock()
+        mock_proc.generate_meta_summary.return_value = 'Meta summary text'
+        mock_proc_cls.return_value = mock_proc
+
+        result = handle_regenerate_setting_meta_summary('scheduled-feedback')
+
+        assert result == 0
+        mock_proc.generate_meta_summary.assert_called_once()
+        call_kwargs = mock_proc.generate_meta_summary.call_args[1]
+        assert call_kwargs.get('entity_type') == 'setting'
+        mock_db.update_feature_setting_meta_summary.assert_called_once()
+
+    @patch('src.cli.ContentProcessor')
+    @patch('src.cli.Database')
+    def test_handle_regenerate_settings_dry_run(self, mock_db_cls, mock_proc_cls):
+        """Test regenerate settings --missing --dry-run."""
+        from src.cli import handle_regenerate_settings
+
+        mock_db = MagicMock()
+        mock_db.get_feature_settings_missing_description.return_value = [
+            {'setting_id': 'a', 'name': 'A', 'feature_id': 'gradebook'},
+            {'setting_id': 'b', 'name': 'B', 'feature_id': 'gradebook'},
+        ]
+        mock_db_cls.return_value = mock_db
+
+        result = handle_regenerate_settings(missing_only=True, dry_run=True)
+        assert result == 0

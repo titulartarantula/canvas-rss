@@ -825,6 +825,34 @@ Context:
 
         return self._call_llm(prompt, max_chars=800)
 
+    def summarize_feature_setting_description(
+        self, setting_name: str, feature_name: str, raw_content: str
+    ) -> str:
+        """Generate a 1-2 sentence description for a feature setting (non-toggle change).
+
+        Args:
+            setting_name: Name of the feature setting.
+            feature_name: Name of the parent feature.
+            raw_content: Raw content from announcement.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are summarizing a Canvas LMS feature change for educational technologists.
+
+Feature change: {setting_name}
+Parent feature: {feature_name}
+
+Describe what this change does in 1-2 sentences. Be concise and factual. Focus on what changed and who it affects.
+
+Context:
+{raw_content[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=800)
+
     def summarize_announcement_description(self, h4_title: str, raw_content: str) -> str:
         """Generate a 1-2 sentence description for a feature announcement.
 
@@ -906,15 +934,17 @@ Comments (newest first):
         option_name: str,
         feature_name: str,
         implementation_status: str,
-        content_summaries: List[dict]
+        content_summaries: List[dict],
+        entity_type: str = "option",
     ) -> str:
-        """Generate meta_summary for a feature option from latest content.
+        """Generate meta_summary for a feature option or setting from latest content.
 
         Args:
-            option_name: Name of the feature option.
+            option_name: Name of the feature option or setting.
             feature_name: Name of the parent feature.
             implementation_status: Current implementation status text.
             content_summaries: List of dicts with 'date', 'title', 'description', 'implications'.
+            entity_type: Either "option" (toggle-based) or "setting" (non-toggle change).
 
         Returns:
             3-4 sentence meta summary.
@@ -922,22 +952,24 @@ Comments (newest first):
         if not self.client:
             return ""
 
+        entity_label = "feature option" if entity_type == "option" else "feature change"
+
         # Format content summaries
         summaries_text = "\n".join([
             f"- [{c.get('date', 'Unknown')}] {c.get('title', '')}: {c.get('description', '')} {c.get('implications', '')}"
             for c in content_summaries[:5]
         ])
 
-        prompt = f"""You are advising educational technologists about the deployment readiness of a Canvas feature option.
+        prompt = f"""You are advising educational technologists about the deployment readiness of a Canvas {entity_label}.
 
-Feature option: {option_name}
+{entity_label.title()}: {option_name}
 Parent feature: {feature_name}
 Current status: {implementation_status}
 
 Recent activity (newest first):
 {summaries_text}
 
-In 3-4 sentences, summarize the current state of this feature option for ed techs considering deployment. Cover: readiness for wide rollout, recent changes (especially status transitions like beta→production), community sentiment, and any concerns. Be direct and actionable."""
+In 3-4 sentences, summarize the current state of this {entity_label} for ed techs considering deployment. Cover: readiness for wide rollout, recent changes (especially status transitions like beta→production), community sentiment, and any concerns. Be direct and actionable."""
 
         return self._call_llm(prompt, max_chars=1000)
 

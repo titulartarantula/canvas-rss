@@ -49,6 +49,19 @@ def create_parser() -> argparse.ArgumentParser:
     regen_metas.add_argument('--all', action='store_true', help='Regenerate all')
     regen_metas.add_argument('--dry-run', action='store_true', help='Show what would be done')
 
+    # regenerate setting <id>
+    regen_setting = regen_subparsers.add_parser('setting', help='Regenerate setting description')
+    regen_setting.add_argument('setting_id', help='Setting ID to regenerate')
+
+    # regenerate settings --missing
+    regen_settings = regen_subparsers.add_parser('settings', help='Regenerate all settings')
+    regen_settings.add_argument('--missing', action='store_true', help='Only missing descriptions')
+    regen_settings.add_argument('--dry-run', action='store_true', help='Show what would be done')
+
+    # regenerate setting-meta-summary <id>
+    regen_setting_meta = regen_subparsers.add_parser('setting-meta-summary', help='Regenerate setting meta summary')
+    regen_setting_meta.add_argument('setting_id', help='Setting ID to regenerate')
+
     # General command
     general_parser = subparsers.add_parser('general', help='Manage general-tagged content')
     general_subparsers = general_parser.add_subparsers(dest='general_action', help='Action')
@@ -276,6 +289,148 @@ def handle_regenerate_options(missing_only: bool = False, dry_run: bool = False)
     return 0
 
 
+def handle_regenerate_setting(setting_id: str, dry_run: bool = False) -> int:
+    """Handle regenerate setting command.
+
+    Args:
+        setting_id: The setting ID to regenerate.
+        dry_run: If True, don't actually update.
+
+    Returns:
+        Exit code.
+    """
+    db = Database()
+
+    setting = db.get_feature_setting(setting_id)
+    if not setting:
+        print(f"Error: Setting '{setting_id}' not found")
+        return 1
+
+    feature = db.get_feature(setting['feature_id'])
+    feature_name = feature['name'] if feature else 'Unknown'
+
+    content = db.get_latest_content_for_setting(setting_id, limit=3)
+    raw_content = "\n".join([c.get('raw_content', c.get('content', ''))[:500] for c in content])
+
+    if dry_run:
+        print(f"Would regenerate description for: {setting['name']}")
+        return 0
+
+    processor = ContentProcessor()
+    description = processor.summarize_feature_setting_description(
+        setting_name=setting['name'],
+        feature_name=feature_name,
+        raw_content=raw_content or "Feature setting for " + setting['name']
+    )
+
+    if description:
+        db.update_feature_setting_description(setting_id, description)
+        print(f"Updated description for {setting['name']}:")
+        print(f"  {description}")
+
+    db.close()
+    return 0
+
+
+def handle_regenerate_settings(missing_only: bool = False, dry_run: bool = False) -> int:
+    """Handle regenerate settings command.
+
+    Args:
+        missing_only: If True, only regenerate settings missing descriptions.
+        dry_run: If True, don't actually update.
+
+    Returns:
+        Exit code.
+    """
+    db = Database()
+
+    if missing_only:
+        settings = db.get_feature_settings_missing_description()
+    else:
+        settings = db.get_all_feature_settings()
+
+    if dry_run:
+        print(f"Would regenerate {len(settings)} settings:")
+        for s in settings:
+            print(f"  - {s['setting_id']}: {s['name']}")
+        return 0
+
+    processor = ContentProcessor()
+    for s in settings:
+        feature = db.get_feature(s['feature_id'])
+        feature_name = feature['name'] if feature else 'Unknown'
+
+        content = db.get_latest_content_for_setting(s['setting_id'], limit=3)
+        raw_content = "\n".join([c.get('raw_content', '')[:500] for c in content])
+
+        description = processor.summarize_feature_setting_description(
+            setting_name=s['name'],
+            feature_name=feature_name,
+            raw_content=raw_content or f"Feature setting: {s['name']}"
+        )
+
+        if description:
+            db.update_feature_setting_description(s['setting_id'], description)
+            print(f"Updated: {s['name']}")
+
+    db.close()
+    return 0
+
+
+def handle_regenerate_setting_meta_summary(setting_id: str, dry_run: bool = False) -> int:
+    """Handle regenerate setting-meta-summary command.
+
+    Args:
+        setting_id: The setting ID to regenerate.
+        dry_run: If True, don't actually update.
+
+    Returns:
+        Exit code.
+    """
+    db = Database()
+
+    setting = db.get_feature_setting(setting_id)
+    if not setting:
+        print(f"Error: Setting '{setting_id}' not found")
+        return 1
+
+    feature = db.get_feature(setting['feature_id'])
+    feature_name = feature['name'] if feature else 'Unknown'
+
+    content = db.get_latest_content_for_setting(setting_id, limit=5)
+    content_summaries = [
+        {
+            'date': c.get('first_posted', 'Unknown')[:10] if c.get('first_posted') else 'Unknown',
+            'title': c.get('title', ''),
+            'description': c.get('announcement_description', ''),
+            'implications': c.get('implications', '')
+        }
+        for c in content
+    ]
+
+    if dry_run:
+        print(f"Would regenerate meta_summary for: {setting['name']}")
+        print(f"Using {len(content_summaries)} content items")
+        return 0
+
+    processor = ContentProcessor()
+    meta_summary = processor.generate_meta_summary(
+        option_name=setting['name'],
+        feature_name=feature_name,
+        implementation_status=setting.get('implementation_status', ''),
+        content_summaries=content_summaries,
+        entity_type='setting'
+    )
+
+    if meta_summary:
+        db.update_feature_setting_meta_summary(setting_id, meta_summary)
+        print(f"Updated meta_summary for {setting['name']}:")
+        print(f"  {meta_summary}")
+
+    db.close()
+    return 0
+
+
 def suggest_matches(title: str, content: str) -> List[dict]:
     """Suggest feature matches for content using keyword matching.
 
@@ -472,6 +627,15 @@ def main(args: Optional[list] = None) -> int:
                 missing_only=parsed.missing,
                 dry_run=parsed.dry_run
             )
+        elif parsed.regen_type == 'setting':
+            return handle_regenerate_setting(parsed.setting_id)
+        elif parsed.regen_type == 'settings':
+            return handle_regenerate_settings(
+                missing_only=parsed.missing,
+                dry_run=parsed.dry_run
+            )
+        elif parsed.regen_type == 'setting-meta-summary':
+            return handle_regenerate_setting_meta_summary(parsed.setting_id)
         print(f"Regenerate {parsed.regen_type} not yet implemented")
         return 1
 
