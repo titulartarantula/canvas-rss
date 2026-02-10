@@ -259,7 +259,6 @@ class Database:
                 -- Content
                 raw_content TEXT,
                 description TEXT,
-                implications TEXT,
                 summary TEXT,
 
                 -- Configuration snapshot at time of announcement
@@ -302,13 +301,19 @@ class Database:
             except sqlite3.OperationalError:
                 pass
 
-        # Migration: Add description and implications columns to feature_announcements
-        for col in ['description', 'implications']:
-            try:
-                cursor.execute(f"ALTER TABLE feature_announcements ADD COLUMN {col} TEXT")
-                conn.commit()
-            except sqlite3.OperationalError:
-                pass
+        # Migration: Add description column to feature_announcements
+        try:
+            cursor.execute("ALTER TABLE feature_announcements ADD COLUMN description TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Migration: Drop implications column (no longer generated)
+        try:
+            cursor.execute("ALTER TABLE feature_announcements DROP COLUMN implications")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
         # Migration: Add setting_id to feature_announcements
         try:
@@ -1020,7 +1025,7 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT ci.*, fa.description as announcement_description, fa.implications
+            SELECT ci.*, fa.description as announcement_description
             FROM content_items ci
             JOIN content_feature_refs cfr ON ci.source_id = cfr.content_id
             LEFT JOIN feature_announcements fa ON ci.source_id = fa.content_id
@@ -1167,14 +1172,13 @@ class Database:
         return cursor.lastrowid
 
     def update_announcement_summary(self, content_id: str, anchor_id: str,
-                                     description: str = None, implications: str = None) -> bool:
-        """Update LLM-generated description and implications for an announcement.
+                                     description: str = None) -> bool:
+        """Update LLM-generated description for an announcement.
 
         Args:
             content_id: FK to content_items.source_id.
             anchor_id: The H4 data-id anchor.
             description: LLM-generated 1-2 sentence description.
-            implications: LLM-generated 2-3 sentence implications.
 
         Returns:
             True if a row was updated, False otherwise.
@@ -1183,9 +1187,9 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE feature_announcements
-            SET description = ?, implications = ?
+            SET description = ?
             WHERE content_id = ? AND anchor_id = ?
-        """, (description, implications, content_id, anchor_id))
+        """, (description, content_id, anchor_id))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -1595,7 +1599,7 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT ci.*, fa.description as announcement_description, fa.implications
+            SELECT ci.*, fa.description as announcement_description
             FROM content_items ci
             JOIN content_feature_refs cfr ON ci.source_id = cfr.content_id
             LEFT JOIN feature_announcements fa ON ci.source_id = fa.content_id

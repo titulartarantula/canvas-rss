@@ -111,7 +111,7 @@ def get_option_detail(option_id: str):
         cursor.execute("""
             SELECT
                 fa.id, fa.h4_title, fa.section, fa.category,
-                fa.description, fa.implications, fa.announced_at,
+                fa.description, fa.announced_at,
                 fa.enable_location_account, fa.enable_location_course,
                 fa.subaccount_config, fa.permissions, fa.affected_areas,
                 fa.affects_ui,

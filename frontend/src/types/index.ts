@@ -86,7 +86,6 @@ export interface Announcement {
   section: string | null;
   category: string | null;
   description: string | null;
-  implications: string | null;
   announced_at: string;
   release_title?: string;
   release_url?: string;

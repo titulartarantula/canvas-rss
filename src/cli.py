@@ -193,7 +193,6 @@ def handle_regenerate_meta_summary(option_id: str, dry_run: bool = False) -> int
             'date': c.get('first_posted', 'Unknown')[:10] if c.get('first_posted') else 'Unknown',
             'title': c.get('title', ''),
             'description': c.get('announcement_description', ''),
-            'implications': c.get('implications', '')
         }
         for c in content
     ]
@@ -407,7 +406,6 @@ def handle_regenerate_setting_meta_summary(setting_id: str, dry_run: bool = Fals
             'date': c.get('first_posted', 'Unknown')[:10] if c.get('first_posted') else 'Unknown',
             'title': c.get('title', ''),
             'description': c.get('announcement_description', ''),
-            'implications': c.get('implications', '')
         }
         for c in content
     ]

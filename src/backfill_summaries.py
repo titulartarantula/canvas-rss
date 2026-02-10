@@ -57,18 +57,12 @@ def backfill():
                 h4_title=h4_title,
                 raw_content=raw_content,
             )
-            implications = processor.summarize_announcement_implications(
-                h4_title=h4_title,
-                raw_content=raw_content,
-                feature_name=category,
-            )
 
-            if description or implications:
+            if description:
                 db.update_announcement_summary(
                     content_id=ann["content_id"],
                     anchor_id=ann["anchor_id"],
                     description=description,
-                    implications=implications,
                 )
                 updated += 1
                 print(f"  [{updated}/{total}] {h4_title}: {description[:60]}...")

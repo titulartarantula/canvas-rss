@@ -1588,15 +1588,6 @@ class TestV2Prompts:
         )
         assert isinstance(result, str)
 
-    def test_summarize_announcement_implications_returns_string(self, mock_processor):
-        """Test that summarize_announcement_implications returns a string."""
-        result = mock_processor.summarize_announcement_implications(
-            h4_title='Document Processing',
-            raw_content='New document processing capabilities...',
-            feature_name='Files'
-        )
-        assert isinstance(result, str)
-
     def test_generate_meta_summary_returns_string(self, mock_processor):
         """Test that generate_meta_summary returns a string."""
         result = mock_processor.generate_meta_summary(

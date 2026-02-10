@@ -255,21 +255,13 @@ function AnnouncementsTable({
             href={release.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="text-xs font-mono text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
           >
-            <ExternalLinkIcon className="w-3.5 h-3.5" />
+            View on Canvas
+            <ExternalLinkIcon className="w-3 h-3" />
           </a>
         </div>
       </div>
-
-      {/* Compact summary */}
-      {release.summary && (
-        <div className="px-4 py-2.5 border-b border-zinc-800/30 bg-surface-3/30">
-          <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">
-            {release.summary}
-          </p>
-        </div>
-      )}
 
       {/* Announcement rows */}
       <div>
@@ -310,7 +302,7 @@ function AnnouncementRow({ announcement }: { announcement: Announcement }) {
         )}
       </div>
 
-      {/* Title */}
+      {/* Title & Description */}
       <div className="flex-1 min-w-0">
         <TitleTag
           {...titleProps as any}
@@ -318,6 +310,9 @@ function AnnouncementRow({ announcement }: { announcement: Announcement }) {
         >
           {announcement.h4_title}
         </TitleTag>
+        {announcement.description && (
+          <p className="text-xs text-zinc-500 truncate mt-0.5">{announcement.description}</p>
+        )}
       </div>
 
       {/* Dates */}

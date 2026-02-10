@@ -159,12 +159,6 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
       {announcement.description && (
         <p className="mt-2 text-xs text-zinc-400 leading-relaxed">{announcement.description}</p>
       )}
-      {announcement.implications && (
-        <div className="mt-3 p-3 bg-status-beta/5 border-l-2 border-status-beta rounded-r-md">
-          <p className="text-xs font-mono uppercase tracking-widest text-status-beta mb-1">Implications</p>
-          <p className="text-xs text-zinc-400 leading-relaxed">{announcement.implications}</p>
-        </div>
-      )}
       <div className="mt-3 pt-3 border-t border-zinc-800/50 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <DatePill label="Beta" date={announcement.beta_date || null} variant="beta" />

@@ -64,12 +64,6 @@ function AnnouncementCard({ announcement, index, showReleaseLink }: { announceme
       {announcement.description && (
         <p className="mt-2 text-xs text-zinc-400 leading-relaxed">{announcement.description}</p>
       )}
-      {announcement.implications && (
-        <div className="mt-2 p-2.5 bg-status-beta/5 border-l-2 border-status-beta rounded-r-md">
-          <p className="text-xs font-mono uppercase tracking-widest text-status-beta mb-1">Implications</p>
-          <p className="text-xs text-zinc-400 leading-relaxed">{announcement.implications}</p>
-        </div>
-      )}
       {showReleaseLink && announcement.release_title && (
         <div className="mt-2 pt-2 border-t border-zinc-800/50">
           <p className="text-xs font-mono text-zinc-500">

@@ -22,7 +22,6 @@ def _get_announcements(cursor, content_id: str) -> list:
             fa.section,
             fa.category,
             fa.description,
-            fa.implications,
             fa.option_id,
             COALESCE(fa.beta_date, fo.beta_date) as beta_date,
             COALESCE(fa.production_date, fo.production_date) as production_date,
@@ -47,7 +46,7 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
         # Get release note — order by date extracted from title for correct chronological order
         if date:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                SELECT source_id, url, title, content_type, first_posted, published_date,
                        {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'release_note'
@@ -57,7 +56,7 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
             """, (date,))
         else:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                SELECT source_id, url, title, content_type, first_posted, published_date,
                        {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'release_note'
@@ -69,7 +68,7 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
         # Get deploy note
         if date:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                SELECT source_id, url, title, content_type, first_posted, published_date,
                        {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'deploy_note'
@@ -79,7 +78,7 @@ def get_dashboard(date: Optional[str] = Query(None, description="Filter by publi
             """, (date,))
         else:
             cursor.execute(f"""
-                SELECT source_id, url, title, content_type, summary, first_posted, published_date,
+                SELECT source_id, url, title, content_type, first_posted, published_date,
                        {_TITLE_DATE_SQL} as production_date
                 FROM content_items
                 WHERE content_type = 'deploy_note'

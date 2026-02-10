@@ -873,30 +873,6 @@ Content: {raw_content[:2000]}"""
 
         return self._call_llm(prompt, max_chars=800)
 
-    def summarize_announcement_implications(
-        self, h4_title: str, raw_content: str, feature_name: str
-    ) -> str:
-        """Generate 2-3 sentence implications for a feature announcement.
-
-        Args:
-            h4_title: The H4 title from release notes.
-            raw_content: The raw content after the H4.
-            feature_name: Name of the related feature.
-
-        Returns:
-            2-3 sentence implications for ed techs.
-        """
-        if not self.client:
-            return ""
-
-        prompt = f"""In 2-3 sentences, explain who is affected by this change and what educational technologists should know. Be actionable.
-
-Title: {h4_title}
-Content: {raw_content[:2000]}
-Feature: {feature_name}"""
-
-        return self._call_llm(prompt, max_chars=1000)
-
     def summarize_announcement_implications_from_comments(
         self, title: str, initial_content: str, comments: List[dict]
     ) -> str:

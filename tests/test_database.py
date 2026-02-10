@@ -792,7 +792,7 @@ class TestFeatureAnnouncements:
         columns = {row[1] for row in cursor.fetchall()}
         expected = {
             "id", "feature_id", "option_id", "setting_id", "content_id", "h4_title", "anchor_id",
-            "section", "category", "raw_content", "description", "implications", "summary",
+            "section", "category", "raw_content", "description", "summary",
             "enable_location_account", "enable_location_course",
             "subaccount_config", "account_course_setting", "permissions",
             "affected_areas", "affects_ui", "added_date", "announced_at", "created_at",
@@ -1014,15 +1014,6 @@ class TestFeatureAnnouncementsTableV2:
         cursor.execute("PRAGMA table_info(feature_announcements)")
         columns = {row['name'] for row in cursor.fetchall()}
         assert 'description' in columns
-
-    def test_feature_announcements_has_implications_column(self, temp_db):
-        """Test that feature_announcements has implications column."""
-        conn = temp_db._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(feature_announcements)")
-        columns = {row['name'] for row in cursor.fetchall()}
-        assert 'implications' in columns
-
 
 class TestUpcomingChanges:
     """Tests for v2.0 upcoming_changes table."""
@@ -1419,14 +1410,12 @@ class TestFeatureSettingsMethods:
             content_id="test-content-1",
             anchor_id="test-anchor-1",
             description="A test description",
-            implications="Some implications",
         )
 
         content = temp_db.get_latest_content_for_setting("test_setting", limit=5)
         assert len(content) == 1
         assert content[0]["source_id"] == "test-content-1"
         assert content[0]["announcement_description"] == "A test description"
-        assert content[0]["implications"] == "Some implications"
 
     def test_get_latest_content_for_setting_empty(self, temp_db):
         """Test returns empty list when no content linked."""

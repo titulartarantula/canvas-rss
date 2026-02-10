@@ -280,25 +280,19 @@ def store_release_notes(
             try:
                 feature.summary = processor.summarize_feature(feature)
 
-                # Generate description and implications for announcements
+                # Generate description for announcements
                 raw = feature.raw_content or feature.summary or ''
                 description = processor.summarize_announcement_description(
                     h4_title=feature.name,
                     raw_content=raw,
                 )
-                implications = processor.summarize_announcement_implications(
-                    h4_title=feature.name,
-                    raw_content=raw,
-                    feature_name=feature.category or 'Unknown',
-                )
 
-                # Persist LLM summaries to the announcement row
-                if description or implications:
+                # Persist LLM description to the announcement row
+                if description:
                     db.update_announcement_summary(
                         content_id=content_id,
                         anchor_id=feature.anchor_id,
                         description=description,
-                        implications=implications,
                     )
 
             except Exception as e:
@@ -309,12 +303,6 @@ def store_release_notes(
         item.content = processor.sanitize_html(item.content)
         item.content = processor.redact_pii(item.content)
         item.title = processor.redact_pii(item.title)
-
-        # Generate content-level summary for the release note
-        try:
-            item.summary = processor.summarize_with_llm(item.content, item.content_type)
-        except Exception as e:
-            logger.warning(f"Failed to generate release note summary: {e}")
 
         item_id = db.insert_item(item)
         if item_id > 0:
@@ -408,10 +396,23 @@ def store_deploy_notes(
             except Exception as e:
                 logger.debug(f"Failed to update deploy announcement lifecycle dates: {e}")
 
-        # Generate summaries for changes
+        # Generate summaries and descriptions for changes
         for change in page.changes:
             try:
                 change.summary = processor.summarize_deploy_change(change)
+
+                # Generate per-announcement description
+                raw = change.raw_content or change.summary or ''
+                description = processor.summarize_announcement_description(
+                    h4_title=change.name,
+                    raw_content=raw,
+                )
+                if description:
+                    db.update_announcement_summary(
+                        content_id=note.source_id,
+                        anchor_id=change.anchor_id,
+                        description=description,
+                    )
             except Exception as e:
                 logger.warning(f"Failed to summarize change '{change.name}': {e}")
 

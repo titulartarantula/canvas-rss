@@ -103,7 +103,7 @@ def get_setting_detail(setting_id: str):
         cursor.execute("""
             SELECT
                 fa.id, fa.h4_title, fa.section, fa.category,
-                fa.description, fa.implications, fa.announced_at,
+                fa.description, fa.announced_at,
                 fa.affected_areas, fa.affects_ui,
                 ci.title as release_title, ci.url as release_url
             FROM feature_announcements fa
