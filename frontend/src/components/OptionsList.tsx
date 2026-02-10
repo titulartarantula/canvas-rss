@@ -10,80 +10,46 @@ interface OptionsListProps {
 
 export default function OptionsList({ options, emptyMessage = 'No feature options' }: OptionsListProps) {
   if (options.length === 0) {
-    return (
-      <div className="text-center py-8 text-ink-500 text-sm">
-        {emptyMessage}
-      </div>
-    )
+    return <div className="text-center py-6 text-xs text-zinc-500 font-mono">{emptyMessage}</div>
   }
 
   return (
-    <div className="divide-y divide-ink-100">
-      {options.map((option, index) => (
-        <OptionRow key={option.option_id} option={option} index={index} />
+    <div className="card overflow-hidden">
+      {options.map((option) => (
+        <Link
+          key={option.option_id}
+          to={`/options/${option.option_id}`}
+          className="data-row group"
+        >
+          <div className="w-20 flex-shrink-0">
+            <StatusPill status={option.status} size="sm" showDot={false} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">
+              {option.canonical_name || option.name}
+            </span>
+            {option.description && (
+              <p className="mt-0.5 text-xs text-zinc-500 truncate">{option.description}</p>
+            )}
+          </div>
+          <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
+            <DatePill label="B" date={option.beta_date} variant="beta" />
+            <DatePill label="P" date={option.production_date} variant="prod" />
+          </div>
+          <ArrowRightIcon className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors flex-shrink-0" />
+        </Link>
       ))}
     </div>
   )
 }
 
-function OptionRow({ option, index }: { option: FeatureOption; index: number }) {
-  return (
-    <Link
-      to={`/options/${option.option_id}`}
-      className="group flex items-start gap-4 py-4 px-2 -mx-2 rounded-lg hover:bg-ink-50 transition-colors"
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
-      {/* Main content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h4 className="font-medium text-ink-900 group-hover:text-accent-primary transition-colors">
-            {option.canonical_name || option.name}
-          </h4>
-          <StatusPill status={option.status} size="sm" />
-        </div>
-
-        {/* Description */}
-        {option.description && (
-          <p className="mt-1.5 text-sm text-ink-600 leading-relaxed">
-            {option.description}
-          </p>
-        )}
-
-        {/* Lifecycle dates */}
-        <div className="mt-2 flex items-center gap-4">
-          <DatePill label="Beta" date={option.beta_date} variant="beta" />
-          <DatePill label="Prod" date={option.production_date} variant="prod" />
-          {option.deprecation_date && (
-            <span className="text-xs text-status-deprecated">
-              Deprecated {(() => { const m = option.deprecation_date.match(/^(\d{4})-(\d{2})-(\d{2})/); const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(option.deprecation_date); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); })()}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Arrow indicator */}
-      <div className="flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <ArrowRightIcon className="w-4 h-4 text-ink-400" />
-      </div>
-    </Link>
-  )
-}
-
-// Skeleton for loading state
 export function OptionsListSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="divide-y divide-ink-100">
+    <div className="card overflow-hidden">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="py-4">
-          <div className="flex items-center gap-3">
-            <div className="skeleton h-5 w-48" />
-            <div className="skeleton h-5 w-16 rounded-full" />
-          </div>
-          <div className="mt-2 skeleton h-4 w-full max-w-md" />
-          <div className="mt-2 flex gap-4">
-            <div className="skeleton h-4 w-20" />
-            <div className="skeleton h-4 w-20" />
-          </div>
+        <div key={i} className="data-row">
+          <div className="w-20"><div className="skeleton h-4 w-14 rounded" /></div>
+          <div className="flex-1"><div className="skeleton h-4 w-48" /></div>
         </div>
       ))}
     </div>

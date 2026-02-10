@@ -7,58 +7,71 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Refined editorial palette
-        ink: {
-          50: '#f8f9fa',
-          100: '#f1f3f5',
-          200: '#e9ecef',
-          300: '#dee2e6',
-          400: '#ced4da',
-          500: '#adb5bd',
-          600: '#868e96',
-          700: '#495057',
-          800: '#343a40',
-          900: '#212529',
-          950: '#0d1117',
+        // Dark ops console palette
+        surface: {
+          0: '#0a0a0b',
+          1: '#111113',
+          2: '#18181b',
+          3: '#1f1f23',
+          4: '#27272a',
         },
-        // Status colors - muted but clear
+        zinc: {
+          50: '#fafafa',
+          100: '#f4f4f5',
+          200: '#e4e4e7',
+          300: '#d4d4d8',
+          400: '#a1a1aa',
+          500: '#71717a',
+          600: '#52525b',
+          700: '#3f3f46',
+          800: '#27272a',
+          900: '#18181b',
+          950: '#09090b',
+        },
+        // Signal colors - vivid against dark
+        signal: {
+          green: '#22c55e',
+          blue: '#3b82f6',
+          violet: '#8b5cf6',
+          amber: '#f59e0b',
+          red: '#ef4444',
+          cyan: '#06b6d4',
+          slate: '#64748b',
+        },
+        // Status mapping
         status: {
-          beta: '#6366f1',      // Indigo - something new
-          preview: '#8b5cf6',   // Violet - experimental
-          optional: '#0ea5e9',  // Sky - available
-          released: '#10b981',  // Emerald - stable
-          deprecated: '#f59e0b', // Amber - caution
-          pending: '#64748b',   // Slate - waiting
+          beta: '#818cf8',      // Indigo-400
+          preview: '#a78bfa',   // Violet-400
+          optional: '#38bdf8',  // Sky-400
+          released: '#4ade80',  // Green-400
+          deprecated: '#fbbf24', // Amber-400
+          pending: '#94a3b8',   // Slate-400
         },
-        // Accent
-        accent: {
-          primary: '#2563eb',   // Blue
-          warm: '#ea580c',      // Orange
-        },
-        // Canvas brand colors (kept for reference)
-        canvas: {
-          primary: '#0374B5',
-          secondary: '#394B58',
-          success: '#0B874B',
-          warning: '#BF4D00',
-          danger: '#D64242',
-          light: '#F5F5F5',
-        }
       },
       fontFamily: {
-        'display': ['"Source Serif 4"', 'Georgia', 'serif'],
-        'body': ['"DM Sans"', 'system-ui', 'sans-serif'],
-        'mono': ['"JetBrains Mono"', 'monospace'],
+        'sans': ['"Geist"', 'system-ui', '-apple-system', 'sans-serif'],
+        'mono': ['"Geist Mono"', '"JetBrains Mono"', 'monospace'],
       },
       fontSize: {
-        'display-lg': ['2.5rem', { lineHeight: '1.1', letterSpacing: '-0.02em' }],
-        'display': ['2rem', { lineHeight: '1.2', letterSpacing: '-0.015em' }],
-        'display-sm': ['1.5rem', { lineHeight: '1.25', letterSpacing: '-0.01em' }],
+        'metric': ['2rem', { lineHeight: '1', letterSpacing: '-0.04em', fontWeight: '600' }],
+        'title': ['1.25rem', { lineHeight: '1.3', letterSpacing: '-0.02em', fontWeight: '600' }],
+        'label': ['0.8125rem', { lineHeight: '1', letterSpacing: '0.04em', fontWeight: '500' }],
+      },
+      boxShadow: {
+        'glow-green': '0 0 20px rgba(34,197,94,0.15)',
+        'glow-amber': '0 0 20px rgba(245,158,11,0.15)',
+        'glow-red': '0 0 20px rgba(239,68,68,0.15)',
+        'glow-blue': '0 0 20px rgba(59,130,246,0.15)',
+        'glow-violet': '0 0 20px rgba(139,92,246,0.15)',
+        'card': '0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03)',
+        'card-hover': '0 4px 12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)',
+        'elevated': '0 8px 30px rgba(0,0,0,0.7)',
       },
       animation: {
-        'fade-in': 'fadeIn 0.5s ease-out',
-        'slide-up': 'slideUp 0.5s ease-out',
-        'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+        'fade-in': 'fadeIn 0.3s ease-out',
+        'slide-up': 'slideUp 0.3s ease-out',
+        'pulse-dot': 'pulseDot 2s ease-in-out infinite',
+        'glow': 'glow 2s ease-in-out infinite alternate',
       },
       keyframes: {
         fadeIn: {
@@ -66,18 +79,17 @@ export default {
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '0%': { opacity: '0', transform: 'translateY(6px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
-        pulseSoft: {
+        pulseDot: {
           '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.7' },
+          '50%': { opacity: '0.4' },
         },
-      },
-      boxShadow: {
-        'card': '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
-        'card-hover': '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06)',
-        'elevated': '0 10px 40px rgba(0,0,0,0.08)',
+        glow: {
+          '0%': { opacity: '0.5' },
+          '100%': { opacity: '1' },
+        },
       },
     },
   },

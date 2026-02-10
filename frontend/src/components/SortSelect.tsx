@@ -6,10 +6,10 @@ interface SortSelectProps {
 }
 
 const SORT_OPTIONS = [
-  { value: 'updated', label: 'Recently Updated' },
-  { value: 'alphabetical', label: 'Alphabetical' },
+  { value: 'updated', label: 'Updated' },
+  { value: 'alphabetical', label: 'A-Z' },
   { value: 'beta_date', label: 'Beta Date' },
-  { value: 'prod_date', label: 'Production Date' },
+  { value: 'prod_date', label: 'Prod Date' },
 ]
 
 export default function SortSelect({ value, onChange }: SortSelectProps) {
@@ -18,23 +18,17 @@ export default function SortSelect({ value, onChange }: SortSelectProps) {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="
-          appearance-none bg-transparent border border-ink-200 rounded-lg
-          pl-3 pr-9 py-2 text-sm text-ink-700 font-medium
-          hover:border-ink-300 hover:bg-ink-50
-          focus:outline-none focus:ring-2 focus:ring-accent-primary/20 focus:border-accent-primary
-          cursor-pointer transition-colors
-        "
+        className="appearance-none bg-surface-2 border border-zinc-800 rounded-md
+                   pl-2.5 pr-7 py-1 text-xs font-mono text-zinc-400
+                   hover:border-zinc-700 focus:outline-none focus:border-zinc-600
+                   focus-visible:ring-2 focus-visible:ring-signal-blue/40
+                   cursor-pointer transition-colors"
       >
         {SORT_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
+          <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
-      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-        <ChevronDownIcon className="w-4 h-4 text-ink-400" />
-      </div>
+      <ChevronDownIcon className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none" />
     </div>
   )
 }

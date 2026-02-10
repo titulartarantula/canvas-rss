@@ -12,22 +12,19 @@ export default function DateNavigator({ currentDate, onDateChange, isLoading }: 
   const formatDisplayDate = (dateStr: string | null) => {
     if (!dateStr) {
       return new Date().toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
+        month: 'short',
         day: 'numeric',
+        year: 'numeric',
       })
     }
-    // Parse date parts directly to avoid timezone shift
     const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
     const d = match
       ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
       : new Date(dateStr)
     return d.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric',
+      year: 'numeric',
     })
   }
 
@@ -46,7 +43,6 @@ export default function DateNavigator({ currentDate, onDateChange, isLoading }: 
   }
 
   const navigatePrevious = () => {
-    // Move back ~14 days (Canvas release cycle)
     const baseDate = currentDate ? parseLocalDate(currentDate) : new Date()
     baseDate.setDate(baseDate.getDate() - 14)
     onDateChange(toDateString(baseDate))
@@ -58,62 +54,54 @@ export default function DateNavigator({ currentDate, onDateChange, isLoading }: 
     baseDate.setDate(baseDate.getDate() + 14)
     const today = new Date()
     if (baseDate >= today) {
-      onDateChange(null) // Return to current
+      onDateChange(null)
     } else {
       onDateChange(toDateString(baseDate))
     }
   }
 
-  const goToCurrent = () => {
-    onDateChange(null)
-  }
-
   return (
-    <div className="flex items-center justify-between py-6">
-      {/* Left: Date display with navigation */}
-      <div className="flex items-center gap-4">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
         <button
           onClick={navigatePrevious}
-          className="p-2 rounded-full hover:bg-ink-100 transition-colors text-ink-500 hover:text-ink-700"
+          className="p-1.5 rounded-md hover:bg-surface-3 transition-colors text-zinc-500 hover:text-zinc-300"
           aria-label="Previous release cycle"
         >
-          <ChevronLeftIcon className="w-5 h-5" />
+          <ChevronLeftIcon className="w-4 h-4" />
         </button>
 
-        <div className="min-w-[280px] text-center">
-          <div className={`font-display text-lg text-ink-800 ${isLoading ? 'opacity-50' : ''}`}>
-            {formatDisplayDate(currentDate)}
-          </div>
-        </div>
+        <span className={`font-mono text-sm text-zinc-300 tabular-nums ${isLoading ? 'opacity-50' : ''}`}>
+          {formatDisplayDate(currentDate)}
+        </span>
 
         <button
           onClick={navigateNext}
           disabled={isCurrentView}
-          className={`p-2 rounded-full transition-colors ${
+          className={`p-1.5 rounded-md transition-colors ${
             isCurrentView
-              ? 'text-ink-300 cursor-not-allowed'
-              : 'hover:bg-ink-100 text-ink-500 hover:text-ink-700'
+              ? 'text-zinc-700 cursor-not-allowed'
+              : 'hover:bg-surface-3 text-zinc-500 hover:text-zinc-300'
           }`}
           aria-label="Next release cycle"
         >
-          <ChevronRightIcon className="w-5 h-5" />
+          <ChevronRightIcon className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Right: Current badge */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {!isCurrentView && (
           <button
-            onClick={goToCurrent}
-            className="text-sm text-accent-primary hover:text-accent-primary/80 font-medium transition-colors"
+            onClick={() => onDateChange(null)}
+            className="text-xs font-mono text-signal-blue hover:text-signal-blue/80 transition-colors"
           >
-            Jump to current
+            jump to current
           </button>
         )}
         {isCurrentView && (
-          <span className="date-pill-current date-pill">
-            <span className="w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse-soft" />
-            Current
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-signal-green/10 text-signal-green text-xs font-mono font-medium">
+            <span className="w-1 h-1 rounded-full bg-signal-green animate-pulse-dot" />
+            LIVE
           </span>
         )}
       </div>

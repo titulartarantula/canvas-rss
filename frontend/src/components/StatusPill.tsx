@@ -8,48 +8,41 @@ interface StatusPillProps {
   showDot?: boolean
 }
 
-const statusConfig: Record<string, { label: string; dotColor: string; bgColor: string; textColor: string }> = {
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   beta: {
     label: 'Beta',
-    dotColor: 'bg-status-beta',
-    bgColor: 'bg-status-beta/10',
-    textColor: 'text-status-beta',
+    color: 'text-status-beta',
+    bg: 'bg-status-beta/15',
   },
   preview: {
     label: 'Preview',
-    dotColor: 'bg-status-preview',
-    bgColor: 'bg-status-preview/10',
-    textColor: 'text-status-preview',
+    color: 'text-status-preview',
+    bg: 'bg-status-preview/15',
   },
   optional: {
     label: 'Optional',
-    dotColor: 'bg-status-optional',
-    bgColor: 'bg-status-optional/10',
-    textColor: 'text-status-optional',
+    color: 'text-status-optional',
+    bg: 'bg-status-optional/15',
   },
   default_on: {
     label: 'Default On',
-    dotColor: 'bg-status-optional',
-    bgColor: 'bg-status-optional/10',
-    textColor: 'text-status-optional',
+    color: 'text-status-optional',
+    bg: 'bg-status-optional/15',
   },
   released: {
     label: 'Released',
-    dotColor: 'bg-status-released',
-    bgColor: 'bg-status-released/10',
-    textColor: 'text-status-released',
+    color: 'text-status-released',
+    bg: 'bg-status-released/15',
   },
   deprecated: {
     label: 'Deprecated',
-    dotColor: 'bg-status-deprecated',
-    bgColor: 'bg-status-deprecated/10',
-    textColor: 'text-status-deprecated',
+    color: 'text-status-deprecated',
+    bg: 'bg-status-deprecated/15',
   },
   pending: {
     label: 'Pending',
-    dotColor: 'bg-status-pending',
-    bgColor: 'bg-status-pending/10',
-    textColor: 'text-status-pending',
+    color: 'text-status-pending',
+    bg: 'bg-status-pending/15',
   },
 }
 
@@ -60,28 +53,24 @@ export default function StatusPill({ status, size = 'sm', showDot = true }: Stat
   }, [status])
 
   const sizeClasses = size === 'sm'
-    ? 'px-2 py-0.5 text-[10px]'
-    : 'px-2.5 py-1 text-xs'
-
-  const dotSize = size === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'
+    ? 'px-1.5 py-0.5 text-[11px] gap-1'
+    : 'px-2.5 py-0.5 text-xs gap-1.5'
 
   return (
     <span
       className={`
-        inline-flex items-center gap-1.5 rounded-full font-medium tracking-wide uppercase
-        ${sizeClasses} ${config.bgColor} ${config.textColor}
-        transition-colors duration-150
+        inline-flex items-center rounded-md font-mono font-medium uppercase tracking-wider
+        ${sizeClasses} ${config.bg} ${config.color}
       `}
     >
       {showDot && (
-        <span className={`${dotSize} rounded-full ${config.dotColor} animate-pulse-soft`} />
+        <span className={`w-1 h-1 rounded-full bg-current animate-pulse-dot`} />
       )}
       {config.label}
     </span>
   )
 }
 
-// Date-based status pills for lifecycle dates
 interface DatePillProps {
   label: string
   date: string | null
@@ -91,8 +80,6 @@ interface DatePillProps {
 export function DatePill({ label, date, variant = 'beta' }: DatePillProps) {
   if (!date) return null
 
-  // Parse date parts directly to avoid timezone shift
-  // (new Date('2026-01-19') is midnight UTC, shifts back a day in local tz)
   const [year, month, day] = date.split('-').map(Number)
   const formattedDate = new Date(year, month - 1, day).toLocaleDateString('en-US', {
     month: 'short',
@@ -104,9 +91,9 @@ export function DatePill({ label, date, variant = 'beta' }: DatePillProps) {
     : 'text-status-released'
 
   return (
-    <span className={`inline-flex items-center gap-1 text-xs ${variantStyles}`}>
-      <span className="text-ink-500 font-normal">{label}</span>
-      <span className="font-medium">{formattedDate}</span>
+    <span className="inline-flex items-center gap-1 font-mono text-xs">
+      <span className="text-zinc-400">{label}</span>
+      <span className={`font-medium ${variantStyles}`}>{formattedDate}</span>
     </span>
   )
 }

@@ -1,8 +1,38 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Geist Sans - loaded from local or CDN */
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 @layer base {
   html {
@@ -11,69 +41,111 @@
   }
 
   body {
-    @apply bg-ink-50 text-ink-800 font-body;
+    @apply bg-surface-0 text-zinc-300 font-sans;
     font-feature-settings: "cv11", "ss01";
   }
 
-  /* Refined selection */
   ::selection {
-    @apply bg-accent-primary/20 text-ink-900;
+    @apply bg-signal-blue/30 text-white;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-700 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-600;
   }
 }
 
 @layer components {
-  /* Editorial card style */
+  /* Console-style card */
   .card {
-    @apply bg-white rounded-lg border border-ink-200/60 shadow-card;
-    @apply transition-all duration-200 ease-out;
+    @apply bg-surface-2 rounded-lg border border-zinc-800/80;
+    @apply transition-all duration-150 ease-out;
   }
-
   .card:hover {
-    @apply shadow-card-hover border-ink-300/60;
+    @apply border-zinc-700/80;
   }
 
-  /* Elegant link style */
-  .link-subtle {
-    @apply text-ink-600 hover:text-ink-900 transition-colors duration-150;
-    @apply underline decoration-ink-300 underline-offset-2 hover:decoration-ink-500;
+  /* Metric card with glow */
+  .metric-card {
+    @apply bg-surface-2 rounded-lg border border-zinc-800/80 relative overflow-hidden;
+    @apply transition-all duration-200;
+  }
+  .metric-card::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: radial-gradient(ellipse at top, var(--glow-color, rgba(255,255,255,0.03)), transparent 70%);
+  }
+  .metric-card:hover::before {
+    @apply opacity-100;
   }
 
-  /* Date pill in navigation */
-  .date-pill {
-    @apply inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium;
-    @apply bg-ink-100 text-ink-700 border border-ink-200/50;
+  /* Data table row */
+  .data-row {
+    @apply flex items-center gap-4 px-4 py-3 border-b border-zinc-800/50;
+    @apply transition-colors duration-100;
+  }
+  .data-row:hover {
+    @apply bg-surface-3/50;
+  }
+  .data-row:last-child {
+    @apply border-b-0;
   }
 
-  .date-pill-current {
-    @apply bg-accent-primary text-white border-accent-primary;
+  /* Status dot */
+  .status-dot {
+    @apply w-1.5 h-1.5 rounded-full;
   }
 
-  /* Status indicator base */
-  .status-indicator {
-    @apply inline-flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase;
+  /* Subtle noise texture overlay */
+  .noise {
+    position: relative;
+  }
+  .noise::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1;
   }
 
-  /* Smooth loading skeleton */
+  /* Compact pill/badge */
+  .pill {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+
+  /* Skeleton loading */
   .skeleton {
-    @apply bg-ink-100 rounded animate-pulse;
+    @apply bg-zinc-800 rounded animate-pulse;
   }
 }
 
 @layer utilities {
-  /* Subtle divider */
-  .divider-subtle {
-    @apply border-t border-ink-200/60;
-  }
-
-  /* Text balance for headlines */
   .text-balance {
     text-wrap: balance;
   }
 
   /* Staggered animation delays */
+  .animate-delay-50 { animation-delay: 50ms; }
   .animate-delay-100 { animation-delay: 100ms; }
+  .animate-delay-150 { animation-delay: 150ms; }
   .animate-delay-200 { animation-delay: 200ms; }
+  .animate-delay-250 { animation-delay: 250ms; }
   .animate-delay-300 { animation-delay: 300ms; }
-  .animate-delay-400 { animation-delay: 400ms; }
-  .animate-delay-500 { animation-delay: 500ms; }
+
+  /* Monospace data display */
+  .data-mono {
+    @apply font-mono text-sm tabular-nums;
+  }
 }
