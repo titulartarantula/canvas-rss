@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { releasesApi } from '../api/client'
 import type { Announcement, UpcomingChange } from '../types'
-import { DatePill } from '../components/StatusPill'
+import StatusPill, { DatePill } from '../components/StatusPill'
 import {
   ChevronLeftIcon,
   ExternalLinkIcon,
@@ -19,16 +19,13 @@ export default function ReleaseDetail() {
     queryKey: ['release', contentId],
     queryFn: () => releasesApi.get(contentId!),
     enabled: !!contentId,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   })
 
-  // Group announcements by section
   const groupedAnnouncements = useMemo(() => {
     if (!data?.announcements) return []
-
     const groups: { section: string; announcements: Announcement[] }[] = []
     const sectionMap = new Map<string, Announcement[]>()
-
     data.announcements.forEach(announcement => {
       const section = announcement.section || 'General'
       if (!sectionMap.has(section)) {
@@ -37,145 +34,99 @@ export default function ReleaseDetail() {
       }
       sectionMap.get(section)!.push(announcement)
     })
-
     return groups
   }, [data?.announcements])
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="animate-fade-in">
         <BackLink />
-        <HeaderSkeleton />
-        <div className="mt-10 space-y-8">
-          <SummarySkeleton />
-          <AnnouncementsSkeleton />
+        <div className="mt-6">
+          <div className="skeleton h-5 w-24 mb-3 rounded" />
+          <div className="skeleton h-7 w-96 mb-3" />
+          <div className="skeleton h-4 w-48" />
+        </div>
+        <div className="mt-8 space-y-4">
+          <div className="card p-5"><div className="skeleton h-4 w-full" /><div className="mt-2 skeleton h-4 w-3/4" /></div>
+          {[1, 2, 3].map(i => (<div key={i} className="card p-4"><div className="skeleton h-4 w-48 mb-2" /><div className="skeleton h-3 w-full" /></div>))}
         </div>
       </div>
     )
   }
 
-  // Error state
   if (isError || !data) {
     return (
       <div className="animate-fade-in">
         <BackLink />
-        <div className="mt-8 card p-12 text-center">
-          <p className="text-status-deprecated font-medium text-lg">Release not found</p>
-          <p className="mt-2 text-ink-500">
+        <div className="mt-6 card p-8 text-center">
+          <p className="text-signal-red text-sm">Release not found</p>
+          <p className="mt-1 text-xs text-zinc-500">
             {error instanceof Error ? error.message : 'The requested release could not be loaded.'}
           </p>
-          <Link
-            to="/releases"
-            className="mt-6 inline-flex items-center gap-2 text-accent-primary hover:text-accent-primary/80 font-medium"
-          >
-            <ChevronLeftIcon className="w-4 h-4" />
-            Back to Archive
-          </Link>
         </div>
       </div>
     )
   }
 
   const isDeployNote = data.content_type === 'deploy_note'
-  const typeLabel = isDeployNote ? 'Deploy Notes' : 'Release Notes'
-  const typeColor = isDeployNote ? 'text-status-optional bg-status-optional/10' : 'text-status-beta bg-status-beta/10'
+  const typeLabel = isDeployNote ? 'Deploy' : 'Release'
+  const typeColor = isDeployNote ? 'text-status-optional bg-status-optional/15' : 'text-status-beta bg-status-beta/15'
 
   const pubStr = data.production_date || data.published_date || ''
   const pubMatch = pubStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
   const publishDate = pubMatch
     ? new Date(Number(pubMatch[1]), Number(pubMatch[2]) - 1, Number(pubMatch[3]))
     : new Date(pubStr)
-  const formattedDate = publishDate.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
 
   return (
     <div className="animate-fade-in">
-      {/* Back link */}
       <BackLink />
 
-      {/* Header */}
-      <header className="mt-6">
-        {/* Type badge and date */}
-        <div className="flex items-center gap-3 text-sm">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wide ${typeColor}`}>
-            {typeLabel}
-          </span>
-          <span className="text-ink-400">·</span>
-          <span className="text-ink-500 flex items-center gap-1.5">
-            <CalendarIcon className="w-3.5 h-3.5" />
-            {formattedDate}
+      <header className="mt-4">
+        <div className="flex items-center gap-3 text-xs font-mono">
+          <span className={`pill ${typeColor}`}>{typeLabel}</span>
+          <span className="text-zinc-500 flex items-center gap-1">
+            <CalendarIcon className="w-3 h-3" />
+            {publishDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
           </span>
         </div>
-
-        {/* Title */}
-        <h1 className="mt-4 font-display text-display font-semibold text-ink-900 leading-tight">
-          {data.title}
-        </h1>
-
-        {/* External link */}
+        <h1 className="mt-3 text-title text-zinc-100 leading-tight">{data.title}</h1>
         <a
           href={data.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-1.5 text-sm text-accent-primary hover:underline"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-mono text-signal-blue hover:text-signal-blue/80 transition-colors"
         >
-          View original release notes
-          <ExternalLinkIcon className="w-3.5 h-3.5" />
+          view original <ExternalLinkIcon className="w-3 h-3" />
         </a>
       </header>
 
-      {/* Summary */}
       {data.summary && (
-        <section className="mt-8">
-          <div className="card p-6 bg-gradient-to-br from-ink-50 to-white border-l-4 border-accent-primary">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-500 mb-3">
-              Summary
-            </h2>
-            <p className="text-ink-800 leading-relaxed">
-              {data.summary}
-            </p>
-          </div>
-        </section>
+        <div className="mt-6 card p-4 border-l-2 border-l-signal-blue bg-signal-blue/5">
+          <p className="text-xs font-mono uppercase tracking-widest text-zinc-400 mb-2">Summary</p>
+          <p className="text-sm text-zinc-300 leading-relaxed">{data.summary}</p>
+        </div>
       )}
 
-      {/* Divider */}
-      <div className="mt-10 border-t border-ink-200" />
+      <div className="mt-8 border-t border-zinc-800/50" />
 
-      {/* Main content grid */}
-      <div className="mt-10 grid gap-10 lg:grid-cols-3">
-        {/* Announcements - main column */}
+      <div className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {groupedAnnouncements.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-sm text-ink-500">No feature announcements in this release</p>
+              <p className="text-xs text-zinc-500 font-mono">No feature announcements</p>
             </div>
           ) : (
-            <div className="space-y-10">
-              {groupedAnnouncements.map((group, groupIndex) => (
-                <section key={group.section} className="animate-slide-up" style={{ animationDelay: `${groupIndex * 50}ms` }}>
-                  {/* Section header */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <h2 className="font-display text-lg font-semibold text-ink-900">
-                      {group.section}
-                    </h2>
-                    <span className="px-2 py-0.5 text-xs font-medium bg-ink-100 text-ink-600 rounded-full">
-                      {group.announcements.length}
-                    </span>
+            <div className="space-y-8">
+              {groupedAnnouncements.map((group) => (
+                <section key={group.section}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-label uppercase text-zinc-400 font-mono">{group.section}</h2>
+                    <span className="text-xs font-mono text-zinc-500">{group.announcements.length}</span>
                   </div>
-
-                  {/* Announcements in this section */}
-                  <div className="space-y-4">
-                    {group.announcements.map((announcement, index) => (
-                      <AnnouncementCard
-                        key={announcement.id}
-                        announcement={announcement}
-                        index={index}
-                      />
+                  <div className="space-y-3">
+                    {group.announcements.map((announcement) => (
+                      <AnnouncementCard key={announcement.id} announcement={announcement} />
                     ))}
                   </div>
                 </section>
@@ -184,9 +135,8 @@ export default function ReleaseDetail() {
           )}
         </div>
 
-        {/* Sidebar - upcoming changes */}
         <div>
-          <div className="lg:sticky lg:top-8">
+          <div className="lg:sticky lg:top-16">
             {data.upcoming_changes && data.upcoming_changes.length > 0 && (
               <UpcomingChangesSection changes={data.upcoming_changes} />
             )}
@@ -197,57 +147,44 @@ export default function ReleaseDetail() {
   )
 }
 
-function AnnouncementCard({ announcement, index }: { announcement: Announcement; index: number }) {
+function AnnouncementCard({ announcement }: { announcement: Announcement }) {
   return (
-    <div
-      className="card p-5 animate-slide-up"
-      style={{ animationDelay: `${index * 30}ms` }}
-    >
-      {/* Category badge */}
+    <div className="card p-4">
       {announcement.category && (
-        <span className="inline-block px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-ink-100 text-ink-600 rounded mb-3">
+        <span className="pill bg-surface-3 text-zinc-500 mb-2 inline-block">
           {announcement.category}
         </span>
       )}
-
-      {/* Title */}
-      <h3 className="font-medium text-ink-900">
-        {announcement.h4_title}
-      </h3>
-
-      {/* Description */}
+      <h3 className="text-sm font-medium text-zinc-200">{announcement.h4_title}</h3>
       {announcement.description && (
-        <p className="mt-2 text-sm text-ink-600 leading-relaxed">
-          {announcement.description}
-        </p>
+        <p className="mt-2 text-xs text-zinc-400 leading-relaxed">{announcement.description}</p>
       )}
-
-      {/* Implications */}
       {announcement.implications && (
-        <div className="mt-3 p-3 bg-status-beta/5 border-l-2 border-status-beta rounded-r-lg">
-          <p className="text-xs font-medium text-status-beta uppercase tracking-wide mb-1">
-            Implications
-          </p>
-          <p className="text-sm text-ink-700 leading-relaxed">
-            {announcement.implications}
-          </p>
+        <div className="mt-3 p-3 bg-status-beta/5 border-l-2 border-status-beta rounded-r-md">
+          <p className="text-xs font-mono uppercase tracking-widest text-status-beta mb-1">Implications</p>
+          <p className="text-xs text-zinc-400 leading-relaxed">{announcement.implications}</p>
         </div>
       )}
-
-      {/* Footer with dates and link */}
-      <div className="mt-4 pt-3 border-t border-ink-100 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
+      <div className="mt-3 pt-3 border-t border-zinc-800/50 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
           <DatePill label="Beta" date={announcement.beta_date || null} variant="beta" />
           <DatePill label="Prod" date={announcement.production_date || null} variant="prod" />
+          {announcement.option_status && <StatusPill status={announcement.option_status} size="sm" showDot={false} />}
         </div>
-
         {announcement.option_id && (
           <Link
             to={`/options/${announcement.option_id}`}
-            className="inline-flex items-center gap-1 text-xs text-accent-primary hover:underline font-medium"
+            className="text-xs font-mono text-signal-blue hover:text-signal-blue/80 inline-flex items-center gap-0.5"
           >
-            View option
-            <ArrowRightIcon className="w-3 h-3" />
+            view option <ArrowRightIcon className="w-3 h-3" />
+          </Link>
+        )}
+        {!announcement.option_id && announcement.setting_id && (
+          <Link
+            to={`/settings/${announcement.setting_id}`}
+            className="text-xs font-mono text-signal-cyan hover:text-signal-cyan/80 inline-flex items-center gap-0.5"
+          >
+            view setting <ArrowRightIcon className="w-3 h-3" />
           </Link>
         )}
       </div>
@@ -256,125 +193,43 @@ function AnnouncementCard({ announcement, index }: { announcement: Announcement;
 }
 
 function UpcomingChangesSection({ changes }: { changes: UpcomingChange[] }) {
-  // Sort by date (parse locally to avoid timezone shift)
   const parseLocalDate = (dateStr: string): Date => {
     const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
-    return match
-      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-      : new Date(dateStr)
+    return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(dateStr)
   }
   const sortedChanges = [...changes].sort((a, b) =>
     parseLocalDate(a.change_date).getTime() - parseLocalDate(b.change_date).getTime()
   )
 
   return (
-    <section className="card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <ExclamationTriangleIcon className="w-4 h-4 text-status-pending" />
-        <h2 className="font-display text-sm font-semibold text-ink-900 uppercase tracking-wide">
-          Upcoming Changes
-        </h2>
+    <div className="card overflow-hidden">
+      <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
+        <ExclamationTriangleIcon className="w-3.5 h-3.5 text-signal-amber" />
+        <span className="text-label uppercase text-zinc-400 font-mono">Upcoming Changes</span>
       </div>
-
-      <div className="space-y-4">
+      <div className="divide-y divide-zinc-800/30">
         {sortedChanges.map((change, index) => {
-          const cdStr = change.change_date || ''
-          const cdMatch = cdStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
-          const changeDate = cdMatch
-            ? new Date(Number(cdMatch[1]), Number(cdMatch[2]) - 1, Number(cdMatch[3]))
-            : new Date(cdStr)
+          const changeDate = parseLocalDate(change.change_date)
           const isUpcoming = changeDate > new Date()
-          const formattedDate = changeDate.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          })
-
           return (
-            <div
-              key={index}
-              className={`
-                relative pl-4 border-l-2 transition-colors
-                ${isUpcoming ? 'border-status-pending' : 'border-ink-200'}
-              `}
-            >
-              <p className={`
-                text-xs font-medium
-                ${isUpcoming ? 'text-status-pending' : 'text-ink-500'}
-              `}>
-                {formattedDate}
+            <div key={index} className={`px-4 py-3 border-l-2 ${isUpcoming ? 'border-l-signal-amber' : 'border-l-zinc-700'}`}>
+              <p className={`text-xs font-mono ${isUpcoming ? 'text-signal-amber' : 'text-zinc-500'}`}>
+                {changeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
-              <p className="mt-1 text-sm text-ink-700 leading-relaxed">
-                {change.description}
-              </p>
+              <p className="mt-1 text-xs text-zinc-400 leading-relaxed">{change.description}</p>
             </div>
           )
         })}
       </div>
-    </section>
+    </div>
   )
 }
 
 function BackLink() {
   return (
-    <Link
-      to="/releases"
-      className="inline-flex items-center gap-1.5 text-sm text-ink-600 hover:text-ink-900 transition-colors"
-    >
-      <ChevronLeftIcon className="w-4 h-4" />
-      Back to Archive
+    <Link to="/releases" className="inline-flex items-center gap-1 text-xs font-mono text-zinc-500 hover:text-zinc-300 transition-colors">
+      <ChevronLeftIcon className="w-3.5 h-3.5" />
+      release history
     </Link>
-  )
-}
-
-function HeaderSkeleton() {
-  return (
-    <header className="mt-6">
-      <div className="flex items-center gap-3">
-        <div className="skeleton h-6 w-24 rounded" />
-        <div className="skeleton h-4 w-32" />
-      </div>
-      <div className="mt-4 skeleton h-8 w-96" />
-      <div className="mt-4 skeleton h-4 w-48" />
-    </header>
-  )
-}
-
-function SummarySkeleton() {
-  return (
-    <div className="card p-6">
-      <div className="skeleton h-3 w-16 mb-3" />
-      <div className="space-y-2">
-        <div className="skeleton h-4 w-full" />
-        <div className="skeleton h-4 w-full" />
-        <div className="skeleton h-4 w-3/4" />
-      </div>
-    </div>
-  )
-}
-
-function AnnouncementsSkeleton() {
-  return (
-    <div className="space-y-8">
-      <div>
-        <div className="skeleton h-6 w-40 mb-4" />
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="card p-5">
-              <div className="skeleton h-4 w-16 mb-3 rounded" />
-              <div className="skeleton h-5 w-64" />
-              <div className="mt-2 space-y-2">
-                <div className="skeleton h-4 w-full" />
-                <div className="skeleton h-4 w-3/4" />
-              </div>
-              <div className="mt-4 pt-3 border-t border-ink-100 flex gap-4">
-                <div className="skeleton h-4 w-20" />
-                <div className="skeleton h-4 w-20" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   )
 }

@@ -4,6 +4,8 @@ import type {
   Feature,
   FeatureOption,
   FeatureOptionDetail,
+  FeatureSetting,
+  FeatureSettingDetail,
   Release,
   SearchResults,
   Announcement,
@@ -28,7 +30,7 @@ export const featuresApi = {
     const { data } = await api.get('/features', { params });
     return data;
   },
-  get: async (featureId: string): Promise<Feature & { options: FeatureOption[]; announcements: Announcement[]; community_posts: CommunityPost[] }> => {
+  get: async (featureId: string): Promise<Feature & { options: FeatureOption[]; settings: FeatureSetting[]; announcements: Announcement[]; community_posts: CommunityPost[] }> => {
     const { data } = await api.get(`/features/${featureId}`);
     return data;
   },
@@ -45,6 +47,21 @@ export const optionsApi = {
   },
   get: async (optionId: string): Promise<FeatureOptionDetail> => {
     const { data } = await api.get(`/options/${optionId}`);
+    return data;
+  },
+};
+
+export const settingsApi = {
+  list: async (params?: {
+    status?: string;
+    feature?: string;
+    sort?: string;
+  }): Promise<{ settings: FeatureSetting[] }> => {
+    const { data } = await api.get('/settings', { params });
+    return data;
+  },
+  get: async (settingId: string): Promise<FeatureSettingDetail> => {
+    const { data } = await api.get(`/settings/${settingId}`);
     return data;
   },
 };

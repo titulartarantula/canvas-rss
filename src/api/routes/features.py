@@ -37,6 +37,7 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
                 f.description,
                 f.status,
                 COUNT(fo.option_id) as option_count,
+                (SELECT COUNT(*) FROM feature_settings fs WHERE fs.feature_id = f.feature_id) as setting_count,
                 SUM(CASE WHEN fo.status = 'preview' THEN 1 ELSE 0 END) as preview_count,
                 SUM(CASE WHEN fo.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
                 SUM(CASE WHEN fo.status = 'optional' THEN 1 ELSE 0 END) as optional_count

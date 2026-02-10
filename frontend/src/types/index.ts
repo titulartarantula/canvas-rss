@@ -4,10 +4,13 @@ export interface Feature {
   description: string | null;
   status: string;
   option_count?: number;
+  setting_count?: number;
   preview_count?: number;
   pending_count?: number;
   optional_count?: number;
   status_summary?: string;
+  options?: FeatureOption[];
+  settings?: FeatureSetting[];
 }
 
 export interface FeatureOption {
@@ -49,6 +52,34 @@ export interface FeatureOptionDetail extends FeatureOption {
   community_posts: CommunityPost[];
 }
 
+export interface FeatureSetting {
+  setting_id: string;
+  feature_id: string;
+  name: string;
+  description: string | null;
+  meta_summary: string | null;
+  status: string;
+  beta_date: string | null;
+  production_date: string | null;
+  affected_areas: string | null;
+  affects_ui: boolean | null;
+  last_updated: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  feature_name?: string;
+}
+
+export interface FeatureSettingDetail extends FeatureSetting {
+  affects_roles: string | null;
+  feature: {
+    feature_id: string;
+    name: string;
+    description: string | null;
+  };
+  announcements: Announcement[];
+  community_posts: CommunityPost[];
+}
+
 export interface Announcement {
   id: number;
   h4_title: string;
@@ -60,6 +91,7 @@ export interface Announcement {
   release_title?: string;
   release_url?: string;
   option_id?: string;
+  setting_id?: string;
   beta_date?: string | null;
   production_date?: string | null;
   option_status?: string;
@@ -110,5 +142,6 @@ export interface DashboardData {
 export interface SearchResults {
   features: Feature[];
   options: FeatureOption[];
+  settings: FeatureSetting[];
   content: CommunityPost[];
 }

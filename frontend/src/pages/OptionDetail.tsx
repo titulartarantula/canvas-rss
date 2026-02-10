@@ -15,54 +15,38 @@ export default function OptionDetail() {
     queryKey: ['option', optionId],
     queryFn: () => optionsApi.get(optionId!),
     enabled: !!optionId,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   })
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="animate-fade-in">
         <BackLink />
-        <HeaderSkeleton />
-        <div className="mt-10 grid gap-8 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-8">
-            <Section title="Deployment Status">
-              <DeploymentTimelineSkeleton />
-            </Section>
-            <Section title="Configuration">
-              <ConfigurationTableSkeleton />
-            </Section>
-            <Section title="Announcement History">
-              <AnnouncementsListSkeleton count={2} />
-            </Section>
+        <div className="mt-6">
+          <div className="skeleton h-6 w-48 mb-2" />
+          <div className="skeleton h-4 w-32 mb-6" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3 mt-6">
+          <div className="lg:col-span-2 space-y-6">
+            <Section title="Deployment"><DeploymentTimelineSkeleton /></Section>
+            <Section title="Configuration"><ConfigurationTableSkeleton /></Section>
+            <Section title="Announcements"><AnnouncementsListSkeleton count={2} /></Section>
           </div>
-          <div>
-            <Section title="Community Activity">
-              <CommunityPostsListSkeleton count={3} />
-            </Section>
-          </div>
+          <Section title="Community"><CommunityPostsListSkeleton count={3} /></Section>
         </div>
       </div>
     )
   }
 
-  // Error state
   if (isError || !data) {
     return (
       <div className="animate-fade-in">
         <BackLink />
-        <div className="mt-8 card p-12 text-center">
-          <p className="text-status-deprecated font-medium text-lg">Option not found</p>
-          <p className="mt-2 text-ink-500">
-            {error instanceof Error ? error.message : 'The requested feature option could not be loaded.'}
+        <div className="mt-6 card p-8 text-center">
+          <p className="text-signal-red text-sm">Option not found</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {error instanceof Error ? error.message : 'The requested option could not be loaded.'}
           </p>
-          <Link
-            to="/options"
-            className="mt-6 inline-flex items-center gap-2 text-accent-primary hover:text-accent-primary/80 font-medium"
-          >
-            <ChevronLeftIcon className="w-4 h-4" />
-            Back to Options
-          </Link>
         </div>
       </div>
     )
@@ -73,25 +57,20 @@ export default function OptionDetail() {
 
   return (
     <div className="animate-fade-in">
-      {/* Back link */}
       <BackLink />
 
-      {/* Header */}
-      <header className="mt-6">
-        <div className="flex items-start gap-4 flex-wrap">
-          <h1 className="font-display text-display font-semibold text-ink-900">
-            {displayName}
-          </h1>
+      <header className="mt-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-title text-zinc-100">{displayName}</h1>
           <StatusPill status={data.status} size="md" />
         </div>
 
-        {/* Breadcrumb - parent feature */}
         {data.feature && (
-          <div className="mt-3 flex items-center gap-1.5 text-sm">
-            <span className="text-ink-500">Part of</span>
+          <div className="mt-2 flex items-center gap-1 text-xs font-mono">
+            <span className="text-zinc-500">in</span>
             <Link
               to={`/features/${data.feature.feature_id}`}
-              className="text-accent-primary hover:underline font-medium inline-flex items-center gap-1"
+              className="text-signal-blue hover:text-signal-blue/80 transition-colors inline-flex items-center gap-0.5"
             >
               {data.feature.name}
               <ChevronRightIcon className="w-3 h-3" />
@@ -99,34 +78,24 @@ export default function OptionDetail() {
           </div>
         )}
 
-        {/* Meta summary */}
         {data.meta_summary && (
-          <p className="mt-4 text-ink-600 leading-relaxed max-w-3xl">
+          <p className="mt-3 text-sm text-zinc-400 leading-relaxed max-w-3xl">
             {data.meta_summary}
           </p>
         )}
-
-        {/* Description (if different from meta_summary) */}
         {data.description && data.description !== data.meta_summary && (
-          <p className="mt-3 text-sm text-ink-500 leading-relaxed max-w-3xl">
+          <p className="mt-2 text-xs text-zinc-500 leading-relaxed max-w-3xl">
             {data.description}
           </p>
         )}
       </header>
 
-      {/* Divider */}
-      <div className="mt-8 border-t border-ink-200" />
+      <div className="mt-6 border-t border-zinc-800/50" />
 
-      {/* Main content grid */}
-      <div className="mt-8 grid gap-8 lg:grid-cols-3">
-        {/* Left column - Timeline, Config, Announcements */}
-        <div className="lg:col-span-2 space-y-10">
-          {/* Deployment Timeline */}
-          <Section
-            title="Deployment Status"
-            description="Track this option's journey through the release cycle"
-          >
-            <div className="card p-6">
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-8">
+          <Section title="Deployment Status">
+            <div className="card p-5">
               <DeploymentTimeline
                 status={data.status}
                 firstSeen={data.first_seen}
@@ -137,12 +106,8 @@ export default function OptionDetail() {
             </div>
           </Section>
 
-          {/* Configuration */}
-          <Section
-            title="Configuration"
-            description="How this option can be enabled and configured"
-          >
-            <div className="card p-5">
+          <Section title="Configuration">
+            <div className="card p-4">
               <ConfigurationTable
                 configuration={data.configuration}
                 userGroupUrl={data.user_group_url}
@@ -150,31 +115,15 @@ export default function OptionDetail() {
             </div>
           </Section>
 
-          {/* Announcement History */}
-          <Section
-            title="Announcement History"
-            count={announcements.length}
-            description="When this option was mentioned in release notes"
-          >
-            <AnnouncementsList
-              announcements={announcements}
-              emptyMessage="No announcements found for this option"
-            />
+          <Section title="Announcements" count={announcements.length}>
+            <AnnouncementsList announcements={announcements} emptyMessage="No announcements" />
           </Section>
         </div>
 
-        {/* Right column - Community Activity */}
         <div>
-          <div className="lg:sticky lg:top-8">
-            <Section
-              title="Community Activity"
-              count={community_posts.length}
-              description="Related discussions and blog posts"
-            >
-              <CommunityPostsList
-                posts={community_posts}
-                emptyMessage="No community posts found"
-              />
+          <div className="lg:sticky lg:top-16">
+            <Section title="Community" count={community_posts.length}>
+              <CommunityPostsList posts={community_posts} emptyMessage="No community posts" />
             </Section>
           </div>
         </div>
@@ -185,61 +134,23 @@ export default function OptionDetail() {
 
 function BackLink() {
   return (
-    <Link
-      to="/options"
-      className="inline-flex items-center gap-1.5 text-sm text-ink-600 hover:text-ink-900 transition-colors"
-    >
-      <ChevronLeftIcon className="w-4 h-4" />
-      Back to Options
+    <Link to="/registry" className="inline-flex items-center gap-1 text-xs font-mono text-zinc-500 hover:text-zinc-300 transition-colors">
+      <ChevronLeftIcon className="w-3.5 h-3.5" />
+      registry
     </Link>
   )
 }
 
-function Section({
-  title,
-  count,
-  description,
-  children,
-}: {
-  title: string
-  count?: number
-  description?: string
-  children: React.ReactNode
-}) {
+function Section({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
   return (
     <section>
-      <div className="mb-4">
-        <div className="flex items-center gap-2">
-          <h2 className="font-display text-lg font-semibold text-ink-900">{title}</h2>
-          {count !== undefined && count > 0 && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-ink-100 text-ink-600 rounded-full">
-              {count}
-            </span>
-          )}
-        </div>
-        {description && (
-          <p className="mt-1 text-sm text-ink-500">{description}</p>
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-label uppercase text-zinc-400 font-mono">{title}</h2>
+        {count !== undefined && count > 0 && (
+          <span className="text-xs font-mono text-zinc-500">{count}</span>
         )}
       </div>
       {children}
     </section>
-  )
-}
-
-function HeaderSkeleton() {
-  return (
-    <header className="mt-6">
-      <div className="flex items-center gap-4">
-        <div className="skeleton h-8 w-64" />
-        <div className="skeleton h-6 w-20 rounded-full" />
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <div className="skeleton h-4 w-48" />
-      </div>
-      <div className="mt-4 space-y-2">
-        <div className="skeleton h-4 w-full max-w-2xl" />
-        <div className="skeleton h-4 w-3/4 max-w-xl" />
-      </div>
-    </header>
   )
 }
