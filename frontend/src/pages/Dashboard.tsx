@@ -52,17 +52,6 @@ export default function Dashboard() {
   const upcomingChanges = data?.upcoming_changes ?? []
   const recentActivity = data?.recent_activity ?? []
 
-  // Calculate metrics
-  const breakingChanges = upcomingChanges.filter(c => {
-    const cdStr = c.change_date || ''
-    const cdMatch = cdStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
-    const changeDate = cdMatch
-      ? new Date(Number(cdMatch[1]), Number(cdMatch[2]) - 1, Number(cdMatch[3]))
-      : new Date(cdStr)
-    const daysUntil = Math.ceil((changeDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-    return daysUntil <= 30 && daysUntil >= 0
-  })
-
   return (
     <div className="animate-fade-in">
       <DateNavigator
@@ -91,9 +80,9 @@ export default function Dashboard() {
         />
         <MetricCard
           label="Upcoming"
-          value={String(breakingChanges.length)}
-          sub={breakingChanges.length > 0 ? 'within 30 days' : 'no breaking changes'}
-          color={breakingChanges.length > 0 ? 'amber' : 'green'}
+          value={String(upcomingChanges.length)}
+          sub={upcomingChanges.length > 0 ? `${upcomingChanges.length} change${upcomingChanges.length !== 1 ? 's' : ''}` : 'no changes'}
+          color={upcomingChanges.length > 0 ? 'amber' : 'green'}
           icon={<ExclamationTriangleIcon className="w-4 h-4" />}
           isLoading={isLoading}
         />
@@ -406,6 +395,11 @@ function UpcomingPanel({ changes, isLoading }: { changes: UpcomingChange[]; isLo
               </div>
             )
           })}
+          <div className="px-4 py-3">
+            <a href="https://community.instructure.com/en/kb/articles/664261-instructure-enforcements-deprecations-and-breaking-changes" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-mono text-signal-blue hover:text-signal-blue/80 transition-colors">
+              See all upcoming changes <ExternalLinkIcon className="w-3 h-3" />
+            </a>
+          </div>
         </div>
       )}
     </div>
