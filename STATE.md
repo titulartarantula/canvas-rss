@@ -12,6 +12,7 @@
 | Feature settings backend parity     | Coding  | Complete | 7 tasks, 448 tests total       |
 | Feature tracker API + frontend      | Coding  | Complete | FastAPI + React SPA on :8986   |
 | v2.0 schema redesign               | Coding  | Complete | Four-tier data model           |
+| Simplify dashboard display          | Coding  | Complete | Remove summaries/implications  |
 | Frontend settings page              | Coding  | Pending  | Settings not yet visible in UI |
 
 ## Completed
@@ -24,7 +25,7 @@
 - [x] Expanded `CANVAS_FEATURES` in constants.py with missing entries
 - [x] Updated `upsert_feature_option()` and `insert_feature_announcement()` functions
 - [x] Added migrations for existing databases
-- [x] v2.0 LLM summaries: description, meta_summary, implications on features/options/announcements
+- [x] v2.0 LLM summaries: description, meta_summary on features/options/announcements
 - [x] Lifecycle date tracking: beta_date, production_date, deprecation_date
 - [x] Feature tracker API (FastAPI) + React frontend on port 8986
 - [x] Docker deployment with single container serving API + frontend
@@ -51,6 +52,14 @@
 - [x] CLI loads `.env` automatically (matches main.py behavior)
 - [x] Generated meta-summaries for all 79 settings and 10 options
 - [x] 448 tests total (441 pass, 7 pre-existing failures)
+
+**Dashboard display simplification (v2.1.2, branch: feature/v2.0-database-schema):**
+- [x] Removed per-feed LLM summary generation for release/deploy notes
+- [x] Removed `implications` field entirely (generation, DB column, API, frontend)
+- [x] Added per-announcement description generation for deploy notes
+- [x] Dashboard shows per-item descriptions under announcement titles
+- [x] Prominent "View on Canvas" external link on dashboard
+- [x] 446 tests total (436 pass, 6 pre-existing failures unrelated to changes)
 
 **Remaining frontend gap:**
 - [ ] Frontend has no Settings page — backend API `/api/settings` exists but is unconsumed
@@ -216,6 +225,14 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-02-10: Simplify dashboard display (v2.1.2) - Coding Agent
+  - Stopped per-feed LLM summary generation for release/deploy notes (per-item descriptions more useful)
+  - Removed `implications` field from `feature_announcements` (DB column, generation, API, frontend)
+  - Added per-announcement description generation for deploy notes (parity with release notes)
+  - Dashboard now shows per-item descriptions under announcement titles
+  - Added prominent "View on Canvas" external link to dashboard release/deploy sections
+  - Updated 15 files: main.py, content_processor.py, database.py, backfill_summaries.py, cli.py, 4 API routes, Dashboard.tsx, ReleaseDetail.tsx, AnnouncementsList.tsx, types/index.ts, 2 test files
+  - 446 tests (436 pass, 6 pre-existing failures)
 - 2026-02-09: Feature settings backend parity (v2.1.1) - Coding Agent
   - Added `get_latest_content_for_setting()` DB method
   - Added `summarize_feature_setting_description()` and adapted `generate_meta_summary()` for settings
