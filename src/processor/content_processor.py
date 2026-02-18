@@ -1007,7 +1007,7 @@ Current status: {implementation_status}
 Recent activity (newest first):
 {summaries_text}
 
-In 3-4 sentences, summarize the current state of this {entity_label} for ed techs considering deployment. Cover: readiness for wide rollout, recent changes (especially status transitions like beta→production), community sentiment, and any concerns. Be direct and actionable."""
+In 3-4 sentences, summarize the current deployment readiness of "{option_name}" for ed techs. Focus specifically on this {entity_label} (not sub-features or related options). Cover: readiness for wide rollout, recent status changes, and any concerns. Be direct and actionable. Do not use markdown formatting."""
 
         return self._call_llm(prompt, max_chars=1000)
 

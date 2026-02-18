@@ -6,6 +6,7 @@ import DeploymentTimeline, { DeploymentTimelineSkeleton } from '../components/De
 import AnnouncementsList, { AnnouncementsListSkeleton } from '../components/AnnouncementsList'
 import CommunityPostsList, { CommunityPostsListSkeleton } from '../components/CommunityPostsList'
 import InfoTooltip from '../components/InfoTooltip'
+import InlineMarkdown from '../components/InlineMarkdown'
 import { ChevronLeftIcon, ChevronRightIcon, CogIcon } from '../components/icons'
 
 export default function SettingDetail() {
@@ -107,9 +108,7 @@ export default function SettingDetail() {
             <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 mb-1.5">
               Deployment Readiness
             </h3>
-            <p className="text-sm text-zinc-400 leading-relaxed max-w-3xl">
-              {data.meta_summary}
-            </p>
+            <InlineMarkdown text={data.meta_summary} className="text-sm text-zinc-400 leading-relaxed max-w-3xl" />
           </div>
         )}
       </header>

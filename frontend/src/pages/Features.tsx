@@ -36,10 +36,6 @@ export default function Features() {
     )
   }, [data?.features, searchQuery])
 
-  // Split into features with options vs empty
-  const withOptions = filteredFeatures.filter(f => (f.option_count || 0) > 0)
-  const withoutOptions = filteredFeatures.filter(f => (f.option_count || 0) === 0)
-
   return (
     <div className="animate-fade-in">
       {/* Header */}
@@ -109,34 +105,15 @@ export default function Features() {
       )}
 
       {!isLoading && !isError && filteredFeatures.length > 0 && (
-        <div className="space-y-4">
-          {/* Features with options */}
-          {withOptions.length > 0 && (
-            <div className="card overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-zinc-800/50">
-                <h2 className="text-label uppercase text-zinc-400 font-mono">
-                  with feature options ({withOptions.length})
-                </h2>
-              </div>
-              {withOptions.map((feature) => (
-                <FeatureRow key={feature.feature_id} feature={feature} />
-              ))}
-            </div>
-          )}
-
-          {/* Features without options */}
-          {withoutOptions.length > 0 && (
-            <div className="card overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-zinc-800/50">
-                <h2 className="text-label uppercase text-zinc-400 font-mono">
-                  no tracked options ({withoutOptions.length})
-                </h2>
-              </div>
-              {withoutOptions.map((feature) => (
-                <FeatureRow key={feature.feature_id} feature={feature} />
-              ))}
-            </div>
-          )}
+        <div className="card overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-zinc-800/50">
+            <h2 className="text-label uppercase text-zinc-400 font-mono">
+              all features ({filteredFeatures.length})
+            </h2>
+          </div>
+          {filteredFeatures.map((feature) => (
+            <FeatureRow key={feature.feature_id} feature={feature} />
+          ))}
         </div>
       )}
     </div>

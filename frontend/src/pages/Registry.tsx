@@ -37,10 +37,6 @@ export default function Registry() {
     )
   }, [data?.features, searchQuery])
 
-  // Split into features with tracked items vs empty
-  const withTracked = filteredFeatures.filter(f => ((f.option_count || 0) + (f.setting_count || 0)) > 0)
-  const withoutTracked = filteredFeatures.filter(f => ((f.option_count || 0) + (f.setting_count || 0)) === 0)
-
   // Totals
   const totalOptions = filteredFeatures.reduce((sum, f) => sum + (f.option_count || 0), 0)
   const totalSettings = filteredFeatures.reduce((sum, f) => sum + (f.setting_count || 0), 0)
@@ -147,42 +143,23 @@ export default function Registry() {
       )}
 
       {!isLoading && !isError && filteredFeatures.length > 0 && (
-        <div className="space-y-4">
-          {/* Features with tracked options/settings */}
-          {withTracked.length > 0 && (
-            <div className="card overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-zinc-800/50 flex items-center justify-between">
-                <h2 className="text-label uppercase text-zinc-400 font-mono">
-                  tracked features ({withTracked.length})
-                </h2>
-                <div className="flex items-center gap-3 text-xs font-mono text-zinc-500">
-                  <span className="inline-flex items-center gap-1">
-                    <AdjustmentsIcon className="w-3 h-3 text-signal-violet" /> options
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <CogIcon className="w-3 h-3 text-signal-cyan" /> settings
-                  </span>
-                </div>
-              </div>
-              {withTracked.map((feature) => (
-                <FeatureAccordion key={feature.feature_id} feature={feature} />
-              ))}
+        <div className="card overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-zinc-800/50 flex items-center justify-between">
+            <h2 className="text-label uppercase text-zinc-400 font-mono">
+              all features ({filteredFeatures.length})
+            </h2>
+            <div className="flex items-center gap-3 text-xs font-mono text-zinc-500">
+              <span className="inline-flex items-center gap-1">
+                <AdjustmentsIcon className="w-3 h-3 text-signal-violet" /> options
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <CogIcon className="w-3 h-3 text-signal-cyan" /> settings
+              </span>
             </div>
-          )}
-
-          {/* Features without tracked items */}
-          {withoutTracked.length > 0 && (
-            <div className="card overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-zinc-800/50">
-                <h2 className="text-label uppercase text-zinc-400 font-mono">
-                  no tracked changes ({withoutTracked.length})
-                </h2>
-              </div>
-              {withoutTracked.map((feature) => (
-                <FeatureAccordion key={feature.feature_id} feature={feature} />
-              ))}
-            </div>
-          )}
+          </div>
+          {filteredFeatures.map((feature) => (
+            <FeatureAccordion key={feature.feature_id} feature={feature} />
+          ))}
         </div>
       )}
     </div>
