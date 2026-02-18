@@ -853,6 +853,68 @@ Context:
 
         return self._call_llm(prompt, max_chars=800)
 
+    def generate_canonical_feature_description(self, feature_name: str) -> str:
+        """Generate a stable, glossary-style description for a Canvas feature.
+
+        Uses Gemini's built-in Canvas LMS knowledge (no scraped content needed).
+
+        Args:
+            feature_name: Display name of the Canvas feature (e.g., "Assignments").
+
+        Returns:
+            2-3 sentence canonical description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are writing a glossary entry for educational technologists at a university.
+
+Describe the "{feature_name}" feature in Canvas LMS in 2-3 sentences. What is it and what does it let instructors, students, or admins do? Be concise and factual. Do not mention recent changes or updates."""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def generate_canonical_option_description(self, option_name: str, feature_name: str) -> str:
+        """Generate a stable, glossary-style description for a Canvas feature option.
+
+        Uses Gemini's built-in Canvas LMS knowledge (no scraped content needed).
+
+        Args:
+            option_name: Canonical name of the feature option.
+            feature_name: Display name of the parent feature.
+
+        Returns:
+            2-3 sentence canonical description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are writing a glossary entry for educational technologists at a university.
+
+Describe the "{option_name}" feature option in Canvas LMS in 2-3 sentences. This option belongs to the {feature_name} feature area. What does enabling this option do? Who does it affect? Be concise and factual. Do not mention recent changes or release dates."""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def generate_canonical_setting_description(self, setting_name: str, feature_name: str) -> str:
+        """Generate a stable, glossary-style description for a Canvas feature setting/change.
+
+        Uses Gemini's built-in Canvas LMS knowledge (no scraped content needed).
+
+        Args:
+            setting_name: Name of the feature setting.
+            feature_name: Display name of the parent feature.
+
+        Returns:
+            2-3 sentence canonical description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are writing a glossary entry for educational technologists at a university.
+
+Describe the "{setting_name}" change in the {feature_name} area of Canvas LMS in 2-3 sentences. What does this change do? Who does it affect? Be concise and factual. Do not mention specific release dates."""
+
+        return self._call_llm(prompt, max_chars=500)
+
     def summarize_announcement_description(self, h4_title: str, raw_content: str) -> str:
         """Generate a 1-2 sentence description for a feature announcement.
 
