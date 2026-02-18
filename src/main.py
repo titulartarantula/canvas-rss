@@ -30,6 +30,7 @@ from scrapers.instructure_community import (
     classify_deploy_changes,
     parse_page_lifecycle_dates,
 )
+from scrapers.canonical_options import scrape_canonical_options
 from scrapers.reddit_client import RedditMonitor, RedditPost
 from scrapers.status_page import StatusPageMonitor, Incident
 from processor.content_processor import ContentProcessor, ContentItem
@@ -535,7 +536,15 @@ def main():
             logger.info(f"  -> {d_stored} deploy notes stored")
             total_stored += d_stored
 
-        # 2. Monitor Reddit
+        # 2. Scrape canonical feature options page
+        logger.info("Scraping canonical feature options page...")
+        try:
+            canonical_options = scrape_canonical_options(db)
+            logger.info(f"  -> Processed {len(canonical_options)} canonical feature options")
+        except Exception as e:
+            logger.warning(f"Canonical options scrape failed (non-fatal): {e}")
+
+        # 3. Monitor Reddit
         logger.info("Monitoring Reddit...")
         reddit = RedditMonitor(
             client_id=os.getenv("REDDIT_CLIENT_ID"),
@@ -562,7 +571,7 @@ def main():
         logger.info(f"  -> {reddit_stored} Reddit posts stored (of {len(reddit_posts)} found)")
         total_stored += reddit_stored
 
-        # 3. Check Status Page
+        # 4. Check Status Page
         logger.info("Checking Canvas Status Page...")
         status = StatusPageMonitor()
         incidents = status.get_recent_incidents()

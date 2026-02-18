@@ -1,4 +1,4 @@
-"""Parser for the Canvas Feature Option Summary canonical page.
+"""Parser and scraper for the Canvas Feature Option Summary canonical page.
 
 Parses the Instructure Community KB article that lists all Canvas feature
 options and previews with their configuration states, descriptions, and
@@ -10,9 +10,20 @@ Source: https://community.instructure.com/en/kb/articles/531316-unknown
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from bs4 import BeautifulSoup, Tag
+
+if TYPE_CHECKING:
+    from src.utils.database import Database
+
+try:
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    sync_playwright = None
+    PlaywrightTimeout = Exception
 
 logger = logging.getLogger("canvas_rss")
 
@@ -483,5 +494,209 @@ def parse_canonical_page_html(html: str) -> List[CanonicalOption]:
 
     logger.info(
         "Parsed %d feature options from canonical page", len(options)
+    )
+    return options
+
+
+def _slugify(name: str) -> str:
+    """Convert a feature option name to a slug suitable for option_id.
+
+    Args:
+        name: Feature name (e.g., "Document Processor").
+
+    Returns:
+        Slugified text (e.g., "document_processor").
+    """
+    if not name:
+        return ""
+    slug = name.lower().strip()
+    slug = re.sub(r'[^a-z0-9]+', '_', slug)
+    slug = slug.strip('_')
+    return slug[:80]  # Limit length
+
+
+def _match_feature_id(name: str) -> str:
+    """Match a canonical option name to a CANVAS_FEATURES feature_id.
+
+    Uses keyword matching against the canonical CANVAS_FEATURES dictionary
+    to find the best matching feature category.
+
+    Args:
+        name: Feature option name from the canonical page.
+
+    Returns:
+        Best matching feature_id, or 'general' if no match.
+    """
+    from src.constants import CANVAS_FEATURES
+
+    name_lower = name.lower()
+
+    # Direct name matches against feature names/ids
+    for feature_id, feature_name in CANVAS_FEATURES.items():
+        if feature_name.lower() in name_lower or feature_id in name_lower:
+            return feature_id
+
+    # Keyword-based fallbacks
+    if 'quiz' in name_lower:
+        return 'new_quizzes' if 'new' in name_lower else 'classic_quizzes'
+    if 'grade' in name_lower or 'speedgrader' in name_lower:
+        return 'gradebook'
+    if 'assignment' in name_lower:
+        return 'assignments'
+    if 'discussion' in name_lower:
+        return 'discussions'
+    if 'module' in name_lower:
+        return 'modules'
+    if 'page' in name_lower:
+        return 'pages'
+    if 'rubric' in name_lower:
+        return 'rubrics'
+    if 'calendar' in name_lower:
+        return 'calendar'
+    if 'inbox' in name_lower or 'conversation' in name_lower:
+        return 'inbox'
+    if 'studio' in name_lower:
+        return 'canvas_studio'
+    if 'mobile' in name_lower:
+        return 'canvas_mobile'
+    if 'api' in name_lower:
+        return 'api'
+    if 'lti' in name_lower or 'external' in name_lower:
+        return 'external_apps_lti'
+    if 'rce' in name_lower or 'rich content' in name_lower:
+        return 'rich_content_editor'
+    if 'outcome' in name_lower or 'mastery' in name_lower:
+        return 'outcomes'
+    if 'announcement' in name_lower:
+        return 'announcements'
+    if 'portfolio' in name_lower or 'eportfolio' in name_lower:
+        return 'eportfolios'
+    if 'analytic' in name_lower:
+        return 'canvas_analytics'
+    if 'elementary' in name_lower:
+        return 'canvas_elementary'
+    if 'blueprint' in name_lower:
+        return 'blueprint_courses'
+    if 'conference' in name_lower:
+        return 'conferences'
+    if 'collaborat' in name_lower:
+        return 'collaborations'
+    if 'navigation' in name_lower:
+        return 'global_navigation'
+    if 'notification' in name_lower:
+        return 'notifications'
+    if 'file' in name_lower:
+        return 'files'
+    if 'course pacing' in name_lower:
+        return 'courses'
+
+    return 'general'
+
+
+def scrape_canonical_options(db: "Database") -> List[CanonicalOption]:
+    """Scrape the canonical feature options page and upsert into database.
+
+    Uses Playwright to fetch the Canvas Feature Option Summary page, parses
+    the HTML, and upserts each option into the database with source='canonical_page'.
+
+    Args:
+        db: Database instance (src.utils.database.Database).
+
+    Returns:
+        List of parsed CanonicalOption entries.
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        logger.warning(
+            "Playwright is not installed. Canonical options scraping will be disabled. "
+            "Install with: pip install playwright && playwright install chromium"
+        )
+        return []
+
+    logger.info("Fetching canonical feature options page: %s", CANONICAL_PAGE_URL)
+
+    pw = None
+    browser = None
+    try:
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+        )
+        page = context.new_page()
+
+        # Navigate with generous timeout for community page
+        page.goto(CANONICAL_PAGE_URL, wait_until="domcontentloaded", timeout=60000)
+
+        # Wait for the content to be available
+        try:
+            page.wait_for_selector(".userContent", timeout=15000)
+        except Exception:
+            logger.warning("Could not find .userContent selector, proceeding with current page content")
+
+        html = page.content()
+
+    except PlaywrightTimeout:
+        logger.error("Timeout while fetching canonical options page: %s", CANONICAL_PAGE_URL)
+        return []
+    except Exception as e:
+        logger.error("Error fetching canonical options page: %s", e)
+        return []
+    finally:
+        if browser:
+            try:
+                browser.close()
+            except Exception:
+                pass
+        if pw:
+            try:
+                pw.stop()
+            except Exception:
+                pass
+
+    # Parse the HTML
+    options = parse_canonical_page_html(html)
+
+    if not options:
+        logger.warning("No feature options parsed from canonical page")
+        return []
+
+    # Upsert each option into the database
+    upserted = 0
+    for option in options:
+        option_id = _slugify(option.name)
+        if not option_id:
+            logger.warning("Could not generate option_id for: %r", option.name)
+            continue
+
+        feature_id = _match_feature_id(option.name)
+
+        try:
+            db.upsert_feature_option(
+                option_id=option_id,
+                feature_id=feature_id,
+                name=option.name,
+                summary=option.description,
+                lifecycle_stage=option.lifecycle_stage,
+                prod_account_state=option.prod_account_state,
+                prod_course_state=option.prod_course_state,
+                beta_account_state=option.beta_account_state,
+                beta_course_state=option.beta_course_state,
+                source='canonical_page',
+                doc_url=option.doc_url,
+                user_group_url=option.user_group_url,
+            )
+            upserted += 1
+        except Exception as e:
+            logger.warning(
+                "Failed to upsert canonical option '%s': %s",
+                option.name, e,
+            )
+
+    logger.info(
+        "Upserted %d of %d canonical feature options into database",
+        upserted, len(options),
     )
     return options
