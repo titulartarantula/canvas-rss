@@ -2,25 +2,83 @@
 
 ## Current Phase
 
-**Phase 9: v1.3.0 - Unified Tracking** - Complete. [NEW]/[UPDATE] badges with granular tracking.
+**Phase 10: v2.0 - Database Schema Redesign** - In Progress. Feature-centric data model with feature_settings separation.
 
 ## Active Tasks
 
 | Task                                | Agent   | Status   | Notes                          |
 |-------------------------------------|---------|----------|--------------------------------|
-| Docker deployment                   | DevOps  | Complete | All containers working         |
-| GitHub README                       | Docs    | Complete | README.md created              |
-| Fix Deploys tab click               | Coding  | Complete | Improved selectors, dual-view  |
-| Update tests for Deploys tab fix   | Testing | Complete | 47 scraper tests pass          |
-| Release v1.1.1 documentation        | Docs    | Complete | VERSION, CHANGELOG updated     |
-| Full discussion tracking            | Coding  | Complete | All blog/Q&A posts captured    |
-| Release v1.2.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, STATE.md   |
-| Security audit                      | Coding  | Complete | Full audit of 4 areas          |
-| Security remediation                | Coding  | Complete | All high-severity issues fixed |
-| v1.3.0 unified implementation       | Coding  | Complete | 30 tasks, 251 tests pass       |
-| Release v1.3.0 documentation        | Docs    | Complete | VERSION, CHANGELOG, README     |
+| Feature settings implementation     | Coding  | Complete | 13 tasks, 440 tests total      |
+| Feature settings backend parity     | Coding  | Complete | 7 tasks, 448 tests total       |
+| Feature tracker API + frontend      | Coding  | Complete | FastAPI + React SPA on :8986   |
+| v2.0 schema redesign               | Coding  | Complete | Four-tier data model           |
+| Simplify dashboard display          | Coding  | Complete | Remove summaries/implications  |
+| Frontend settings page              | Coding  | Pending  | Settings not yet visible in UI |
 
 ## Completed
+
+### Phase 10: v2.0 - Database Schema Redesign (In Progress)
+
+**Schema changes complete:**
+- [x] Added `feature_id` column to `feature_announcements` table (links H3 categories to canonical features)
+- [x] Added `user_group_url` column to `feature_options` table (Feature Preview community groups)
+- [x] Expanded `CANVAS_FEATURES` in constants.py with missing entries
+- [x] Updated `upsert_feature_option()` and `insert_feature_announcement()` functions
+- [x] Added migrations for existing databases
+- [x] v2.0 LLM summaries: description, meta_summary on features/options/announcements
+- [x] Lifecycle date tracking: beta_date, production_date, deprecation_date
+- [x] Feature tracker API (FastAPI) + React frontend on port 8986
+- [x] Docker deployment with single container serving API + frontend
+
+**Feature settings separation (v2.1, branch: feature/v2.0-database-schema):**
+- [x] New `feature_settings` table for non-toggle feature changes
+- [x] `is_feature_option` classification property on `FeatureTableData`
+- [x] Classification overrides via `config/classification_overrides.yaml`
+- [x] Updated `classify_release_features()` and `classify_deploy_changes()` to route entries
+- [x] Updated `extract_feature_refs()` to search feature_settings
+- [x] New `/api/settings` endpoints (list + detail)
+- [x] Feature detail API includes settings array
+- [x] Updated database joins (content_feature_refs, feature_announcements)
+- [x] Schema documentation updated to v2.1
+- [x] 440 tests total (436 pass, 4 pre-existing failures)
+
+**Feature settings backend parity (v2.1.1, branch: feature/v2.0-database-schema):**
+- [x] `get_latest_content_for_setting()` DB method for content retrieval
+- [x] `summarize_feature_setting_description()` LLM method for settings
+- [x] `generate_meta_summary()` accepts `entity_type` param (option/setting)
+- [x] CLI commands: `regenerate setting`, `settings`, `setting-meta-summary`
+- [x] Lifecycle date propagation in pipeline now includes settings
+- [x] Docker entrypoint runs `backfill_summaries.py` after each aggregation
+- [x] CLI loads `.env` automatically (matches main.py behavior)
+- [x] Generated meta-summaries for all 79 settings and 10 options
+- [x] 448 tests total (441 pass, 7 pre-existing failures)
+
+**Dashboard display simplification (v2.1.2, branch: feature/v2.0-database-schema):**
+- [x] Removed per-feed LLM summary generation for release/deploy notes
+- [x] Removed `implications` field entirely (generation, DB column, API, frontend)
+- [x] Added per-announcement description generation for deploy notes
+- [x] Dashboard shows per-item descriptions under announcement titles
+- [x] Prominent "View on Canvas" external link on dashboard
+- [x] 446 tests total (436 pass, 6 pre-existing failures unrelated to changes)
+
+**Remaining frontend gap:**
+- [ ] Frontend has no Settings page — backend API `/api/settings` exists but is unconsumed
+- [ ] No "Settings" nav link in Layout.tsx
+- [ ] No FeatureSetting types in frontend
+
+**Key design decisions:**
+- Four-tier data model: `features` → `feature_options`/`feature_settings` → `feature_announcements`
+- Feature options = canonical admin toggles (have "Feature Option to Enable" value)
+- Feature settings = non-toggle changes (N/A, empty, or absent canonical name)
+- Manual overrides in YAML for edge cases
+- Separate tables (not type column) for clean queries and distinct schemas
+
+**Reference docs:**
+- `docs/database-schema.md` - Full schema with mermaid diagram (v2.1)
+- `docs/plans/2026-02-07-feature-settings-design.md` - Feature settings design
+- `docs/plans/2026-02-07-feature-settings-implementation.md` - 13-task implementation plan
+- `docs/plans/2026-02-09-feature-settings-backend-parity.md` - Backend parity plan (7 tasks)
+- `docs/plans/2026-02-03-database-schema-redesign.md` - Original v2.0 design plan
 
 ### Phase 9: v1.3.0 - Unified Tracking (Complete)
 
@@ -104,13 +162,14 @@
 |-------|--------|-------------|
 | 1. Scaffolding | Complete | Directory structure, configs |
 | 2. Infrastructure | Complete | Logger, database, models, tests |
-| 3. Scrapers | Complete | Status page (complete), Reddit (complete), Instructure (complete) |
+| 3. Scrapers | Complete | Status page, Reddit, Instructure |
 | 4. Processing | Complete | Gemini integration, sanitization |
 | 5. RSS Generation | Complete | feedgen RSS builder |
 | 6. Main App | Complete | Orchestration |
 | 7. Docker | Complete | Container setup, cron scheduling |
 | 8. Security | Complete | Audit and hardening |
 | 9. v1.3.0 Tracking | Complete | [NEW]/[UPDATE] badges, granular tracking |
+| 10. v2.0 Schema | In Progress | Feature tracker API, feature_settings separation |
 
 ---
 
@@ -166,6 +225,36 @@ canvas-rss/
 
 ## Recent Changes
 
+- 2026-02-10: Simplify dashboard display (v2.1.2) - Coding Agent
+  - Stopped per-feed LLM summary generation for release/deploy notes (per-item descriptions more useful)
+  - Removed `implications` field from `feature_announcements` (DB column, generation, API, frontend)
+  - Added per-announcement description generation for deploy notes (parity with release notes)
+  - Dashboard now shows per-item descriptions under announcement titles
+  - Added prominent "View on Canvas" external link to dashboard release/deploy sections
+  - Updated 15 files: main.py, content_processor.py, database.py, backfill_summaries.py, cli.py, 4 API routes, Dashboard.tsx, ReleaseDetail.tsx, AnnouncementsList.tsx, types/index.ts, 2 test files
+  - 446 tests (436 pass, 6 pre-existing failures)
+- 2026-02-09: Feature settings backend parity (v2.1.1) - Coding Agent
+  - Added `get_latest_content_for_setting()` DB method
+  - Added `summarize_feature_setting_description()` and adapted `generate_meta_summary()` for settings
+  - Added CLI commands: `regenerate setting`, `settings --missing`, `setting-meta-summary`
+  - Lifecycle dates now propagate to settings in pipeline
+  - Docker entrypoint chains `backfill_summaries.py` after aggregation
+  - CLI loads `.env` automatically
+  - Generated meta-summaries for all 79 settings + 10 options (89/89 complete)
+  - 448 tests (441 pass, 7 pre-existing failures)
+- 2026-02-07: Feature settings separation (v2.1) - Coding Agent
+  - New `feature_settings` table separating canonical toggles from non-toggle changes
+  - Classification logic based on "Feature Option to Enable" table cell
+  - New `/api/settings` endpoints and updated feature detail API
+  - Updated scraper routing in classify_release_features/classify_deploy_changes
+  - Manual classification overrides via config/classification_overrides.yaml
+  - Schema documentation updated to v2.1 with ER diagram
+  - 440 tests (436 pass, 4 pre-existing failures unrelated to changes)
+- 2026-02-05: v2.0 Feature tracker API and frontend
+  - FastAPI backend with endpoints for features, options, releases, search, dashboard
+  - React + Vite frontend SPA with client-side routing
+  - Docker deployment on port 8986
+  - LLM-generated summaries and lifecycle date tracking
 - 2026-02-01: v1.3.0 Unified Tracking Implementation - Coding Agent
   - Added [NEW]/[UPDATE] badges to RSS feed titles
   - Implemented granular feature tracking for Release Notes
@@ -223,9 +312,9 @@ canvas-rss/
 
 ---
 
-## Test Results (2026-02-01)
+## Test Results (2026-02-09)
 
-320+ tests total (251 for v1.3.0 features alone)
+448 tests total (441 pass, 7 pre-existing failures)
 
 ### test_database.py (20 tests)
 

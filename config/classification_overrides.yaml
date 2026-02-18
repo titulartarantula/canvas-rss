@@ -1,0 +1,17 @@
+# Classification overrides for feature option vs feature setting.
+#
+# By default, entries are classified based on the "Feature Option to Enable"
+# table cell in release/deploy notes:
+#   - Real value -> feature_option (canonical admin toggle)
+#   - N/A, empty, or absent -> feature_setting (non-toggle change)
+#
+# Use these overrides to force specific entries into the correct category.
+
+classification_overrides:
+  # Force specific entries as feature_options even if table says N/A
+  force_options: []
+    # - "some_edge_case_option_id"
+
+  # Force specific entries as feature_settings even if table has a canonical name
+  force_settings: []
+    # - "some_misleading_option_id"

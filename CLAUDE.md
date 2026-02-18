@@ -77,6 +77,21 @@ Remove personal email from config
 
 This applies to all git operations including commits, PRs, and branch names.
 
+## Local Dev Server
+
+**There must only be ONE dev server instance running at a time, on port 8986.**
+
+- The frontend and API are served together via `uvicorn` on `http://localhost:8986`
+- Before starting a server for testing, always kill the existing process on port 8986 first, then restart it
+- Never start separate frontend/API servers on other ports (5173, 8000, etc.)
+- To restart:
+  ```bash
+  # Kill existing
+  powershell -Command "Get-NetTCPConnection -State Listen -LocalPort 8986 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force }"
+  # Start fresh
+  cd /c/Users/mclea/claude/canvas-rss && python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8986
+  ```
+
 ## Key Files
 
 | File | Purpose |

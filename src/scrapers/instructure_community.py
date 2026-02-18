@@ -3,12 +3,15 @@
 import logging
 import time
 import re
+import yaml
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 if TYPE_CHECKING:
     from utils.database import Database
+    from processor.content_processor import ContentProcessor
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -33,6 +36,11 @@ class CommunityPost:
     comments: int = 0
     post_type: str = "discussion"  # 'release_note', 'changelog', 'question', 'blog'
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
+    last_comment_at: Optional[datetime] = None
+    comment_count: int = 0
 
     @property
     def source(self) -> str:
@@ -42,7 +50,7 @@ class CommunityPost:
     @property
     def source_id(self) -> str:
         """Generate unique ID from URL and post type."""
-        return f"{self.post_type}_{hash(self.url)}"
+        return extract_source_id(self.url, self.post_type)
 
 
 @dataclass
@@ -53,27 +61,100 @@ class DiscussionUpdate:
     previous_comment_count: int
     new_comment_count: int
     latest_comment: Optional[str]
+    feature_refs: List[Tuple[str, Optional[str], str]] = None  # (feature_id, option_id, mention_type)
+
+    def __post_init__(self):
+        if self.feature_refs is None:
+            self.feature_refs = []
 
 
 @dataclass
 class FeatureTableData:
-    """Configuration table data for a release/deploy feature."""
-    enable_location: str
-    default_status: str
-    permissions: str
-    affected_areas: List[str]
-    affects_roles: List[str]
+    """Configuration table data for a release/deploy feature.
+
+    The table appears after each H4 feature heading and contains configuration info.
+    """
+    # Canonical name from "Feature Option to Enable" cell (first <p> only)
+    canonical_name: Optional[str] = None
+
+    # Parsed from "Enable Feature Option Location & Default Status"
+    enable_location_account: Optional[str] = None  # e.g., "Disabled/Unlocked"
+    enable_location_course: Optional[str] = None   # e.g., "Disabled"
+
+    # Boolean fields
+    subaccount_config: Optional[bool] = None       # "Subaccount Configuration"
+    affects_ui: Optional[bool] = None              # "Affects User Interface"
+
+    # Other fields
+    account_course_setting: Optional[str] = None   # "Account/Course Setting to Enable"
+    permissions: str = ""                          # "Permissions"
+    affected_areas: List[str] = None               # "Affected Areas"
+    affects_roles: List[str] = None                # Extracted from "Affected User Roles"
+
+    # Backwards compat fields (derived from new fields)
+    enable_location: str = ""                      # Legacy: combined location
+    default_status: str = ""                       # Legacy: combined status
+
+    def __post_init__(self):
+        if self.affected_areas is None:
+            self.affected_areas = []
+        if self.affects_roles is None:
+            self.affects_roles = []
+        # Populate legacy fields from new fields if not already set (for forwards compat)
+        if self.enable_location_account and not self.enable_location:
+            self.enable_location = f"Account ({self.enable_location_account})"
+            if self.enable_location_course:
+                self.enable_location += f", Course ({self.enable_location_course})"
+        if self.enable_location_account and not self.default_status:
+            # Extract just the status part (e.g., "Disabled" from "Disabled/Unlocked")
+            self.default_status = self.enable_location_account.split('/')[0] if '/' in self.enable_location_account else self.enable_location_account
+        # Populate new fields from legacy if legacy is set but new fields aren't
+        if self.enable_location and not self.enable_location_account:
+            # Try to extract account location from legacy format
+            if 'account' in self.enable_location.lower():
+                self.enable_location_account = self.enable_location
+
+    @property
+    def is_feature_option(self) -> bool:
+        """Whether this entry represents a canonical feature option (admin toggle).
+
+        True if canonical_name has a real value that looks like an actual
+        feature name (not config metadata, helper text, or annotations).
+        """
+        if self.canonical_name is None:
+            return False
+        name = self.canonical_name.strip()
+        if not name or name.upper() == "N/A":
+            return False
+        # Reject config location values like "Account (Disabled/Unlocked)"
+        if "(Disabled" in name or "(Enabled" in name or "(Unlocked" in name:
+            return False
+        # Reject config labels like "Beta: Account/Course ..."
+        if name.startswith("Beta:"):
+            return False
+        # Reject helper text paragraphs
+        if name.startswith("See the Canvas"):
+            return False
+        # Reject availability annotations embedded in name
+        if "Feature Option Available" in name:
+            return False
+        # Reject multi-line values (not clean feature names)
+        if "\n" in name:
+            return False
+        return True
 
 
 @dataclass
 class Feature:
     """A single feature from a Release/Deploy Notes page."""
-    category: str
-    name: str
-    anchor_id: str
+    category: str       # H3 heading text (e.g., "Assignments")
+    name: str           # H4 heading text (e.g., "Document Processing App")
+    anchor_id: str      # H4 data-id attribute
     added_date: Optional[datetime]
-    raw_content: str
+    raw_content: str    # HTML content after H4
     table_data: Optional[FeatureTableData]
+    section: str = ""   # H2 heading text (e.g., "New Features")
+    summary: str = ""   # LLM-generated summary (populated later)
 
 
 @dataclass
@@ -93,6 +174,9 @@ class ReleaseNotePage:
     upcoming_changes: List[UpcomingChange]
     features: List[Feature]
     sections: Dict[str, List[Feature]]
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
 
 
 @dataclass
@@ -117,6 +201,9 @@ class DeployNotePage:
     beta_date: Optional[datetime]
     changes: List[DeployChange]
     sections: Dict[str, List[DeployChange]]
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
 
 
 def extract_source_id(url: str, post_type: str) -> str:
@@ -135,6 +222,146 @@ def extract_source_id(url: str, post_type: str) -> str:
     return f"{post_type}_{abs(hash(url))}"
 
 
+def parse_page_lifecycle_dates(intro_text: str) -> dict:
+    """Parse beta and production dates from release note intro paragraph.
+
+    Looks for patterns like:
+    - "Beta environment on 2026-01-19"
+    - "Production environment on 2026-02-21"
+    - "Beta on January 19, 2026"
+
+    Args:
+        intro_text: The intro paragraph text.
+
+    Returns:
+        Dict with 'beta_date' and 'production_date' (date objects or None).
+    """
+    result = {'beta_date': None, 'production_date': None}
+
+    # Pattern for ISO dates: 2026-01-19
+    iso_pattern = r'(\d{4}-\d{2}-\d{2})'
+
+    # Pattern for written dates: January 19, 2026
+    written_pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
+
+    text_lower = intro_text.lower()
+
+    # Find beta date
+    beta_match = re.search(r'beta\s+(?:environment\s+)?on\s+' + iso_pattern, text_lower)
+    if beta_match:
+        try:
+            result['beta_date'] = date.fromisoformat(beta_match.group(1))
+        except ValueError:
+            pass
+
+    if not result['beta_date']:
+        beta_written = re.search(r'beta\s+(?:environment\s+)?on\s+' + written_pattern, intro_text, re.IGNORECASE)
+        if beta_written:
+            result['beta_date'] = _parse_written_date(beta_written.group(1), beta_written.group(2), beta_written.group(3))
+
+    # Find production date
+    prod_match = re.search(r'production\s+(?:environment\s+)?on\s+' + iso_pattern, text_lower)
+    if prod_match:
+        try:
+            result['production_date'] = date.fromisoformat(prod_match.group(1))
+        except ValueError:
+            pass
+
+    if not result['production_date']:
+        prod_written = re.search(r'production\s+(?:environment\s+)?on\s+' + written_pattern, intro_text, re.IGNORECASE)
+        if prod_written:
+            result['production_date'] = _parse_written_date(prod_written.group(1), prod_written.group(2), prod_written.group(3))
+
+    return result
+
+
+def _parse_written_date(month_name: str, day: str, year: str) -> Optional[date]:
+    """Parse a written date like 'January 19, 2026' into a date object."""
+    months = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+        'september': 9, 'october': 10, 'november': 11, 'december': 12
+    }
+    try:
+        return date(int(year), months[month_name.lower()], int(day))
+    except (ValueError, KeyError):
+        return None
+
+
+def scrape_comments_from_html(html: str) -> List[dict]:
+    """Extract comments from Instructure Community page HTML.
+
+    This parses the HTML to find comment elements. The Instructure Community
+    uses Lithium/Khoros forum software with specific CSS classes.
+
+    Args:
+        html: The full page HTML content.
+
+    Returns:
+        List of dicts with:
+        - comment_text: The comment body text
+        - position: Order in thread (1, 2, 3...)
+        - posted_at: DateTime string if available (may be None)
+
+    Note:
+        The actual CSS selectors may need adjustment based on DOM inspection.
+        Common selectors for Khoros forums include:
+        - .lia-message-body-content (message body)
+        - .lia-message-posted-on (timestamp)
+        - .lia-quilt-row-reply (reply containers)
+    """
+    from bs4 import BeautifulSoup
+
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, 'html.parser')
+    comments = []
+
+    # Try multiple selector strategies for Khoros/Lithium forums
+    # Strategy 1: Look for reply message bodies (skip first which is usually the main post)
+    message_bodies = soup.select('.lia-message-body-content')
+
+    # Skip first element (main post) and process replies
+    for i, body in enumerate(message_bodies[1:], start=1):
+        text = body.get_text(strip=True)
+        if text:
+            # Try to find associated timestamp
+            posted_at = None
+            parent = body.find_parent(class_='lia-message')
+            if parent:
+                time_elem = parent.select_one('.lia-message-posted-on time, .DateTime time, time[datetime]')
+                if time_elem and time_elem.get('datetime'):
+                    posted_at = time_elem['datetime']
+
+            comments.append({
+                'comment_text': text[:5000],  # Truncate very long comments
+                'position': i,
+                'posted_at': posted_at
+            })
+
+    # Fallback: Look for explicit reply containers
+    if not comments:
+        replies = soup.select('.lia-quilt-row-reply, .lia-message-reply')
+        for i, reply in enumerate(replies, start=1):
+            body = reply.select_one('.lia-message-body-content, .message-body')
+            if body:
+                text = body.get_text(strip=True)
+                if text:
+                    posted_at = None
+                    time_elem = reply.select_one('time[datetime]')
+                    if time_elem:
+                        posted_at = time_elem.get('datetime')
+
+                    comments.append({
+                        'comment_text': text[:5000],
+                        'position': i,
+                        'posted_at': posted_at
+                    })
+
+    return comments
+
+
 # Keep legacy classes for backwards compatibility
 @dataclass
 class ReleaseNote:
@@ -148,6 +375,9 @@ class ReleaseNote:
     comments: int = 0
     post_type: str = "release_note"  # 'release_note' or 'deploy_note'
     is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_edited: Optional[datetime] = None
 
     @property
     def source(self) -> str:
@@ -157,7 +387,7 @@ class ReleaseNote:
     @property
     def source_id(self) -> str:
         """Generate unique ID from URL and post type."""
-        return f"{self.post_type}_{hash(self.url)}"
+        return extract_source_id(self.url, self.post_type)
 
 
 @dataclass
@@ -612,26 +842,33 @@ class InstructureScraper:
             logger.error(f"Error extracting post cards: {e}")
             return []
 
-    def _get_post_content(self, url: str) -> tuple:
-        """Navigate to a post and extract its content.
+    def _get_post_content(self, url: str) -> dict:
+        """Navigate to a post and extract its content and metadata.
 
         Args:
             url: URL of the post to scrape.
 
         Returns:
-            Tuple of (content, likes, comments).
+            Dictionary with keys: content, likes, comments, first_posted,
+            last_edited, last_comment_at, comment_count.
         """
+        result = {
+            "content": "",
+            "likes": 0,
+            "comments": 0,
+            "first_posted": None,
+            "last_edited": None,
+            "last_comment_at": None,
+            "comment_count": 0,
+        }
+
         if not self.page:
-            return ("", 0, 0)
+            return result
 
         try:
             self._rate_limit()
             self.page.goto(url, timeout=30000)
             self.page.wait_for_load_state("networkidle", timeout=15000)
-
-            content = ""
-            likes = 0
-            comments = 0
 
             # Extract main content
             content_selectors = [
@@ -649,14 +886,14 @@ class InstructureScraper:
                 try:
                     content_el = self.page.query_selector(selector)
                     if content_el:
-                        content = content_el.inner_text().strip()
-                        if len(content) > 50:  # Found substantial content
+                        result["content"] = content_el.inner_text().strip()
+                        if len(result["content"]) > 50:  # Found substantial content
                             break
                 except Exception:
                     continue
 
             # Limit content length
-            content = content[:5000] if content else ""
+            result["content"] = result["content"][:5000] if result["content"] else ""
 
             # Extract likes/reactions
             likes_selectors = [
@@ -674,12 +911,12 @@ class InstructureScraper:
                         likes_text = likes_el.inner_text().strip()
                         likes_match = re.search(r'(\d+)', likes_text)
                         if likes_match:
-                            likes = int(likes_match.group(1))
+                            result["likes"] = int(likes_match.group(1))
                             break
                 except Exception:
                     continue
 
-            # Extract comment count
+            # Extract comment count from reply count or pagination
             comments_selectors = [
                 "[class*='comment-count']",
                 "[class*='reply-count']",
@@ -695,19 +932,73 @@ class InstructureScraper:
                         comments_text = comments_el.inner_text().strip()
                         comments_match = re.search(r'(\d+)', comments_text)
                         if comments_match:
-                            comments = int(comments_match.group(1))
+                            result["comments"] = int(comments_match.group(1))
+                            result["comment_count"] = result["comments"]
                             break
                 except Exception:
                     continue
 
-            return (content, likes, comments)
+            # Extract first_posted from first <time datetime> element
+            try:
+                time_elements = self.page.query_selector_all("time[datetime]")
+                if time_elements:
+                    first_time = time_elements[0]
+                    dt_str = first_time.get_attribute("datetime")
+                    if dt_str:
+                        result["first_posted"] = self._parse_relative_date(dt_str)
+            except Exception as e:
+                logger.debug(f"Error extracting first_posted: {e}")
+
+            # Extract last_edited - look for "Edited" or "Updated" time elements
+            try:
+                edit_selectors = [
+                    "[class*='edited'] time[datetime]",
+                    "[class*='updated'] time[datetime]",
+                ]
+                for selector in edit_selectors:
+                    try:
+                        edited_el = self.page.query_selector(selector)
+                        if edited_el:
+                            dt_str = edited_el.get_attribute("datetime")
+                            if dt_str:
+                                result["last_edited"] = self._parse_relative_date(dt_str)
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting last_edited: {e}")
+
+            # Extract last_comment_at from the last comment's time element
+            try:
+                comment_section_selectors = [
+                    "[class*='comment']",
+                    "[class*='reply']",
+                    "[class*='response']",
+                ]
+                for section_selector in comment_section_selectors:
+                    try:
+                        comments = self.page.query_selector_all(section_selector)
+                        if comments and len(comments) > 1:
+                            last_comment = comments[-1]
+                            time_el = last_comment.query_selector("time[datetime]")
+                            if time_el:
+                                dt_str = time_el.get_attribute("datetime")
+                                if dt_str:
+                                    result["last_comment_at"] = self._parse_relative_date(dt_str)
+                                    break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting last_comment_at: {e}")
+
+            return result
 
         except PlaywrightTimeout:
             logger.warning(f"Timeout loading post: {url}")
-            return ("", 0, 0)
+            return result
         except Exception as e:
             logger.error(f"Error getting post content from {url}: {e}")
-            return ("", 0, 0)
+            return result
 
     def _click_deploys_tab(self) -> bool:
         """Click the Deploys tab to switch to deploy notes view.
@@ -812,6 +1103,9 @@ class InstructureScraper:
     def _parse_feature_table(self, raw_content: str) -> Optional[FeatureTableData]:
         """Parse configuration table from feature content.
 
+        Handles both new format ("Feature Option to Enable", "Enable Feature Option Location")
+        and legacy format ("Enabled", "Default", etc.).
+
         Args:
             raw_content: HTML string that may contain a feature configuration table.
 
@@ -822,31 +1116,123 @@ class InstructureScraper:
             return None
 
         try:
-            # Use BeautifulSoup for table parsing
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(raw_content, 'html.parser')
             table = soup.find('table')
             if not table:
                 return None
 
+            # Store both text and HTML for cells that need HTML parsing
             data = {}
+            data_html = {}
             for row in table.find_all('tr'):
                 cells = row.find_all(['td', 'th'])
                 if len(cells) >= 2:
                     key = cells[0].get_text().strip().lower()
                     value = cells[1].get_text().strip()
                     data[key] = value
+                    data_html[key] = cells[1]  # Keep the element for HTML parsing
+
+            # Extract canonical name from "Feature Option to Enable" - first <p> only
+            canonical_name = None
+            feature_option_key = None
+            for key in data.keys():
+                if 'feature option' in key and 'enable' in key:
+                    feature_option_key = key
+                    break
+
+            if feature_option_key and feature_option_key in data_html:
+                cell = data_html[feature_option_key]
+                first_p = cell.find('p')
+                if first_p:
+                    # Normalize whitespace (strip newlines/tabs from HTML text)
+                    canonical_name = " ".join(first_p.get_text().split()).strip()
+                else:
+                    # No <p> tags, use entire cell text but stop at newline
+                    text = data[feature_option_key]
+                    canonical_name = text.split('\n')[0].strip() if text else None
+
+            # Parse "Enable Feature Option Location & Default Status" (new format)
+            enable_location_account = None
+            enable_location_course = None
+            location_key = None
+            for key in data.keys():
+                if 'enable' in key and 'location' in key:
+                    location_key = key
+                    break
+
+            if location_key:
+                location_text = data[location_key]
+                lines = [line.strip() for line in location_text.split('\n') if line.strip()]
+                for line in lines:
+                    line_lower = line.lower()
+                    if line_lower.startswith('account'):
+                        # Extract status from parentheses: "Account (Disabled/Unlocked)"
+                        match = re.search(r'\(([^)]+)\)', line)
+                        enable_location_account = match.group(1) if match else line
+                    elif line_lower.startswith('course'):
+                        match = re.search(r'\(([^)]+)\)', line)
+                        enable_location_course = match.group(1) if match else line
+
+            # Legacy format: simple "Enabled" and "Default" columns
+            legacy_enable_location = data.get('enabled', data.get('enable', data.get('enabled at', '')))
+            legacy_default_status = data.get('default', data.get('default status', ''))
+
+            # Parse boolean fields
+            subaccount_config = self._parse_bool_field(data, 'subaccount')
+            affects_ui = self._parse_bool_field(data, 'affects user interface')
+
+            # Get other text fields
+            account_course_setting = None
+            for key in data.keys():
+                if 'setting' in key and 'enable' in key:
+                    account_course_setting = data[key]
+                    break
+
+            permissions = data.get('permissions', data.get('permission', ''))
+            affected_areas = self._extract_areas(
+                data.get('affected areas', data.get('affects', ''))
+            )
+            affects_roles = self._extract_roles(
+                data.get('affected user roles', data.get('roles', ''))
+            )
 
             return FeatureTableData(
-                enable_location=data.get('enabled', data.get('enable', data.get('enabled at', ''))),
-                default_status=data.get('default', data.get('default status', '')),
-                permissions=data.get('permissions', data.get('permission', '')),
-                affected_areas=self._extract_areas(data.get('affects', data.get('affected areas', ''))),
-                affects_roles=self._extract_roles(data.get('affects', data.get('roles', '')))
+                canonical_name=canonical_name,
+                enable_location_account=enable_location_account,
+                enable_location_course=enable_location_course,
+                subaccount_config=subaccount_config,
+                affects_ui=affects_ui,
+                account_course_setting=account_course_setting,
+                permissions=permissions,
+                affected_areas=affected_areas,
+                affects_roles=affects_roles,
+                # Legacy fields for backwards compat
+                enable_location=legacy_enable_location,
+                default_status=legacy_default_status,
             )
         except Exception as e:
             logger.debug(f"Error parsing feature table: {e}")
             return None
+
+    def _parse_bool_field(self, data: dict, key_contains: str) -> Optional[bool]:
+        """Parse a boolean field from table data.
+
+        Args:
+            data: Dictionary of table data (lowercase keys).
+            key_contains: Substring to look for in keys.
+
+        Returns:
+            True if value is 'yes', False if 'no', None if not found.
+        """
+        for key, value in data.items():
+            if key_contains in key:
+                value_lower = value.lower().strip()
+                if value_lower == 'yes':
+                    return True
+                elif value_lower == 'no':
+                    return False
+        return None
 
     def _extract_areas(self, text: str) -> List[str]:
         """Extract affected areas from text.
@@ -911,8 +1297,8 @@ class InstructureScraper:
                     logger.debug(f"Skipping old post (>{hours}h): {post['title']}")
                     continue
 
-                # Get full content
-                content, likes, comments = self._get_post_content(post["url"])
+                # Get full content and metadata
+                post_data = self._get_post_content(post["url"])
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -924,10 +1310,10 @@ class InstructureScraper:
                 note = ReleaseNote(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date,
-                    likes=likes,
-                    comments=comments,
+                    likes=post_data["likes"],
+                    comments=post_data["comments"],
                     post_type=post_type,
                     is_latest=is_latest
                 )
@@ -1043,7 +1429,7 @@ class InstructureScraper:
                     continue
 
                 # Get full content
-                content, _, _ = self._get_post_content(post["url"])
+                post_data = self._get_post_content(post["url"])
 
                 # Use current time if we couldn't parse the date
                 if not published_date:
@@ -1052,7 +1438,7 @@ class InstructureScraper:
                 entry = ChangeLogEntry(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date
                 )
                 changelog_entries.append(entry)
@@ -1098,8 +1484,8 @@ class InstructureScraper:
                     logger.debug(f"Skipping old question: {post['title']}")
                     continue
 
-                # Get full content (includes engagement metrics)
-                content, likes, comments = self._get_post_content(post["url"])
+                # Get full content (includes engagement metrics and source dates)
+                post_data = self._get_post_content(post["url"])
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -1107,11 +1493,15 @@ class InstructureScraper:
                 community_post = CommunityPost(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date,
-                    likes=likes,
-                    comments=comments,
-                    post_type="question"
+                    likes=post_data["likes"],
+                    comments=post_data["comments"],
+                    post_type="question",
+                    first_posted=post_data["first_posted"],
+                    last_edited=post_data["last_edited"],
+                    last_comment_at=post_data["last_comment_at"],
+                    comment_count=post_data["comment_count"],
                 )
                 posts.append(community_post)
 
@@ -1156,8 +1546,8 @@ class InstructureScraper:
                     logger.debug(f"Skipping old blog post: {post['title']}")
                     continue
 
-                # Get full content
-                content, likes, comments = self._get_post_content(post["url"])
+                # Get full content and source dates
+                post_data = self._get_post_content(post["url"])
 
                 if not published_date:
                     published_date = datetime.now(timezone.utc)
@@ -1165,11 +1555,15 @@ class InstructureScraper:
                 community_post = CommunityPost(
                     title=post["title"],
                     url=post["url"],
-                    content=content,
+                    content=post_data["content"],
                     published_date=published_date,
-                    likes=likes,
-                    comments=comments,
-                    post_type="blog"
+                    likes=post_data["likes"],
+                    comments=post_data["comments"],
+                    post_type="blog",
+                    first_posted=post_data["first_posted"],
+                    last_edited=post_data["last_edited"],
+                    last_comment_at=post_data["last_comment_at"],
+                    comment_count=post_data["comment_count"],
                 )
                 posts.append(community_post)
 
@@ -1303,41 +1697,58 @@ class InstructureScraper:
             current_category = "General"
 
             # Task 11: Parse Upcoming Canvas Changes section
-            upcoming_section = self.page.query_selector("[data-id='upcoming-canvas-changes'], h2[data-id*='upcoming']")
-            if upcoming_section:
-                try:
-                    # Get list items within or after the upcoming changes section
-                    list_items = upcoming_section.evaluate("""
-                        el => {
-                            // Try to find list items after this heading
-                            let items = [];
-                            let sibling = el.nextElementSibling;
-                            while (sibling && !sibling.matches('h1, h2')) {
-                                if (sibling.tagName === 'UL' || sibling.tagName === 'OL') {
-                                    const lis = sibling.querySelectorAll('li');
-                                    lis.forEach(li => items.push(li.innerText));
-                                }
-                                sibling = sibling.nextElementSibling;
+            # Structure: <p><em>Upcoming Canvas Changes</em></p>
+            #   then alternating <p>DATE</p> + <ul><li>DESC</li></ul> pairs
+            try:
+                change_items = self.page.evaluate("""
+                    () => {
+                        // Find the italic "Upcoming Canvas Changes" header
+                        const emEls = document.querySelectorAll('em');
+                        let headerP = null;
+                        for (const em of emEls) {
+                            if (em.innerText.toLowerCase().includes('upcoming canvas change')) {
+                                headerP = em.closest('p');
+                                break;
                             }
-                            return items;
                         }
-                    """)
-                    for item_text in list_items:
-                        if item_text:
-                            # Parse date from text (e.g., "2026-02-15: Feature deprecation")
-                            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', item_text)
-                            if date_match:
-                                change_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
-                                days_until = (change_date - datetime.now()).days
-                                # Remove date prefix from description
-                                description = re.sub(r'\d{4}-\d{2}-\d{2}[:\s]*', '', item_text).strip()
-                                upcoming_changes.append(UpcomingChange(
-                                    date=change_date,
-                                    description=description,
-                                    days_until=max(0, days_until)
-                                ))
-                except Exception as e:
-                    logger.debug(f"Error parsing upcoming changes: {e}")
+                        if (!headerP) return [];
+
+                        // Walk siblings: <p>DATE</p> followed by <ul><li>DESC</li></ul>
+                        const items = [];
+                        let currentDate = null;
+                        let sibling = headerP.nextElementSibling;
+                        while (sibling) {
+                            if (sibling.matches('h1, h2, h3')) break;
+                            const text = sibling.innerText.trim();
+                            if (!text) { sibling = sibling.nextElementSibling; continue; }
+                            // "For more information" signals end of section
+                            if (text.toLowerCase().startsWith('for more information')) break;
+
+                            if (sibling.tagName === 'P' && /^\\d{4}-\\d{2}-\\d{2}$/.test(text)) {
+                                currentDate = text;
+                            } else if ((sibling.tagName === 'UL' || sibling.tagName === 'OL') && currentDate) {
+                                const lis = sibling.querySelectorAll('li');
+                                lis.forEach(li => {
+                                    items.push({ date: currentDate, description: li.innerText.trim() });
+                                });
+                                currentDate = null;
+                            }
+                            sibling = sibling.nextElementSibling;
+                        }
+                        return items;
+                    }
+                """)
+                for item in change_items:
+                    if item.get("date") and item.get("description"):
+                        change_date = datetime.strptime(item["date"], "%Y-%m-%d")
+                        days_until = (change_date - datetime.now()).days
+                        upcoming_changes.append(UpcomingChange(
+                            date=change_date,
+                            description=item["description"],
+                            days_until=max(0, days_until)
+                        ))
+            except Exception as e:
+                logger.debug(f"Error parsing upcoming changes: {e}")
 
             # Parse H2 (sections), H3 (categories), H4 (features)
             headings = self.page.query_selector_all("h2[data-id], h3[data-id], h4[data-id]")
@@ -1360,7 +1771,10 @@ class InstructureScraper:
                         added_match = re.search(r'\[Added (\d{4}-\d{2}-\d{2})\]', text)
                         if added_match:
                             added_date = datetime.strptime(added_match.group(1), "%Y-%m-%d")
-                            text = re.sub(r'\s*\[Added \d{4}-\d{2}-\d{2}\]', '', text)
+
+                        # Strip all bracketed annotations from name and anchor_id
+                        text = _strip_bracket_annotations(text)
+                        data_id = _strip_anchor_annotations(data_id)
 
                         # Task 12: Use _get_next_sibling_content for full content extraction
                         raw_content = self._get_next_sibling_content(heading)
@@ -1374,7 +1788,8 @@ class InstructureScraper:
                             anchor_id=data_id,
                             added_date=added_date,
                             raw_content=raw_content,
-                            table_data=table_data
+                            table_data=table_data,
+                            section=current_section,
                         )
                         features.append(feature)
 
@@ -1385,13 +1800,42 @@ class InstructureScraper:
                     logger.debug(f"Error parsing heading: {e}")
                     continue
 
+            # Extract source dates from page
+            first_posted = None
+            last_edited = None
+            try:
+                time_elements = self.page.query_selector_all("time[datetime]")
+                if time_elements:
+                    dt_str = time_elements[0].get_attribute("datetime")
+                    if dt_str:
+                        first_posted = self._parse_relative_date(dt_str)
+                # Look for edited/updated time
+                edit_selectors = [
+                    "[class*='edited'] time[datetime]",
+                    "[class*='updated'] time[datetime]",
+                ]
+                for selector in edit_selectors:
+                    try:
+                        edited_el = self.page.query_selector(selector)
+                        if edited_el:
+                            dt_str = edited_el.get_attribute("datetime")
+                            if dt_str:
+                                last_edited = self._parse_relative_date(dt_str)
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting page dates: {e}")
+
             return ReleaseNotePage(
                 title=title,
                 url=url,
                 release_date=release_date,
                 upcoming_changes=upcoming_changes,
                 features=features,
-                sections=sections
+                sections=sections,
+                first_posted=first_posted,
+                last_edited=last_edited,
             )
 
         except Exception as e:
@@ -1467,7 +1911,10 @@ class InstructureScraper:
                         if delayed_match:
                             status = "delayed"
                             status_date = datetime.strptime(delayed_match.group(1), "%Y-%m-%d")
-                            text = re.sub(r'\s*\[Delayed as of \d{4}-\d{2}-\d{2}\]', '', text)
+
+                        # Strip all bracketed annotations from name and anchor_id
+                        text = _strip_bracket_annotations(text)
+                        data_id = _strip_anchor_annotations(data_id)
 
                         # Get content after heading
                         raw_content = self._get_next_sibling_content(heading)
@@ -1494,13 +1941,42 @@ class InstructureScraper:
                     logger.debug(f"Error parsing deploy heading: {e}")
                     continue
 
+            # Extract source dates from page
+            first_posted = None
+            last_edited = None
+            try:
+                time_elements = self.page.query_selector_all("time[datetime]")
+                if time_elements:
+                    dt_str = time_elements[0].get_attribute("datetime")
+                    if dt_str:
+                        first_posted = self._parse_relative_date(dt_str)
+                # Look for edited/updated time
+                edit_selectors = [
+                    "[class*='edited'] time[datetime]",
+                    "[class*='updated'] time[datetime]",
+                ]
+                for selector in edit_selectors:
+                    try:
+                        edited_el = self.page.query_selector(selector)
+                        if edited_el:
+                            dt_str = edited_el.get_attribute("datetime")
+                            if dt_str:
+                                last_edited = self._parse_relative_date(dt_str)
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error extracting page dates: {e}")
+
             return DeployNotePage(
                 title=title,
                 url=url,
                 deploy_date=deploy_date,
                 beta_date=beta_date,
                 changes=changes,
-                sections=sections
+                sections=sections,
+                first_posted=first_posted,
+                last_edited=last_edited,
             )
 
         except Exception as e:
@@ -1645,53 +2121,170 @@ def classify_discussion_posts(
     posts: List[CommunityPost],
     db: "Database",
     first_run_limit: int = 5,
-    scraper: Optional["InstructureScraper"] = None
+    scraper: Optional["InstructureScraper"] = None,
+    processor: Optional["ContentProcessor"] = None,
 ) -> List[DiscussionUpdate]:
     """Classify posts as new or updated based on comment tracking.
 
+    Uses the content_items table to track which posts are new vs updated.
+    A post is considered:
+    - New: if it doesn't exist in the database
+    - Updated: if it exists but comment_count has increased
+
     Args:
-        posts: List of CommunityPost objects.
-        db: Database instance for tracking.
-        first_run_limit: Max new posts on first run.
-        scraper: Optional scraper for fetching latest comments.
+        posts: List of CommunityPost objects to classify.
+        db: Database instance for checking existing posts.
+        first_run_limit: Max posts to include on first run (when db is empty).
+        scraper: Optional scraper to fetch latest comment text.
+        processor: Optional ContentProcessor for LLM feature extraction fallback.
 
     Returns:
-        List of DiscussionUpdate objects to include in feed.
+        List of DiscussionUpdate objects for new/updated posts.
     """
-    results = []
-    new_count = 0
+    if not posts:
+        return []
+
+    updates: List[DiscussionUpdate] = []
+    new_posts_count = 0
+
+    # Check if this is a first run (no discussion posts exist in db)
+    is_first_run = True
+    for post in posts:
+        if db.item_exists(post.source_id):
+            is_first_run = False
+            break
 
     for post in posts:
-        source_id = extract_source_id(post.url, post.post_type)
-        tracked = db.get_discussion_tracking(source_id)
+        source_id = post.source_id
+        current_comment_count = post.comment_count or post.comments or 0
 
-        if tracked is None:
-            new_count += 1
-            if new_count > first_run_limit:
-                db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
+        if not db.item_exists(source_id):
+            # New post - check first_run_limit
+            if is_first_run and new_posts_count >= first_run_limit:
                 continue
 
-            results.append(DiscussionUpdate(
-                post=post, is_new=True,
+            # Get latest comment if scraper available
+            latest_comment = None
+            if scraper and current_comment_count > 0:
+                latest_comment = scraper.scrape_latest_comment(post.url)
+
+            # Extract feature refs
+            feature_refs = extract_feature_refs(
+                title=post.title,
+                content=post.content,
+                db=db,
+                post_type=post.post_type,
+                is_new=True,
+                processor=processor,
+            )
+
+            updates.append(DiscussionUpdate(
+                post=post,
+                is_new=True,
                 previous_comment_count=0,
-                new_comment_count=post.comments,
-                latest_comment=None
+                new_comment_count=current_comment_count,
+                latest_comment=latest_comment,
+                feature_refs=feature_refs,
             ))
+            new_posts_count += 1
+        else:
+            # Existing post - check for new comments
+            stored_count = db.get_comment_count(source_id) or 0
 
-        elif post.comments > tracked["comment_count"]:
-            new_comments = post.comments - tracked["comment_count"]
-            latest_comment = scraper.scrape_latest_comment(post.url) if scraper else None
+            if current_comment_count > stored_count:
+                # Post has new comments
+                latest_comment = None
+                if scraper:
+                    latest_comment = scraper.scrape_latest_comment(post.url)
 
-            results.append(DiscussionUpdate(
-                post=post, is_new=False,
-                previous_comment_count=tracked["comment_count"],
-                new_comment_count=new_comments,
-                latest_comment=latest_comment
-            ))
+                # Extract feature refs (is_new=False for updates)
+                feature_refs = extract_feature_refs(
+                    title=post.title,
+                    content=post.content,
+                    db=db,
+                    post_type=post.post_type,
+                    is_new=False,
+                    processor=processor,
+                )
 
-        db.upsert_discussion_tracking(source_id, post.post_type, post.comments)
+                updates.append(DiscussionUpdate(
+                    post=post,
+                    is_new=False,
+                    previous_comment_count=stored_count,
+                    new_comment_count=current_comment_count,
+                    latest_comment=latest_comment,
+                    feature_refs=feature_refs,
+                ))
 
-    return results
+                # Update stored comment count
+                db.update_comment_count(source_id, current_comment_count)
+
+    return updates
+
+
+def _strip_bracket_annotations(text: str) -> str:
+    """Strip all bracketed annotations from text.
+
+    Canvas release notes add annotations like [Added 2026-01-28],
+    [Reverted and Delayed in all environments as of 2025-10-23],
+    [This feature is currently delayed...], etc.
+
+    Args:
+        text: Text that may contain [...] annotations.
+
+    Returns:
+        Text with all [...] annotations removed and whitespace cleaned up.
+    """
+    if not text:
+        return text
+    cleaned = re.sub(r'\s*\[[^\]]*\]', '', text)
+    return cleaned.strip()
+
+
+def _strip_anchor_annotations(anchor_id: str) -> str:
+    """Strip bracketed annotation slugs from an anchor_id.
+
+    Canvas H4 data-id attributes include slugified bracket annotations,
+    e.g. "canvas-apps-link-added-2026-01-28" should become "canvas-apps-link".
+
+    Args:
+        anchor_id: The data-id attribute value from an H4 heading.
+
+    Returns:
+        Anchor ID with annotation suffixes removed.
+    """
+    if not anchor_id:
+        return anchor_id
+    # Strip common annotation patterns from hyphenated anchor_ids
+    patterns = [
+        r'-added-\d{4}-\d{2}-\d{2}$',
+        r'-added-on-\d{4}-\d{2}-\d{2}$',
+        r'-delayed-as-of-\d{4}-\d{2}-\d{2}$',
+        r'-reverted-and-delayed-in-all-environments-as-of-\d{4}-\d{2}-\d{2}$',
+        r'-this-feature-is-currently-delayed.*$',
+    ]
+    cleaned = anchor_id
+    for pattern in patterns:
+        cleaned = re.sub(pattern, '', cleaned)
+    return cleaned
+
+
+def _slugify(text: str) -> str:
+    """Convert text to a slug suitable for option_id.
+
+    Args:
+        text: Text to slugify (e.g., "Document Processor").
+
+    Returns:
+        Slugified text (e.g., "document_processor").
+    """
+    if not text:
+        return ""
+    # Lowercase, replace spaces/hyphens with underscores, remove other special chars
+    slug = text.lower().strip()
+    slug = re.sub(r'[\s\-]+', '_', slug)
+    slug = re.sub(r'[^a-z0-9_]', '', slug)
+    return slug[:50]  # Limit length
 
 
 def classify_release_features(
@@ -1699,41 +2292,206 @@ def classify_release_features(
     db: "Database",
     first_run_limit: int = 3
 ) -> Tuple[bool, List[str]]:
-    """Classify release note features as new or existing.
+    """Classify release note features and create announcements.
+
+    Uses the three-tier model:
+    1. features (canonical) - matched from category
+    2. feature_options (canonical) - from "Feature Option to Enable" table cell
+    3. feature_announcements - each H4 entry (this release note)
 
     Args:
-        page: ReleaseNotePage with parsed features.
+        page: Parsed ReleaseNotePage with features to classify.
         db: Database instance for tracking.
-        first_run_limit: Max new features on first run.
+        first_run_limit: Max features to include on first run.
 
     Returns:
-        Tuple of (is_new_page, list_of_new_anchor_ids).
+        Tuple of (is_new_page, new_feature_anchor_ids):
+        - is_new_page: True if this release note page is new
+        - new_feature_anchor_ids: List of anchor_ids for new announcements
     """
-    parent_id = page.release_date.strftime("release-%Y-%m-%d")
-    new_anchors = []
-    new_count = 0
+    from src.constants import CANVAS_FEATURES
+
+    if not page or not page.features:
+        return (False, [])
+
+    # Load classification overrides
+    overrides_path = Path(__file__).parent.parent.parent / "config" / "classification_overrides.yaml"
+    force_options = []
+    force_settings = []
+    try:
+        if overrides_path.exists():
+            with open(overrides_path, 'r', encoding='utf-8') as f:
+                overrides_data = yaml.safe_load(f) or {}
+                classification = overrides_data.get('classification_overrides', {})
+                force_options = classification.get('force_options', [])
+                force_settings = classification.get('force_settings', [])
+    except Exception as e:
+        logger.warning(f"Could not load classification overrides: {e}")
+
+    # Generate content_id from the page URL
+    content_id = extract_source_id(page.url, "release_note")
+
+    # Check if this page is already tracked
+    is_new_page = not db.item_exists(content_id)
+
+    new_anchor_ids: List[str] = []
+    processed_count = 0
+    announced_at = page.release_date.isoformat() if page.release_date else None
 
     for feature in page.features:
-        source_id = f"{parent_id}#{feature.anchor_id}"
-        tracked = db.get_feature_tracking(source_id)
+        # Apply first_run_limit for new pages
+        if is_new_page and processed_count >= first_run_limit:
+            break
 
-        if tracked is None:
-            new_count += 1
-            if new_count <= first_run_limit:
-                new_anchors.append(feature.anchor_id)
+        # Skip if announcement already exists for this content + anchor
+        if feature.anchor_id and db.announcement_exists(content_id, feature.anchor_id):
+            continue
 
-            db.upsert_feature_tracking(
-                source_id=source_id,
-                parent_id=parent_id,
-                feature_type="release_note_feature",
-                anchor_id=feature.anchor_id
-            )
+        # Try to match to canonical feature based on category/name
+        feature_id = _match_feature_id(feature.category, feature.name, CANVAS_FEATURES)
 
-    # Page is "new" if all features are new (first time seeing this page)
-    existing_features = db.get_features_for_parent(parent_id)
-    is_new_page = len(existing_features) == len(page.features) and len(new_anchors) > 0
+        # Determine if this is a feature_option or feature_setting
+        # Check is_feature_option (True if canonical_name is a real value)
+        is_option = feature.table_data.is_feature_option if feature.table_data else False
 
-    return (is_new_page, new_anchors)
+        # Determine entity_id from canonical_name (if option) or anchor_id (fallback)
+        canonical_name = None
+        entity_id = None
+
+        if is_option and feature.table_data and feature.table_data.canonical_name:
+            canonical_name = feature.table_data.canonical_name
+            entity_id = _slugify(canonical_name)
+        elif feature.anchor_id:
+            entity_id = feature.anchor_id
+        else:
+            entity_id = _slugify(feature.name)
+
+        # Apply manual overrides
+        if entity_id in force_options:
+            is_option = True
+        elif entity_id in force_settings:
+            is_option = False
+
+        # Create/update feature option or feature setting record
+        if entity_id:
+            if is_option:
+                # Create feature_option (canonical admin toggle)
+                db.upsert_feature_option(
+                    option_id=entity_id,
+                    feature_id=feature_id,
+                    name=feature.name,
+                    canonical_name=canonical_name,
+                    source='release_notes',
+                    user_group_url=feature.table_data.user_group_url if feature.table_data and hasattr(feature.table_data, 'user_group_url') else None,
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature option
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_option_id=entity_id,
+                    mention_type='announces',
+                )
+            else:
+                # Create feature_setting (non-toggle change)
+                db.upsert_feature_setting(
+                    setting_id=entity_id,
+                    feature_id=feature_id,
+                    name=feature.name,
+                    status='pending',  # Release notes announce pending changes
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature setting
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_setting_id=entity_id,
+                    mention_type='announces',
+                )
+
+        # Insert feature announcement (H4 entry snapshot)
+        table_data = feature.table_data
+        db.insert_feature_announcement(
+            content_id=content_id,
+            h4_title=feature.name,
+            announced_at=announced_at,
+            feature_id=feature_id,
+            option_id=entity_id if is_option else None,
+            setting_id=entity_id if not is_option else None,
+            anchor_id=feature.anchor_id,
+            section=feature.section or "New Features",
+            category=feature.category,
+            raw_content=feature.raw_content,
+            summary=feature.summary if feature.summary else None,
+            enable_location_account=table_data.enable_location_account if table_data else None,
+            enable_location_course=table_data.enable_location_course if table_data else None,
+            subaccount_config=table_data.subaccount_config if table_data else None,
+            account_course_setting=table_data.account_course_setting if table_data else None,
+            permissions=table_data.permissions if table_data else None,
+            affected_areas=table_data.affected_areas if table_data else None,
+            affects_ui=table_data.affects_ui if table_data else None,
+            added_date=feature.added_date.isoformat() if feature.added_date else None,
+        )
+
+        new_anchor_ids.append(feature.anchor_id or entity_id)
+        processed_count += 1
+
+    return (is_new_page, new_anchor_ids)
+
+
+def _match_feature_id(category: str, name: str, features: dict) -> str:
+    """Match a feature/category to a canonical feature_id.
+
+    Args:
+        category: Feature category from release notes.
+        name: Feature name from release notes.
+        features: CANVAS_FEATURES dictionary.
+
+    Returns:
+        Best matching feature_id, or 'general' if no match.
+    """
+    # Combine category and name for matching
+    combined = f"{category} {name}".lower()
+
+    # Direct name matches
+    for feature_id, feature_name in features.items():
+        if feature_name.lower() in combined or feature_id.lower() in combined:
+            return feature_id
+
+    # Category-based fallbacks
+    category_lower = category.lower()
+    if 'quiz' in category_lower:
+        return 'new_quizzes' if 'new' in combined else 'classic_quizzes'
+    if 'grade' in category_lower or 'speedgrader' in category_lower:
+        return 'gradebook'
+    if 'assignment' in category_lower:
+        return 'assignments'
+    if 'discussion' in category_lower:
+        return 'discussions'
+    if 'module' in category_lower:
+        return 'modules'
+    if 'page' in category_lower:
+        return 'pages'
+    if 'rubric' in category_lower:
+        return 'rubrics'
+    if 'calendar' in category_lower:
+        return 'calendar'
+    if 'inbox' in category_lower or 'conversation' in category_lower:
+        return 'inbox'
+    if 'studio' in category_lower:
+        return 'canvas_studio'
+    if 'mobile' in category_lower:
+        return 'canvas_mobile'
+    if 'api' in category_lower:
+        return 'api'
+    if 'lti' in category_lower or 'external' in category_lower:
+        return 'external_apps_lti'
+    if 'rce' in category_lower or 'rich content' in category_lower:
+        return 'rich_content_editor'
+
+    return 'general'
 
 
 def classify_deploy_changes(
@@ -1743,35 +2501,278 @@ def classify_deploy_changes(
 ) -> Tuple[bool, List[str]]:
     """Classify deploy note changes as new or existing.
 
+    Creates feature_options records for deployed changes and links
+    the content to features via content_feature_refs.
+
     Args:
-        page: DeployNotePage with parsed changes.
+        page: Parsed DeployNotePage with changes to classify.
         db: Database instance for tracking.
-        first_run_limit: Max new changes on first run.
+        first_run_limit: Max changes to include on first run.
 
     Returns:
-        Tuple of (is_new_page, list_of_new_anchor_ids).
+        Tuple of (is_new_page, new_change_names):
+        - is_new_page: True if this deploy note page is new
+        - new_change_names: List of newly deployed change names
     """
-    parent_id = page.deploy_date.strftime("deploy-%Y-%m-%d")
-    new_anchors = []
-    new_count = 0
+    from src.constants import CANVAS_FEATURES
+
+    if not page or not page.changes:
+        return (False, [])
+
+    # Load classification overrides
+    overrides_path = Path(__file__).parent.parent.parent / "config" / "classification_overrides.yaml"
+    force_options = []
+    force_settings = []
+    try:
+        if overrides_path.exists():
+            with open(overrides_path, 'r', encoding='utf-8') as f:
+                overrides_data = yaml.safe_load(f) or {}
+                classification = overrides_data.get('classification_overrides', {})
+                force_options = classification.get('force_options', [])
+                force_settings = classification.get('force_settings', [])
+    except Exception as e:
+        logger.warning(f"Could not load classification overrides: {e}")
+
+    # Generate content_id from the page URL
+    content_id = extract_source_id(page.url, "deploy_note")
+
+    # Check if this page is already tracked
+    is_new_page = not db.item_exists(content_id)
+
+    new_change_names: List[str] = []
+    processed_count = 0
+
+    announced_at = page.deploy_date.isoformat() if page.deploy_date else None
 
     for change in page.changes:
-        source_id = f"{parent_id}#{change.anchor_id}"
-        tracked = db.get_feature_tracking(source_id)
+        # Apply first_run_limit for new pages
+        if is_new_page and processed_count >= first_run_limit:
+            break
 
-        if tracked is None:
-            new_count += 1
-            if new_count <= first_run_limit:
-                new_anchors.append(change.anchor_id)
+        # Skip if announcement already exists for this content + anchor
+        if change.anchor_id and db.announcement_exists(content_id, change.anchor_id):
+            continue
 
-            db.upsert_feature_tracking(
-                source_id=source_id,
-                parent_id=parent_id,
-                feature_type="deploy_note_change",
-                anchor_id=change.anchor_id
-            )
+        # Try to match to canonical feature based on category/name
+        feature_id = _match_feature_id(change.category, change.name, CANVAS_FEATURES)
 
-    existing_changes = db.get_features_for_parent(parent_id)
-    is_new_page = len(existing_changes) == len(page.changes) and len(new_anchors) > 0
+        # Determine if this is a feature_option or feature_setting
+        # Check is_feature_option (True if canonical_name is a real value)
+        is_option = change.table_data.is_feature_option if change.table_data else False
 
-    return (is_new_page, new_anchors)
+        # Determine entity_id from canonical_name (if option) or anchor_id (fallback)
+        canonical_name = None
+        entity_id = None
+
+        if is_option and change.table_data and change.table_data.canonical_name:
+            canonical_name = change.table_data.canonical_name
+            entity_id = _slugify(canonical_name)
+        elif change.anchor_id:
+            entity_id = change.anchor_id
+        else:
+            entity_id = _slugify(change.name)
+
+        # Apply manual overrides
+        if entity_id in force_options:
+            is_option = True
+        elif entity_id in force_settings:
+            is_option = False
+
+        # Determine status for settings: use delayed annotation if present, otherwise pending
+        # (actual released/active status is computed at query time from production_date)
+        setting_status = change.status if change.status == 'delayed' else 'pending'
+
+        # Create/update feature option or feature setting record
+        if entity_id:
+            if is_option:
+                # Create feature_option (canonical admin toggle)
+                db.upsert_feature_option(
+                    option_id=entity_id,
+                    feature_id=feature_id,
+                    name=change.name,
+                    canonical_name=canonical_name,
+                    source='release_notes',
+                    user_group_url=change.table_data.user_group_url if change.table_data and hasattr(change.table_data, 'user_group_url') else None,
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature option
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_option_id=entity_id,
+                    mention_type='announces',
+                )
+            else:
+                # Create feature_setting (non-toggle change)
+                db.upsert_feature_setting(
+                    setting_id=entity_id,
+                    feature_id=feature_id,
+                    name=change.name,
+                    status=setting_status,
+                    first_announced=announced_at,
+                )
+
+                # Link content to feature setting
+                db.add_content_feature_ref(
+                    content_id=content_id,
+                    feature_id=feature_id,
+                    feature_setting_id=entity_id,
+                    mention_type='announces',
+                )
+
+        # Insert feature announcement (H4 entry snapshot)
+        table_data = change.table_data
+        db.insert_feature_announcement(
+            content_id=content_id,
+            h4_title=change.name,
+            announced_at=announced_at,
+            feature_id=feature_id,
+            option_id=entity_id if is_option else None,
+            setting_id=entity_id if not is_option else None,
+            anchor_id=change.anchor_id,
+            section=change.section,
+            category=change.category,
+            raw_content=change.raw_content,
+            enable_location_account=table_data.enable_location_account if table_data else None,
+            enable_location_course=table_data.enable_location_course if table_data else None,
+            subaccount_config=table_data.subaccount_config if table_data else None,
+            account_course_setting=table_data.account_course_setting if table_data else None,
+            permissions=table_data.permissions if table_data else None,
+            affected_areas=table_data.affected_areas if table_data else None,
+            affects_ui=table_data.affects_ui if table_data else None,
+        )
+
+        new_change_names.append(change.name)
+        processed_count += 1
+
+    return (is_new_page, new_change_names)
+
+
+# Mention type priority (lower index = stronger)
+MENTION_TYPE_PRIORITY = ['announces', 'questions', 'discusses', 'feedback', 'mentions']
+
+
+def extract_feature_refs(
+    title: str,
+    content: str,
+    db: "Database",
+    post_type: str,
+    is_new: bool,
+    processor: Optional["ContentProcessor"] = None,
+) -> List[Tuple[str, Optional[str], str]]:
+    """Extract feature references from post title and content.
+
+    Args:
+        title: Post title.
+        content: Post content.
+        db: Database instance for querying existing feature_options.
+        post_type: 'question' or 'blog'.
+        is_new: True if first scrape, False if update (new comments).
+        processor: Optional ContentProcessor for LLM fallback.
+
+    Returns:
+        List of (feature_id, option_id, mention_type) tuples.
+    """
+    from src.constants import CANVAS_FEATURES
+
+    refs: List[Tuple[str, Optional[str], str]] = []
+    title_lower = (title or "").lower()
+    content_lower = (content or "").lower()
+
+    # Determine base mention_type based on post_type and is_new
+    if post_type == "blog" and is_new:
+        title_mention_type = "announces"
+        content_mention_type = "announces"
+    elif post_type == "question":
+        title_mention_type = "questions"
+        content_mention_type = "mentions"
+    else:
+        # Blog update or other
+        title_mention_type = "discusses"
+        content_mention_type = "mentions"
+
+    # 1. Match against existing feature_options
+    existing_options = db.get_all_feature_options()
+    for option in existing_options:
+        canonical = (option.get("canonical_name") or "").lower()
+        name = (option.get("name") or "").lower()
+
+        if not canonical and not name:
+            continue
+
+        match_text = canonical or name
+
+        if match_text in title_lower:
+            refs.append((option["feature_id"], option["option_id"], title_mention_type))
+        elif match_text in content_lower:
+            refs.append((option["feature_id"], option["option_id"], content_mention_type))
+
+    # 2. Match against existing feature_settings
+    existing_settings = db.get_all_feature_settings()
+    for setting in existing_settings:
+        name = (setting.get("name") or "").lower()
+        if not name:
+            continue
+
+        if name in title_lower:
+            refs.append((setting["feature_id"], None, title_mention_type))
+        elif name in content_lower:
+            refs.append((setting["feature_id"], None, content_mention_type))
+
+    # 3. Match against CANVAS_FEATURES
+    for feature_id, feature_name in CANVAS_FEATURES.items():
+        feature_name_lower = feature_name.lower()
+
+        if feature_name_lower in title_lower or feature_id in title_lower:
+            refs.append((feature_id, None, title_mention_type))
+        elif feature_name_lower in content_lower or feature_id in content_lower:
+            refs.append((feature_id, None, content_mention_type))
+
+    # 4. LLM fallback if no matches and processor available
+    if not refs and processor:
+        try:
+            llm_features = processor.extract_features_with_llm(title, content)
+            for feat in llm_features:
+                # Try to match LLM output to canonical feature
+                matched_id = _match_feature_id(feat, feat, CANVAS_FEATURES)
+                refs.append((matched_id, None, "mentions"))
+        except Exception as e:
+            logger.warning(f"LLM feature extraction failed: {e}")
+
+    # 5. Fall back to 'general' if still no matches
+    if not refs:
+        refs.append(("general", None, "mentions"))
+
+    # 6. Deduplicate, keeping strongest mention_type per (feature_id, option_id) pair
+    return _deduplicate_refs(refs)
+
+
+def _deduplicate_refs(
+    refs: List[Tuple[str, Optional[str], str]]
+) -> List[Tuple[str, Optional[str], str]]:
+    """Deduplicate refs, keeping strongest mention_type per feature/option pair.
+
+    Args:
+        refs: List of (feature_id, option_id, mention_type) tuples.
+
+    Returns:
+        Deduplicated list with strongest mention_type per pair.
+    """
+    # Group by (feature_id, option_id)
+    best: Dict[Tuple[str, Optional[str]], str] = {}
+
+    for feature_id, option_id, mention_type in refs:
+        key = (feature_id, option_id)
+
+        if key not in best:
+            best[key] = mention_type
+        else:
+            # Keep the stronger mention_type (lower index in priority list)
+            current_priority = MENTION_TYPE_PRIORITY.index(best[key]) if best[key] in MENTION_TYPE_PRIORITY else 999
+            new_priority = MENTION_TYPE_PRIORITY.index(mention_type) if mention_type in MENTION_TYPE_PRIORITY else 999
+
+            if new_priority < current_priority:
+                best[key] = mention_type
+
+    return [(fid, oid, mtype) for (fid, oid), mtype in best.items()]

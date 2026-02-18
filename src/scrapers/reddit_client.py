@@ -32,6 +32,10 @@ class RedditPost:
     published_date: datetime
     source_id: str = ""  # Unique identifier for deduplication
     permalink: str = ""  # Reddit permalink
+    # v2.0 source date fields
+    first_posted: Optional[datetime] = None
+    last_comment_at: Optional[datetime] = None
+    comment_count: int = 0
 
     @property
     def source(self) -> str:
@@ -50,7 +54,10 @@ class RedditPost:
             num_comments=self.num_comments,
             published_date=self.published_date,
             source_id=self.source_id,
-            permalink=self.permalink
+            permalink=self.permalink,
+            first_posted=self.first_posted,
+            last_comment_at=self.last_comment_at,
+            comment_count=self.comment_count,
         )
 
 
@@ -125,11 +132,28 @@ class RedditMonitor:
         else:
             content = f"Link: {submission.url}"
 
-        # Convert Unix timestamp to datetime
-        published = datetime.fromtimestamp(
+        # Convert Unix timestamp to datetime (first_posted)
+        first_posted = datetime.fromtimestamp(
             submission.created_utc,
             tz=timezone.utc
         )
+
+        # Find last_comment_at by scanning comments (if available)
+        last_comment_at = None
+        try:
+            # Replace MoreComments with actual comments (limit to avoid too many API calls)
+            submission.comments.replace_more(limit=0)
+            if submission.comments:
+                # Get the most recent comment by created_utc
+                comment_times = [
+                    datetime.fromtimestamp(c.created_utc, tz=timezone.utc)
+                    for c in submission.comments
+                    if hasattr(c, 'created_utc')
+                ]
+                if comment_times:
+                    last_comment_at = max(comment_times)
+        except Exception as e:
+            logger.debug(f"Error getting last comment time: {e}")
 
         return RedditPost(
             title=submission.title,
@@ -139,9 +163,12 @@ class RedditMonitor:
             author=str(submission.author) if submission.author else "[deleted]",
             score=submission.score,
             num_comments=submission.num_comments,
-            published_date=published,
+            published_date=first_posted,
             source_id=f"reddit_{submission.id}",
-            permalink=submission.permalink
+            permalink=submission.permalink,
+            first_posted=first_posted,
+            last_comment_at=last_comment_at,
+            comment_count=submission.num_comments,
         )
 
     def search_subreddits(

@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from src.scrapers.instructure_community import Feature, FeatureTableData, DeployChange
 
 from dataclasses import dataclass
+from datetime import datetime as dt
+from datetime import date as date_type
 
 logger = logging.getLogger("canvas_rss")
 
@@ -54,31 +56,97 @@ def format_availability(table: Optional["FeatureTableData"]) -> str:
     return "; ".join(parts) if parts else "Automatic update"
 
 
+def generate_implementation_status(
+    status: str,
+    config_level: Optional[str] = None,
+    default_state: Optional[str] = None,
+    beta_date: Optional[date_type] = None,
+    production_date: Optional[date_type] = None,
+    deprecation_date: Optional[date_type] = None,
+    first_announced: Optional[date_type] = None
+) -> str:
+    """Generate implementation_status from structured data (no LLM).
+
+    Args:
+        status: Feature option status ('pending', 'preview', 'optional', 'default_on', 'released').
+        config_level: 'account', 'course', or 'both'.
+        default_state: 'enabled' or 'disabled'.
+        beta_date: When available in beta.
+        production_date: When available in production.
+        deprecation_date: When deprecated.
+        first_announced: When first announced.
+
+    Returns:
+        Human-readable implementation status string.
+    """
+    status_map = {
+        'pending': 'Not yet available',
+        'preview': 'In feature preview (beta)',
+        'optional': 'Available, disabled by default',
+        'default_on': 'Available, enabled by default',
+        'released': 'Fully released'
+    }
+
+    parts = [status_map.get(status, status)]
+
+    if config_level:
+        parts.append(f"{config_level.title()}-level setting")
+
+    today = date_type.today()
+
+    if beta_date:
+        if beta_date > today:
+            parts.append(f"Beta: {beta_date.strftime('%b %d, %Y')}")
+        else:
+            parts.append(f"In beta since {beta_date.strftime('%b %Y')}")
+
+    if production_date:
+        if production_date > today:
+            parts.append(f"Production: {production_date.strftime('%b %d, %Y')}")
+        else:
+            parts.append(f"In production since {production_date.strftime('%b %Y')}")
+
+    if deprecation_date:
+        if deprecation_date > today:
+            parts.append(f"Deprecation: {deprecation_date.strftime('%b %d, %Y')}")
+        else:
+            parts.append(f"Deprecated {deprecation_date.strftime('%b %Y')}")
+
+    if first_announced and not any([beta_date, production_date]):
+        parts.append(f"First announced {first_announced.strftime('%b %Y')}")
+
+    return ". ".join(parts) + "."
+
+
 @dataclass
 class ContentItem:
-    """A processed content item ready for RSS feed."""
+    """A processed content item ready for database storage."""
 
+    # Identity
     source: str  # 'community', 'reddit', 'status'
-    source_id: str
+    source_id: str  # Will migrate to content_id in Stage 2
     title: str
     url: str
-    content: str
     content_type: str = ""  # 'release_note', 'deploy_note', 'changelog', 'blog', 'question', 'reddit', 'status'
+
+    # Content
     summary: str = ""
-    sentiment: str = ""  # positive, neutral, negative
-    primary_topic: str = ""  # Single topic for feature-centric grouping
-    topics: List[str] = None  # Additional/secondary topics
-    published_date: Any = None
+
+    # Source dates (v2.0)
+    first_posted: Optional[dt] = None  # When content was created
+    last_edited: Optional[dt] = None  # When author last edited
+    last_comment_at: Optional[dt] = None  # Most recent comment
+    comment_count: int = 0  # Total comments
+
+    # Engagement
     engagement_score: int = 0
-    comment_count: int = 0  # Track comments for detecting new activity
-    is_latest: bool = False  # True if tagged as "Latest Release" or "Latest Deploy"
-    has_tracking_badge: bool = False  # True if title already has [NEW]/[UPDATE] badge
-    structured_description: str = ""  # v1.3.0+ formatted description (preserved through pipeline)
-    # v1.3.0 discussion metadata (for building description after LLM enrichment)
-    is_new_post: bool = False  # True if new post, False if update
-    previous_comment_count: int = 0  # Comment count before this update
-    new_comment_count: int = 0  # Number of new comments since last check
-    latest_comment_preview: str = ""  # Preview of the latest comment (for updates)
+
+    # Deprecated fields (keep for backwards compat during migration)
+    content: str = ""  # Raw content, summary is sufficient
+    published_date: Any = None  # Use first_posted instead
+    sentiment: str = ""  # Not used
+    primary_topic: str = ""  # Replaced by feature refs
+    topics: List[str] = None  # Replaced by feature refs
 
     def __post_init__(self):
         if self.topics is None:
@@ -179,10 +247,11 @@ Category: {category}
 Content:
 {raw_content}
 
-Write a 2-3 sentence summary that covers:
-1. What this feature does
+Write a 3-5 sentence summary that covers:
+1. What this feature does or what changed
 2. Who benefits from it (students, instructors, admins)
 3. The key improvement or capability it provides
+4. Any important configuration or rollout details
 
 Keep it concise and jargon-free."""
 
@@ -195,10 +264,11 @@ Section: {section}
 Content:
 {raw_content}
 
-Write a 2-3 sentence summary that covers:
+Write a 3-5 sentence summary that covers:
 1. What behavior changed
 2. Why it was changed (bug fix, improvement, accessibility, etc.)
 3. Who needs to be aware of this change
+4. Any action items or things to watch for
 
 Keep it concise and jargon-free."""
 
@@ -357,7 +427,7 @@ Keep it concise and jargon-free."""
             # Fallback: strip HTML and return plain text
             from bs4 import BeautifulSoup
             text = BeautifulSoup(feature.raw_content, 'html.parser').get_text(separator=' ', strip=True)
-            return text[:300] if len(text) > 300 else text
+            return text[:800] if len(text) > 800 else text
 
         try:
             prompt = self.FEATURE_SUMMARIZATION_PROMPT.format(
@@ -370,7 +440,7 @@ Keep it concise and jargon-free."""
                 contents=prompt,
                 config=self.generation_config
             )
-            return response.text.strip()[:500]
+            return response.text.strip()[:1000]
         except Exception as e:
             logger.error(f"Feature summarization failed: {e}")
             return ""
@@ -391,7 +461,7 @@ Keep it concise and jargon-free."""
             # Fallback: strip HTML and return plain text
             from bs4 import BeautifulSoup
             text = BeautifulSoup(change.raw_content, 'html.parser').get_text(separator=' ', strip=True)
-            return text[:300] if len(text) > 300 else text
+            return text[:800] if len(text) > 800 else text
 
         try:
             prompt = self.DEPLOY_CHANGE_PROMPT.format(
@@ -405,7 +475,7 @@ Keep it concise and jargon-free."""
                 contents=prompt,
                 config=self.generation_config
             )
-            return response.text.strip()[:500]
+            return response.text.strip()[:1000]
         except Exception as e:
             logger.error(f"Deploy change summarization failed: {e}")
             return ""
@@ -524,6 +594,424 @@ Keep it concise and jargon-free."""
         except Exception as e:
             logger.error(f"Topic classification failed: {e}")
             return (self.DEFAULT_TOPIC, [])
+
+    def classify_feature(self, content: str, title: str) -> Optional[str]:
+        """Use LLM to determine which Canvas feature this content is about.
+
+        Args:
+            content: The content text to analyze.
+            title: The title of the content.
+
+        Returns:
+            feature_id from CANVAS_FEATURES, or None if unclear.
+        """
+        from src.constants import CANVAS_FEATURES
+
+        if not content and not title:
+            return None
+
+        # Fallback if client not available
+        if self.client is None:
+            return self._match_feature_keywords(f"{title} {content}", CANVAS_FEATURES)
+
+        try:
+            features_str = ", ".join(f"{fid}: {fname}" for fid, fname in CANVAS_FEATURES.items())
+            prompt = (
+                f"Given this list of Canvas LMS features:\n{features_str}\n\n"
+                "Identify which single feature this content is MOST about.\n"
+                "Respond with ONLY the feature_id (e.g., 'gradebook', 'assignments', 'new_quizzes').\n"
+                "If the content doesn't clearly relate to any specific feature, respond with 'general'.\n\n"
+                f"Title: {title}\n"
+                f"Content: {content[:1000]}"  # Limit content length
+            )
+
+            def call():
+                response = self.client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=prompt,
+                    config=self.generation_config
+                )
+                return response.text.strip().lower()
+
+            response_text = self._call_with_retry(call, None)
+            if not response_text:
+                return self._match_feature_keywords(f"{title} {content}", CANVAS_FEATURES)
+
+            # Validate response is a valid feature_id
+            if response_text in CANVAS_FEATURES:
+                return response_text
+
+            # Try to extract feature_id from response
+            for feature_id in CANVAS_FEATURES:
+                if feature_id in response_text:
+                    return feature_id
+
+            return 'general'
+
+        except Exception as e:
+            logger.error(f"Feature classification failed: {e}")
+            return self._match_feature_keywords(f"{title} {content}", CANVAS_FEATURES)
+
+    def _match_feature_keywords(self, text: str, features: dict) -> Optional[str]:
+        """Simple keyword-based feature matching as fallback.
+
+        Args:
+            text: Text to search for feature keywords.
+            features: CANVAS_FEATURES dictionary.
+
+        Returns:
+            Matched feature_id or 'general'.
+        """
+        text_lower = text.lower()
+
+        # Direct name matches
+        for feature_id, feature_name in features.items():
+            if feature_name.lower() in text_lower:
+                return feature_id
+
+        # Keyword-based matches
+        keyword_map = {
+            'quiz': 'new_quizzes',
+            'speedgrader': 'speedgrader',
+            'gradebook': 'gradebook',
+            'grade': 'gradebook',
+            'assignment': 'assignments',
+            'discussion': 'discussions',
+            'announcement': 'announcements',
+            'module': 'modules',
+            'page': 'pages',
+            'rubric': 'rubrics',
+            'calendar': 'calendar',
+            'inbox': 'inbox',
+            'studio': 'canvas_studio',
+            'mobile': 'canvas_mobile',
+            'api': 'api',
+            'lti': 'external_apps_lti',
+            'rce': 'rich_content_editor',
+            'rich content editor': 'rich_content_editor',
+        }
+
+        for keyword, feature_id in keyword_map.items():
+            if keyword in text_lower:
+                return feature_id
+
+        return 'general'
+
+    def extract_features_with_llm(self, title: str, content: str) -> List[str]:
+        """Use LLM to extract Canvas feature names from content.
+
+        Args:
+            title: Post title.
+            content: Post content.
+
+        Returns:
+            List of feature names mentioned (may not be canonical).
+        """
+        if not title and not content:
+            return []
+
+        if not self.client:
+            return []
+
+        combined = f"{title or ''}\n{content or ''}"[:1500]
+
+        prompt = """Extract Canvas LMS feature names mentioned in this post.
+Return only feature names, one per line. Examples: Gradebook, New Quizzes, SpeedGrader, Assignments, Modules, Pages, Discussions, Rubrics, Calendar, Inbox.
+If no Canvas features are mentioned, return "none".
+
+Post:
+""" + combined
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=self.generation_config
+            )
+            text = response.text.strip().lower()
+
+            if text == "none":
+                return []
+
+            # Parse lines, filter empty, strip whitespace
+            features = [
+                line.strip().title()
+                for line in response.text.strip().split('\n')
+                if line.strip() and line.strip().lower() != "none"
+            ]
+
+            return features
+
+        except Exception as e:
+            logger.warning(f"LLM feature extraction failed: {e}")
+            return []
+
+    def _call_llm(self, prompt: str, max_chars: int = 500) -> str:
+        """Internal method to call LLM with retry logic.
+
+        Args:
+            prompt: The prompt to send.
+            max_chars: Maximum characters in response.
+
+        Returns:
+            LLM response text, truncated if needed.
+        """
+        try:
+            response = self._call_with_retry(
+                lambda: self.client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=prompt,
+                    config=self.generation_config
+                ),
+                fallback=""
+            )
+
+            if response and hasattr(response, 'text'):
+                text = response.text.strip()
+                # Truncate at word boundary
+                if len(text) > max_chars:
+                    text = text[:max_chars].rsplit(' ', 1)[0] + '...'
+                return text
+            return ""
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            return ""
+
+    def summarize_feature_description(self, feature_name: str, content_snippet: str) -> str:
+        """Generate a 1-2 sentence description for a feature.
+
+        Args:
+            feature_name: Name of the Canvas feature.
+            content_snippet: Recent content about the feature.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are summarizing Canvas LMS features for educational technologists.
+
+Describe what {feature_name} is in 1-2 sentences. Be concise and factual.
+
+Context from recent content:
+{content_snippet[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=800)
+
+    def summarize_feature_option_description(
+        self, option_name: str, feature_name: str, raw_content: str
+    ) -> str:
+        """Generate a 1-2 sentence description for a feature option.
+
+        Args:
+            option_name: Name of the feature option.
+            feature_name: Name of the parent feature.
+            raw_content: Raw content from announcement.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are summarizing a Canvas LMS feature option for educational technologists.
+
+Feature option: {option_name}
+Parent feature: {feature_name}
+
+Describe what this feature option does in 1-2 sentences. Be concise and factual.
+
+Context:
+{raw_content[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=800)
+
+    def summarize_feature_setting_description(
+        self, setting_name: str, feature_name: str, raw_content: str
+    ) -> str:
+        """Generate a 1-2 sentence description for a feature setting (non-toggle change).
+
+        Args:
+            setting_name: Name of the feature setting.
+            feature_name: Name of the parent feature.
+            raw_content: Raw content from announcement.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are summarizing a Canvas LMS feature change for educational technologists.
+
+Feature change: {setting_name}
+Parent feature: {feature_name}
+
+Describe what this change does in 1-2 sentences. Be concise and factual. Focus on what changed and who it affects.
+
+Context:
+{raw_content[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=800)
+
+    def generate_canonical_feature_description(self, feature_name: str) -> str:
+        """Generate a stable, glossary-style description for a Canvas feature.
+
+        Uses Gemini's built-in Canvas LMS knowledge (no scraped content needed).
+
+        Args:
+            feature_name: Display name of the Canvas feature (e.g., "Assignments").
+
+        Returns:
+            2-3 sentence canonical description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are writing a glossary entry for educational technologists at a university.
+
+Describe the "{feature_name}" feature in Canvas LMS in 2-3 sentences. What is it and what does it let instructors, students, or admins do? Be concise and factual. Do not mention recent changes or updates."""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def generate_canonical_option_description(self, option_name: str, feature_name: str) -> str:
+        """Generate a stable, glossary-style description for a Canvas feature option.
+
+        Uses Gemini's built-in Canvas LMS knowledge (no scraped content needed).
+
+        Args:
+            option_name: Canonical name of the feature option.
+            feature_name: Display name of the parent feature.
+
+        Returns:
+            2-3 sentence canonical description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are writing a glossary entry for educational technologists at a university.
+
+Describe the "{option_name}" feature option in Canvas LMS in 2-3 sentences. This option belongs to the {feature_name} feature area. What does enabling this option do? Who does it affect? Be concise and factual. Do not mention recent changes or release dates."""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def generate_canonical_setting_description(self, setting_name: str, feature_name: str) -> str:
+        """Generate a stable, glossary-style description for a Canvas feature setting/change.
+
+        Uses Gemini's built-in Canvas LMS knowledge (no scraped content needed).
+
+        Args:
+            setting_name: Name of the feature setting.
+            feature_name: Display name of the parent feature.
+
+        Returns:
+            2-3 sentence canonical description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""You are writing a glossary entry for educational technologists at a university.
+
+Describe the "{setting_name}" change in the {feature_name} area of Canvas LMS in 2-3 sentences. What does this change do? Who does it affect? Be concise and factual. Do not mention specific release dates."""
+
+        return self._call_llm(prompt, max_chars=500)
+
+    def summarize_announcement_description(self, h4_title: str, raw_content: str) -> str:
+        """Generate a 1-2 sentence description for a feature announcement.
+
+        Args:
+            h4_title: The H4 title from release notes.
+            raw_content: The raw content after the H4.
+
+        Returns:
+            1-2 sentence description.
+        """
+        if not self.client:
+            return ""
+
+        prompt = f"""Summarize this Canvas release note entry in 3-5 sentences for educational technologists. Cover what changed or was added, why it matters, and who it affects.
+
+Title: {h4_title}
+Content: {raw_content[:2000]}"""
+
+        return self._call_llm(prompt, max_chars=800)
+
+    def summarize_announcement_implications_from_comments(
+        self, title: str, initial_content: str, comments: List[dict]
+    ) -> str:
+        """Generate implications from blog/Q&A comments.
+
+        Args:
+            title: The post title.
+            initial_content: The initial post content.
+            comments: List of comment dicts with 'comment_text' and 'posted_at'.
+
+        Returns:
+            2-3 sentence implications based on discussion.
+        """
+        if not self.client:
+            return ""
+
+        # Format comments, newest first
+        comments_text = "\n".join([
+            f"- {c.get('comment_text', '')[:500]}"
+            for c in sorted(comments, key=lambda x: x.get('posted_at', ''), reverse=True)[:10]
+        ])
+
+        prompt = f"""In 2-3 sentences, summarize the community discussion and what educational technologists should know. Weight recent comments more heavily. Be actionable.
+
+Title: {title}
+Initial post: {initial_content[:1000]}
+
+Comments (newest first):
+{comments_text}"""
+
+        return self._call_llm(prompt, max_chars=1000)
+
+    def generate_meta_summary(
+        self,
+        option_name: str,
+        feature_name: str,
+        implementation_status: str,
+        content_summaries: List[dict],
+        entity_type: str = "option",
+    ) -> str:
+        """Generate meta_summary for a feature option or setting from latest content.
+
+        Args:
+            option_name: Name of the feature option or setting.
+            feature_name: Name of the parent feature.
+            implementation_status: Current implementation status text.
+            content_summaries: List of dicts with 'date', 'title', 'description', 'implications'.
+            entity_type: Either "option" (toggle-based) or "setting" (non-toggle change).
+
+        Returns:
+            3-4 sentence meta summary.
+        """
+        if not self.client:
+            return ""
+
+        entity_label = "feature option" if entity_type == "option" else "feature change"
+
+        # Format content summaries
+        summaries_text = "\n".join([
+            f"- [{c.get('date', 'Unknown')}] {c.get('title', '')}: {c.get('description', '')} {c.get('implications', '')}"
+            for c in content_summaries[:5]
+        ])
+
+        prompt = f"""You are advising educational technologists about the deployment readiness of a Canvas {entity_label}.
+
+{entity_label.title()}: {option_name}
+Parent feature: {feature_name}
+Current status: {implementation_status}
+
+Recent activity (newest first):
+{summaries_text}
+
+In 3-4 sentences, summarize the current deployment readiness of "{option_name}" for ed techs. Focus specifically on this {entity_label} (not sub-features or related options). Cover: readiness for wide rollout, recent status changes, and any concerns. Be direct and actionable. Do not use markdown formatting."""
+
+        return self._call_llm(prompt, max_chars=1000)
 
     def sanitize_html(self, content: str) -> str:
         """Remove potentially malicious HTML/scripts.

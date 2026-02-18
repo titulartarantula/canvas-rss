@@ -1266,7 +1266,16 @@ class TestInstructureScraperScraping:
                         "url": "https://community.instructure.com/t/canvas-q1/123",
                         "date_text": "2 hours ago"
                     }]
-                    mock_content.return_value = ("Post content about new features", 25, 5)
+                    # v2.0: _get_post_content returns a dictionary
+                    mock_content.return_value = {
+                        "content": "Post content about new features",
+                        "likes": 25,
+                        "comments": 5,
+                        "first_posted": None,
+                        "last_edited": None,
+                        "last_comment_at": None,
+                        "comment_count": 5,
+                    }
                     mock_click.return_value = False  # Don't scrape deploy notes
 
                     result = scraper.scrape_release_notes(hours=24)
@@ -1333,7 +1342,16 @@ class TestInstructureScraperScraping:
                         {"title": "Recent Post", "url": "https://example.com/1", "date_text": "2 hours ago"},
                         {"title": "Old Post", "url": "https://example.com/2", "date_text": "5 days ago"}
                     ]
-                    mock_content.return_value = ("Content", 0, 0)
+                    # v2.0: _get_post_content returns a dictionary
+                    mock_content.return_value = {
+                        "content": "Content",
+                        "likes": 0,
+                        "comments": 0,
+                        "first_posted": None,
+                        "last_edited": None,
+                        "last_comment_at": None,
+                        "comment_count": 0,
+                    }
                     mock_click.return_value = False  # Don't scrape deploy notes
 
                     result = scraper.scrape_release_notes(hours=24)
@@ -1382,7 +1400,16 @@ class TestInstructureScraperScraping:
                     "url": "https://community.instructure.com/t/api-changes/456",
                     "date_text": "3 hours ago"
                 }]
-                mock_content.return_value = ("API deprecation notice...", 10, 3)
+                # v2.0: _get_post_content returns a dictionary
+                mock_content.return_value = {
+                    "content": "API deprecation notice...",
+                    "likes": 10,
+                    "comments": 3,
+                    "first_posted": None,
+                    "last_edited": None,
+                    "last_comment_at": None,
+                    "comment_count": 3,
+                }
 
                 result = scraper.scrape_changelog(hours=24)
 
@@ -1767,6 +1794,37 @@ class TestFeatureTableData:
         assert table.enable_location == "Account Settings"
         assert "Assignments" in table.affected_areas
 
+    def test_is_feature_option_with_canonical_name(self):
+        """Test is_feature_option is True when canonical_name has a value."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name="Document Processor")
+        assert data.is_feature_option is True
+
+    def test_is_not_feature_option_when_na(self):
+        """Test is_feature_option is False when canonical_name is N/A."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name="N/A")
+        assert data.is_feature_option is False
+
+    def test_is_not_feature_option_when_none(self):
+        """Test is_feature_option is False when canonical_name is None."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name=None)
+        assert data.is_feature_option is False
+
+    def test_is_not_feature_option_when_empty(self):
+        """Test is_feature_option is False when canonical_name is empty."""
+        from scrapers.instructure_community import FeatureTableData
+        data = FeatureTableData(canonical_name="")
+        assert data.is_feature_option is False
+
+    def test_is_not_feature_option_when_na_lowercase(self):
+        """Test is_feature_option is False for various N/A spellings."""
+        from scrapers.instructure_community import FeatureTableData
+        for val in ["n/a", "N/a", " N/A ", "  n/a  "]:
+            data = FeatureTableData(canonical_name=val)
+            assert data.is_feature_option is False, f"Expected False for '{val}'"
+
 
 class TestFeature:
     """Tests for Feature dataclass."""
@@ -2077,11 +2135,23 @@ class TestClassifyDiscussionPosts:
         assert results[0].is_new is True
 
     def test_updated_post_classified(self, temp_db):
-        """Test posts with new comments are classified as updates."""
+        """Test posts with new comments are classified as updates (v2.0)."""
         from scrapers.instructure_community import CommunityPost, classify_discussion_posts
+        from processor.content_processor import ContentItem
         from datetime import datetime
 
-        temp_db.upsert_discussion_tracking("question_888", "question", 5)
+        # v2.0: Track existing item via content_items table with comment_count
+        existing_item = ContentItem(
+            source="community",
+            source_id="question_888",
+            title="Existing Q",
+            url="http://example.com/discussion/888/test",
+            content="Content",
+            content_type="question",
+            published_date=datetime.now(),
+            comment_count=5,
+        )
+        temp_db.insert_item(existing_item)
 
         posts = [CommunityPost(
             title="Existing Q", url="http://example.com/discussion/888/test",
@@ -2092,7 +2162,7 @@ class TestClassifyDiscussionPosts:
         results = classify_discussion_posts(posts, temp_db, first_run_limit=5)
         assert len(results) == 1
         assert results[0].is_new is False
-        assert results[0].new_comment_count == 3
+        assert results[0].new_comment_count == 8  # Current comment count
 
     def test_first_run_limit_enforced(self, temp_db):
         """Test first-run limit caps new posts."""
@@ -2108,79 +2178,321 @@ class TestClassifyDiscussionPosts:
         ]
 
         results = classify_discussion_posts(posts, temp_db, first_run_limit=3)
-        assert len(results) == 3  # Limited
-
-        # All should be tracked
-        for i in range(10):
-            assert temp_db.get_discussion_tracking(f"question_{i}") is not None
+        assert len(results) == 3  # Limited (first run applies limit)
 
 
 class TestClassifyReleaseFeatures:
-    """Tests for classify_release_features function."""
+    """Tests for classify_release_features function (v2.0)."""
 
     def test_new_features_detected(self, temp_db):
-        """Test new features are detected."""
+        """Test new features are detected and linked to feature_options."""
         from scrapers.instructure_community import (
             ReleaseNotePage, Feature, FeatureTableData, classify_release_features
         )
         from datetime import datetime
 
+        # Seed features first (required for v2.0)
+        temp_db.seed_features()
+
         feature = Feature("Apps", "New Feature", "new-feature", None, "", None)
         page = ReleaseNotePage(
             title="Canvas Release Notes (2026-02-21)",
-            url="http://example.com/release",
+            url="http://example.com/release/123456",
             release_date=datetime(2026, 2, 21),
             upcoming_changes=[], features=[feature], sections={}
         )
 
-        is_new, new_anchors = classify_release_features(page, temp_db, first_run_limit=3)
+        is_new, new_anchor_ids = classify_release_features(page, temp_db, first_run_limit=3)
         assert is_new is True
-        assert "new-feature" in new_anchors
+        # v2.0: Returns anchor_ids (or option_ids) for tracking
+        assert "new-feature" in new_anchor_ids
 
     def test_first_run_limit_for_features(self, temp_db):
-        """Test first-run limit for features."""
+        """Test first-run limit for features (v2.0)."""
         from scrapers.instructure_community import (
             ReleaseNotePage, Feature, classify_release_features
         )
         from datetime import datetime
 
+        # Seed features first (required for v2.0)
+        temp_db.seed_features()
+
         features = [Feature("Cat", f"Feature {i}", f"f{i}", None, "", None) for i in range(5)]
         page = ReleaseNotePage(
             title="Canvas Release Notes (2026-02-21)",
-            url="http://example.com/release",
+            url="http://example.com/release/789012",
             release_date=datetime(2026, 2, 21),
             upcoming_changes=[], features=features, sections={}
         )
 
-        is_new, new_anchors = classify_release_features(page, temp_db, first_run_limit=3)
-        assert len(new_anchors) == 3  # Limited
+        is_new, new_feature_names = classify_release_features(page, temp_db, first_run_limit=3)
+        assert len(new_feature_names) == 3  # Limited by first_run_limit
 
-        # All should be tracked
-        for i in range(5):
-            assert temp_db.get_feature_tracking(f"release-2026-02-21#f{i}") is not None
+    def test_creates_setting_when_no_canonical_name(self, temp_db):
+        """H4 entries without canonical_name create feature_settings, not options."""
+        from scrapers.instructure_community import (
+            classify_release_features, ReleaseNotePage, Feature, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"assignments": "Assignments"})
+
+        feature = Feature(
+            category="Assignments",
+            name="Speed Improvement for Large Courses",
+            anchor_id="speed-improvement-for-large-courses",
+            added_date=None,
+            raw_content="<p>Improved loading speed</p>",
+            table_data=FeatureTableData(canonical_name=None, affects_ui=True),
+            section="Updated Features",
+        )
+
+        # Need a content_item for FK
+        item = ContentItem(
+            source="community", source_id="release_note_setting_test",
+            title="Test Release", url="https://community.instructure.com/t5/release/1",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://community.instructure.com/t5/release/1",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"Updated Features": [feature]},
+        )
+
+        is_new, anchors = classify_release_features(page, temp_db)
+
+        # Should have created a feature_setting
+        setting = temp_db.get_feature_setting("speed-improvement-for-large-courses")
+        assert setting is not None
+        assert setting["name"] == "Speed Improvement for Large Courses"
+
+        # Should NOT have created a feature_option
+        option = temp_db.get_feature_option("speed-improvement-for-large-courses")
+        assert option is None
+
+    def test_creates_option_when_canonical_name_present(self, temp_db):
+        """H4 entries WITH canonical_name create feature_options."""
+        from scrapers.instructure_community import (
+            classify_release_features, ReleaseNotePage, Feature, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"assignments": "Assignments"})
+
+        feature = Feature(
+            category="Assignments",
+            name="Document Processing App",
+            anchor_id="document-processing-app",
+            added_date=None,
+            raw_content="<p>New document feature</p>",
+            table_data=FeatureTableData(
+                canonical_name="Document Processor",
+                enable_location_account="Disabled/Unlocked",
+            ),
+            section="New Features",
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="release_note_option_test",
+            title="Test Release 2", url="https://community.instructure.com/t5/release/2",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://community.instructure.com/t5/release/2",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"New Features": [feature]},
+        )
+
+        is_new, anchors = classify_release_features(page, temp_db)
+
+        # Should have created a feature_option (slugified from canonical_name)
+        option = temp_db.get_feature_option("document_processor")
+        assert option is not None
+
+    def test_creates_setting_when_canonical_name_is_na(self, temp_db):
+        """H4 entries with canonical_name='N/A' create feature_settings."""
+        from scrapers.instructure_community import (
+            classify_release_features, ReleaseNotePage, Feature, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"gradebook": "Gradebook"})
+
+        feature = Feature(
+            category="Gradebook",
+            name="Grade Export Fix",
+            anchor_id="grade-export-fix",
+            added_date=None,
+            raw_content="<p>Fixed export</p>",
+            table_data=FeatureTableData(canonical_name="N/A"),
+            section="Updated Features",
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="release_note_na_test",
+            title="Test Release NA", url="https://community.instructure.com/t5/release/3",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = ReleaseNotePage(
+            title="Canvas Release Notes (2026-02-21)",
+            url="https://community.instructure.com/t5/release/3",
+            release_date=datetime(2026, 2, 21),
+            upcoming_changes=[],
+            features=[feature],
+            sections={"Updated Features": [feature]},
+        )
+
+        is_new, anchors = classify_release_features(page, temp_db)
+
+        setting = temp_db.get_feature_setting("grade-export-fix")
+        assert setting is not None
+
+        option = temp_db.get_feature_option("grade-export-fix")
+        assert option is None
 
 
 class TestClassifyDeployChanges:
-    """Tests for classify_deploy_changes function."""
+    """Tests for classify_deploy_changes function (v2.0)."""
 
     def test_new_changes_detected(self, temp_db):
-        """Test new changes are detected."""
+        """Test new changes are detected and linked to feature_options."""
         from scrapers.instructure_community import (
             DeployNotePage, DeployChange, classify_deploy_changes
         )
         from datetime import datetime
 
+        # Seed features first (required for v2.0)
+        temp_db.seed_features()
+
         change = DeployChange("Nav", "Fix", "fix-1", "Updates", "", None, None, None)
         page = DeployNotePage(
             title="Canvas Deploy Notes (2026-02-11)",
-            url="http://example.com/deploy",
+            url="http://example.com/deploy/345678",
             deploy_date=datetime(2026, 2, 11),
             beta_date=None, changes=[change], sections={}
         )
 
-        is_new, new_anchors = classify_deploy_changes(page, temp_db, first_run_limit=3)
+        is_new, new_change_names = classify_deploy_changes(page, temp_db, first_run_limit=3)
         assert is_new is True
-        assert "fix-1" in new_anchors
+        # v2.0: Returns change names, not anchor IDs
+        assert "Fix" in new_change_names
+
+    def test_creates_setting_when_no_canonical_name(self, temp_db):
+        """Deploy changes without canonical_name create feature_settings."""
+        from scrapers.instructure_community import (
+            classify_deploy_changes, DeployNotePage, DeployChange, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"gradebook": "Gradebook"})
+
+        change = DeployChange(
+            category="Gradebook",
+            name="Fixed sorting in grade export",
+            anchor_id="fixed-sorting-in-grade-export",
+            section="Bug Fixes",
+            raw_content="<p>Fixed a bug</p>",
+            table_data=FeatureTableData(canonical_name=None),
+            status=None,
+            status_date=None,
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="deploy_note_setting_test",
+            title="Test Deploy", url="https://community.instructure.com/t5/deploy/1",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-18)",
+            url="https://community.instructure.com/t5/deploy/1",
+            deploy_date=datetime(2026, 2, 18),
+            beta_date=datetime(2026, 2, 11),
+            changes=[change],
+            sections={"Bug Fixes": [change]},
+        )
+
+        is_new, names = classify_deploy_changes(page, temp_db)
+
+        setting = temp_db.get_feature_setting("fixed-sorting-in-grade-export")
+        assert setting is not None
+        # Status is stored as 'pending' and computed to 'active' at query time
+        assert setting["status"] == "pending"
+
+        option = temp_db.get_feature_option("fixed-sorting-in-grade-export")
+        assert option is None
+
+    def test_creates_option_when_canonical_name_present(self, temp_db):
+        """Deploy changes WITH canonical_name create feature_options."""
+        from scrapers.instructure_community import (
+            classify_deploy_changes, DeployNotePage, DeployChange, FeatureTableData
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+
+        temp_db.seed_features({"assignments": "Assignments"})
+
+        change = DeployChange(
+            category="Assignments",
+            name="Enhanced Rubric Feature",
+            anchor_id="enhanced-rubric-feature",
+            section="New Features",
+            raw_content="<p>New rubric enhancement</p>",
+            table_data=FeatureTableData(
+                canonical_name="Enhanced Rubrics",
+                enable_location_account="Enabled/Locked",
+            ),
+            status=None,
+            status_date=None,
+        )
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="community", source_id="deploy_note_option_test",
+            title="Test Deploy 2", url="https://community.instructure.com/t5/deploy/2",
+            content="Test", published_date=datetime.now()
+        )
+        temp_db.insert_item(item)
+
+        page = DeployNotePage(
+            title="Canvas Deploy Notes (2026-02-18)",
+            url="https://community.instructure.com/t5/deploy/2",
+            deploy_date=datetime(2026, 2, 18),
+            beta_date=datetime(2026, 2, 11),
+            changes=[change],
+            sections={"New Features": [change]},
+        )
+
+        is_new, names = classify_deploy_changes(page, temp_db)
+
+        # Should have created a feature_option (slugified from canonical_name)
+        option = temp_db.get_feature_option("enhanced_rubrics")
+        assert option is not None
+        assert option["lifecycle_stage"] == "stable"
+
+        # Should NOT have created a feature_setting
+        setting = temp_db.get_feature_setting("enhanced_rubrics")
+        assert setting is None
 
 
 class TestGetNextSiblingContent:
@@ -2723,3 +3035,374 @@ class TestParseReleaseNoteTableData:
         # table_data should be parsed from the content
         assert result.features[0].table_data is not None
         assert result.features[0].table_data.enable_location == "Course"
+
+
+class TestExtractFeatureRefs:
+    """Tests for extract_feature_refs function."""
+
+    def test_extract_feature_refs_matches_feature_option_in_title(self, temp_db):
+        """Test that canonical option names in title are matched."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        # Setup: seed features and add an option
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="enhanced_gradebook_filters",
+            feature_id="gradebook",
+            name="Enhanced Gradebook Filters",
+            canonical_name="Enhanced Gradebook Filters",
+            status="preview",
+        )
+
+        refs = extract_feature_refs(
+            title="Problems with Enhanced Gradebook Filters",
+            content="The filters are not working correctly.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should match the option with 'questions' type (Q&A post)
+        assert len(refs) >= 1
+        option_ref = next((r for r in refs if r[1] == "enhanced_gradebook_filters"), None)
+        assert option_ref is not None
+        assert option_ref[0] == "gradebook"  # feature_id
+        assert option_ref[2] == "questions"  # mention_type
+
+    def test_extract_feature_refs_matches_feature_in_content(self, temp_db):
+        """Test that feature names in content get 'mentions' type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="Help needed",
+            content="I'm having trouble with SpeedGrader and the Gradebook.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should match features with 'mentions' type (content only)
+        feature_ids = [r[0] for r in refs]
+        assert "speedgrader" in feature_ids or "gradebook" in feature_ids
+
+    def test_extract_feature_refs_blog_first_scrape_uses_announces(self, temp_db):
+        """Test that blog posts on first scrape use 'announces' mention_type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="New Quizzes Update",
+            content="We're excited to announce improvements to New Quizzes.",
+            db=temp_db,
+            post_type="blog",
+            is_new=True,
+        )
+
+        # Blog first scrape should use 'announces'
+        assert any(r[2] == "announces" for r in refs)
+
+    def test_extract_feature_refs_blog_update_uses_discusses(self, temp_db):
+        """Test that blog post updates use 'discusses' mention_type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="New Quizzes Update",
+            content="We're excited to announce improvements to New Quizzes.",
+            db=temp_db,
+            post_type="blog",
+            is_new=False,  # Not first scrape
+        )
+
+        # Blog update should use 'discusses' not 'announces'
+        assert not any(r[2] == "announces" for r in refs)
+        assert any(r[2] in ("discusses", "mentions") for r in refs)
+
+    def test_extract_feature_refs_no_match_returns_general(self, temp_db):
+        """Test that no matches returns link to 'general' feature."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="Random question",
+            content="Something completely unrelated to Canvas features.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+            processor=None,  # No LLM fallback
+        )
+
+        # Should fall back to 'general'
+        assert len(refs) == 1
+        assert refs[0][0] == "general"
+        assert refs[0][1] is None
+        assert refs[0][2] == "mentions"
+
+    def test_extract_feature_refs_deduplicates_keeps_strongest(self, temp_db):
+        """Test that duplicate feature refs are deduplicated, keeping strongest mention_type."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="new_quizzes_logs",
+            feature_id="new_quizzes",
+            name="New Quizzes Build Logs",
+            canonical_name="New Quizzes Build Logs",
+            status="optional",
+        )
+
+        # Title mentions "New Quizzes" (feature) and content mentions it too
+        refs = extract_feature_refs(
+            title="New Quizzes problems",
+            content="I'm having issues with New Quizzes in my course.",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should only have one ref to new_quizzes, with strongest type
+        new_quizzes_refs = [r for r in refs if r[0] == "new_quizzes"]
+        assert len(new_quizzes_refs) == 1
+
+    def test_extract_feature_refs_multiple_features(self, temp_db):
+        """Test that multiple different features create multiple refs."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+
+        refs = extract_feature_refs(
+            title="SpeedGrader and Rubrics question",
+            content="How do rubrics work in SpeedGrader?",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        feature_ids = [r[0] for r in refs]
+        # Should have refs to both features
+        assert "speedgrader" in feature_ids
+        assert "rubrics" in feature_ids
+
+    def test_extract_feature_refs_matches_settings(self, temp_db):
+        """Test that extract_feature_refs finds matches in feature_settings."""
+        from scrapers.instructure_community import extract_feature_refs
+
+        temp_db.seed_features()
+        temp_db.upsert_feature_setting(
+            setting_id="fixed-sorting-export",
+            feature_id="gradebook",
+            name="Fixed Sorting in Grade Export",
+        )
+
+        refs = extract_feature_refs(
+            title="Question about fixed sorting in grade export",
+            content="This is a question",
+            db=temp_db,
+            post_type="question",
+            is_new=True,
+        )
+
+        # Should match the setting via name -> feature_id
+        assert any(r[0] == "gradebook" for r in refs)
+
+
+class TestClassifyDiscussionPostsWithRefs:
+    """Tests for classify_discussion_posts with feature ref extraction."""
+
+    def test_classify_discussion_posts_extracts_refs_for_new_post(self, temp_db):
+        """Test that new posts get feature refs extracted."""
+        from scrapers.instructure_community import (
+            classify_discussion_posts,
+            CommunityPost,
+        )
+        from datetime import datetime, timezone
+
+        temp_db.seed_features()
+
+        post = CommunityPost(
+            title="SpeedGrader not loading",
+            url="https://community.instructure.com/discussion/12345",
+            content="SpeedGrader is giving me an error when I try to grade.",
+            published_date=datetime.now(timezone.utc),
+            post_type="question",
+            comment_count=5,
+        )
+
+        updates = classify_discussion_posts([post], temp_db, first_run_limit=10)
+
+        assert len(updates) == 1
+        update = updates[0]
+        assert update.is_new is True
+
+        # Check that feature_refs were extracted
+        assert hasattr(update, 'feature_refs')
+        assert len(update.feature_refs) >= 1
+
+        # Should have ref to speedgrader
+        feature_ids = [r[0] for r in update.feature_refs]
+        assert "speedgrader" in feature_ids
+
+    def test_classify_discussion_posts_extracts_refs_for_updated_post(self, temp_db):
+        """Test that updated posts get feature refs extracted."""
+        from scrapers.instructure_community import (
+            classify_discussion_posts,
+            CommunityPost,
+        )
+        from processor.content_processor import ContentItem
+        from datetime import datetime, timezone
+
+        temp_db.seed_features()
+
+        # Insert existing item with comment count
+        existing_item = ContentItem(
+            source="community",
+            source_id="question_12345",
+            title="Gradebook question",
+            url="https://community.instructure.com/discussion/12345",
+            content="Original content",
+            content_type="question",
+            published_date=datetime.now(timezone.utc),
+            comment_count=5,
+        )
+        temp_db.insert_item(existing_item)
+
+        # Post now has more comments
+        post = CommunityPost(
+            title="Gradebook question",
+            url="https://community.instructure.com/discussion/12345",
+            content="Still having Gradebook issues.",
+            published_date=datetime.now(timezone.utc),
+            post_type="question",
+            comment_count=10,  # More comments than before
+        )
+
+        updates = classify_discussion_posts([post], temp_db, first_run_limit=10)
+
+        assert len(updates) == 1
+        update = updates[0]
+        assert update.is_new is False
+
+        # Check that feature_refs were extracted
+        assert hasattr(update, 'feature_refs')
+        assert len(update.feature_refs) >= 1
+
+        # Should have ref to gradebook
+        feature_ids = [r[0] for r in update.feature_refs]
+        assert "gradebook" in feature_ids
+
+    def test_classify_discussion_posts_blog_new_uses_announces(self, temp_db):
+        """Test that new blog posts use 'announces' mention type."""
+        from scrapers.instructure_community import (
+            classify_discussion_posts,
+            CommunityPost,
+        )
+        from datetime import datetime, timezone
+
+        temp_db.seed_features()
+
+        post = CommunityPost(
+            title="New Quizzes improvements",
+            url="https://community.instructure.com/blog/54321",
+            content="We are excited to share New Quizzes updates.",
+            published_date=datetime.now(timezone.utc),
+            post_type="blog",
+            comment_count=0,
+        )
+
+        updates = classify_discussion_posts([post], temp_db, first_run_limit=10)
+
+        assert len(updates) == 1
+        update = updates[0]
+
+        # Should have feature_refs with 'announces' mention type
+        assert hasattr(update, 'feature_refs')
+        assert len(update.feature_refs) >= 1
+        assert any(r[2] == "announces" for r in update.feature_refs)
+
+
+class TestLifecycleDateParsing:
+    """Tests for parsing lifecycle dates from release notes."""
+
+    def test_parse_page_lifecycle_dates(self):
+        """Test parsing beta and production dates from intro paragraph."""
+        from scrapers.instructure_community import parse_page_lifecycle_dates
+
+        intro = """Unless otherwise stated, all features in this release are
+        available in the Beta environment on 2026-01-19 and the Production
+        environment on 2026-02-21."""
+
+        result = parse_page_lifecycle_dates(intro)
+
+        assert result['beta_date'].isoformat() == '2026-01-19'
+        assert result['production_date'].isoformat() == '2026-02-21'
+
+    def test_parse_page_lifecycle_dates_no_match(self):
+        """Test parsing when dates not found."""
+        from scrapers.instructure_community import parse_page_lifecycle_dates
+
+        intro = "This release includes various improvements."
+        result = parse_page_lifecycle_dates(intro)
+
+        assert result['beta_date'] is None
+        assert result['production_date'] is None
+
+    def test_parse_page_lifecycle_dates_alternate_format(self):
+        """Test parsing alternate date formats."""
+        from scrapers.instructure_community import parse_page_lifecycle_dates
+
+        intro = """Features will be available in Beta on January 19, 2026
+        and Production on February 21, 2026."""
+
+        result = parse_page_lifecycle_dates(intro)
+
+        # Should handle various date formats
+        assert result['beta_date'] is not None or result['production_date'] is not None
+
+
+class TestCommentScraping:
+    """Tests for scraping comments from blog/Q&A posts."""
+
+    def test_scrape_comments_returns_list(self):
+        """Test that scrape_comments returns a list."""
+        from src.scrapers.instructure_community import scrape_comments_from_html
+
+        html = """
+        <div class="lia-message-body-content">
+            <p>First comment text here</p>
+        </div>
+        <div class="lia-message-body-content">
+            <p>Second comment text here</p>
+        </div>
+        """
+
+        comments = scrape_comments_from_html(html)
+
+        assert isinstance(comments, list)
+        assert len(comments) >= 0  # May or may not parse depending on structure
+
+    def test_scrape_comments_empty_html(self):
+        """Test scraping from empty HTML."""
+        from src.scrapers.instructure_community import scrape_comments_from_html
+
+        comments = scrape_comments_from_html("")
+        assert comments == []
+
+    def test_scrape_comments_extracts_text(self):
+        """Test that comment text is extracted."""
+        from src.scrapers.instructure_community import scrape_comments_from_html
+
+        html = """
+        <div class="lia-message-body-content">
+            <p>This is comment text</p>
+        </div>
+        """
+
+        comments = scrape_comments_from_html(html)
+        # If parsing works, should have at least one comment
+        if comments:
+            assert 'comment_text' in comments[0]

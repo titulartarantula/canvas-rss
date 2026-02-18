@@ -9,6 +9,7 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - FOWNER
       - SETUID
       - SETGID
       - DAC_OVERRIDE
@@ -36,48 +37,50 @@ services:
       - ./logs:/app/logs
       - ./config:/app/config:ro
     networks:
-      - canvas-rss-net
+      - canvas-net
     healthcheck:
-      test: ["CMD-SHELL", "test -f /app/output/feed.xml || exit 1"]
+      test: ["CMD-SHELL", "test -f /app/data/canvas_digest.db || exit 1"]
       interval: 1h
       timeout: 10s
       retries: 3
       start_period: 10m
 
-  feed-server:
-    image: python:3.11-alpine
-    container_name: canvas-rss-server
+  feature-tracker:
+    build: .
+    container_name: canvas-feature-tracker
     restart: unless-stopped
     user: "1000:1000"
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    read_only: true
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 128M
+          cpus: '1.0'
+          memory: 512M
         reservations:
           cpus: '0.1'
-          memory: 32M
-    command: python -m http.server 8080 --directory /app/output
+          memory: 128M
+    environment:
+      - DATABASE_PATH=/app/data/canvas_digest.db
+    entrypoint: ["python", "-m", "uvicorn"]
+    command: ["src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "${FEED_HOST:-127.0.0.1}:${FEED_PORT:-8986}:8080"
+      - "${WEB_HOST:-127.0.0.1}:${WEB_PORT:-8986}:8000"
     volumes:
-      - ./output:/app/output:ro
+      - ./data:/app/data:ro
     networks:
-      - canvas-rss-net
+      - canvas-net
     depends_on:
       - canvas-rss-aggregator
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
 
 networks:
-  canvas-rss-net:
+  canvas-net:
     driver: bridge

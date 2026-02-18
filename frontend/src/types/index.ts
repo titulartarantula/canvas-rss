@@ -1,0 +1,157 @@
+export interface Feature {
+  feature_id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  option_count?: number;
+  setting_count?: number;
+  preview_count?: number;
+  pending_count?: number;
+  optional_count?: number;
+  status_summary?: string;
+  options?: FeatureOption[];
+  settings?: FeatureSetting[];
+}
+
+export interface FeatureOption {
+  option_id: string;
+  feature_id: string;
+  canonical_name: string | null;
+  name: string;
+  description: string | null;
+  meta_summary: string | null;
+  lifecycle_stage: string;  // 'preview' | 'stable' | 'pending'
+  prod_account_state: string;
+  prod_course_state: string;
+  beta_account_state: string;
+  beta_course_state: string;
+  beta_date: string | null;
+  production_date: string | null;
+  deprecation_date: string | null;
+  user_group_url: string | null;
+  doc_url: string | null;
+  source: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  feature_name?: string;
+}
+
+export interface FeatureOptionDetail extends FeatureOption {
+  feature: {
+    feature_id: string;
+    name: string;
+    description: string | null;
+  };
+  configuration: {
+    prod_account_state: string;
+    prod_course_state: string;
+    beta_account_state: string;
+    beta_course_state: string;
+  };
+  announcements: Announcement[];
+  community_posts: CommunityPost[];
+}
+
+export interface FeatureSetting {
+  setting_id: string;
+  feature_id: string;
+  name: string;
+  description: string | null;
+  meta_summary: string | null;
+  status: string;
+  beta_date: string | null;
+  production_date: string | null;
+  affected_areas: string | null;
+  affects_ui: boolean | null;
+  last_updated: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  feature_name?: string;
+}
+
+export interface FeatureSettingDetail extends FeatureSetting {
+  affects_roles: string | null;
+  feature: {
+    feature_id: string;
+    name: string;
+    description: string | null;
+  };
+  announcements: Announcement[];
+  community_posts: CommunityPost[];
+}
+
+export interface Announcement {
+  id: number;
+  h4_title: string;
+  section: string | null;
+  category: string | null;
+  description: string | null;
+  announced_at: string;
+  release_title?: string;
+  release_url?: string;
+  option_id?: string;
+  setting_id?: string;
+  beta_date?: string | null;
+  production_date?: string | null;
+  option_status?: string;
+  enable_location_account?: string | null;
+  enable_location_course?: string | null;
+  subaccount_config?: boolean | null;
+  permissions?: string | null;
+  affected_areas?: string | null;
+  affects_ui?: boolean | null;
+}
+
+export interface AnnouncementDetail extends Announcement {
+  anchor_id: string | null;
+  content_id: string;
+  release_title: string;
+  release_url: string;
+  release_type: string;
+  option_name: string | null;
+  option_display_name: string | null;
+  setting_name: string | null;
+}
+
+export interface CommunityPost {
+  source_id: string;
+  url: string;
+  title: string;
+  content_type: string;
+  summary: string | null;
+  first_posted: string;
+  mention_type?: string;
+}
+
+export interface Release {
+  source_id: string;
+  url: string;
+  title: string;
+  content_type: string;
+  summary: string | null;
+  first_posted: string | null;
+  published_date: string | null;
+  production_date: string | null;
+  announcement_count?: number;
+  announcements?: Announcement[];
+  upcoming_changes?: UpcomingChange[];
+}
+
+export interface UpcomingChange {
+  change_date: string;
+  description: string;
+}
+
+export interface DashboardData {
+  release_note: Release | null;
+  deploy_note: Release | null;
+  upcoming_changes: UpcomingChange[];
+  recent_activity: CommunityPost[];
+}
+
+export interface SearchResults {
+  features: Feature[];
+  options: FeatureOption[];
+  settings: FeatureSetting[];
+  content: CommunityPost[];
+}

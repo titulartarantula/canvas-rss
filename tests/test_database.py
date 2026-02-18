@@ -323,156 +323,1193 @@ class TestDatabase:
         assert temp_db.item_exists("some-id") is False
 
 
-class TestDiscussionTracking:
-    """Tests for discussion tracking functionality."""
+class TestSourceDateFields:
+    """Tests for v2.0 source date fields in content_items."""
 
-    def test_discussion_tracking_table_created(self, temp_db):
-        """Test that discussion_tracking table is created on init."""
+    def test_insert_item_with_source_dates(self, temp_db):
+        """Test that insert_item stores v2.0 source date fields."""
+        from processor.content_processor import ContentItem
+        from datetime import datetime, timezone
+
+        first_posted = datetime(2026, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        last_edited = datetime(2026, 1, 16, 12, 0, 0, tzinfo=timezone.utc)
+        last_comment_at = datetime(2026, 1, 17, 14, 30, 0, tzinfo=timezone.utc)
+
+        item = ContentItem(
+            source="community",
+            source_id="question_123456",
+            title="Test with source dates",
+            url="https://community.instructure.com/t5/Question-Forum/test/td-p/123456",
+            content="Test content",
+            content_type="question",
+            first_posted=first_posted,
+            last_edited=last_edited,
+            last_comment_at=last_comment_at,
+            comment_count=5,
+            published_date=first_posted,
+        )
+
+        row_id = temp_db.insert_item(item)
+        assert row_id > 0
+
+        # Verify dates were stored
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT first_posted, last_edited, last_comment_at, last_checked_at FROM content_items WHERE source_id = ?",
+            (item.source_id,)
+        )
+        row = cursor.fetchone()
+
+        assert row["first_posted"] == first_posted.isoformat()
+        assert row["last_edited"] == last_edited.isoformat()
+        assert row["last_comment_at"] == last_comment_at.isoformat()
+        assert row["last_checked_at"] is not None  # Should be set automatically
+
+    def test_insert_item_with_null_source_dates(self, temp_db):
+        """Test that insert_item handles None source date fields."""
+        from processor.content_processor import ContentItem
+
+        item = ContentItem(
+            source="reddit",
+            source_id="reddit_abc123",
+            title="Test without source dates",
+            url="https://reddit.com/r/canvas/abc123",
+            content="Test content",
+            content_type="reddit",
+            published_date=datetime.now(),
+        )
+
+        row_id = temp_db.insert_item(item)
+        assert row_id > 0
+
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT first_posted, last_edited, last_comment_at FROM content_items WHERE source_id = ?",
+            (item.source_id,)
+        )
+        row = cursor.fetchone()
+
+        # Fields should be NULL when not provided
+        assert row["first_posted"] is None
+        assert row["last_edited"] is None
+        assert row["last_comment_at"] is None
+
+
+class TestUpdateItemTracking:
+    """Tests for update_item_tracking method."""
+
+    def test_update_item_tracking_updates_comment_count(self, temp_db, sample_content_item):
+        """Test updating comment count for existing item."""
+        temp_db.insert_item(sample_content_item)
+
+        result = temp_db.update_item_tracking(
+            source_id=sample_content_item.source_id,
+            comment_count=10
+        )
+        assert result is True
+
+        # Verify update
+        count = temp_db.get_comment_count(sample_content_item.source_id)
+        assert count == 10
+
+    def test_update_item_tracking_updates_last_comment_at(self, temp_db, sample_content_item):
+        """Test updating last_comment_at for existing item."""
+        from datetime import timezone
+
+        temp_db.insert_item(sample_content_item)
+
+        new_comment_time = datetime(2026, 2, 1, 15, 0, 0, tzinfo=timezone.utc)
+        result = temp_db.update_item_tracking(
+            source_id=sample_content_item.source_id,
+            last_comment_at=new_comment_time
+        )
+        assert result is True
+
+        # Verify update
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT last_comment_at FROM content_items WHERE source_id = ?",
+            (sample_content_item.source_id,)
+        )
+        row = cursor.fetchone()
+        assert row["last_comment_at"] == new_comment_time.isoformat()
+
+    def test_update_item_tracking_sets_last_checked_at(self, temp_db, sample_content_item):
+        """Test that update_item_tracking always sets last_checked_at."""
+        temp_db.insert_item(sample_content_item)
+
+        result = temp_db.update_item_tracking(
+            source_id=sample_content_item.source_id,
+            comment_count=5
+        )
+        assert result is True
+
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT last_checked_at FROM content_items WHERE source_id = ?",
+            (sample_content_item.source_id,)
+        )
+        row = cursor.fetchone()
+        assert row["last_checked_at"] is not None
+
+    def test_update_item_tracking_returns_false_for_nonexistent(self, temp_db):
+        """Test that update_item_tracking returns False for nonexistent item."""
+        result = temp_db.update_item_tracking(
+            source_id="nonexistent-id",
+            comment_count=5
+        )
+        assert result is False
+
+
+class TestFeaturesTableV2:
+    """Tests for v2.0 features table columns."""
+
+    def test_features_table_has_description_column(self, temp_db):
+        """Test that features table has description column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(features)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'description' in columns
+
+    def test_features_table_has_llm_generated_at_column(self, temp_db):
+        """Test that features table has llm_generated_at column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(features)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'llm_generated_at' in columns
+
+
+class TestFeaturesTable:
+    """Tests for v2.0 features table."""
+
+    def test_features_table_created(self, temp_db):
+        """Test that features table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='features'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_features_table_schema(self, temp_db):
+        """Test that features table has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(features)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {"feature_id", "name", "description", "status", "created_at", "llm_generated_at"}
+        assert expected == columns
+
+    def test_seed_features_populates_table(self, temp_db):
+        """Test that seed_features populates the features table."""
+        inserted = temp_db.seed_features()
+        assert inserted > 0  # Should insert canonical features
+
+        # Verify some known features exist
+        speedgrader = temp_db.get_feature("speedgrader")
+        assert speedgrader is not None
+        assert speedgrader["name"] == "SpeedGrader"
+
+        new_quizzes = temp_db.get_feature("new_quizzes")
+        assert new_quizzes is not None
+        assert new_quizzes["name"] == "New Quizzes"
+
+    def test_seed_features_idempotent(self, temp_db):
+        """Test that seed_features is idempotent."""
+        first_count = temp_db.seed_features()
+        second_count = temp_db.seed_features()
+        assert first_count > 0
+        assert second_count == 0  # No new inserts on second run
+
+    def test_get_feature_returns_none_for_unknown(self, temp_db):
+        """Test get_feature returns None for unknown feature_id."""
+        result = temp_db.get_feature("nonexistent-feature")
+        assert result is None
+
+    def test_get_all_features(self, temp_db):
+        """Test get_all_features returns all seeded features."""
+        temp_db.seed_features()
+        features = temp_db.get_all_features()
+        assert len(features) > 40  # Should have ~45 canonical features
+        # Should be ordered by name
+        names = [f["name"] for f in features]
+        assert names == sorted(names)
+
+
+class TestFeatureSettingsTable:
+    """Tests for v2.0 feature_settings table."""
+
+    def test_feature_settings_table_exists(self, temp_db):
+        """Test that feature_settings table is created."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_settings'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_feature_announcements_has_setting_id(self, temp_db):
+        """Test that feature_announcements table has setting_id column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
+        columns = [row[1] for row in cursor.fetchall()]
+        assert "setting_id" in columns
+
+    def test_content_feature_refs_has_setting_id(self, temp_db):
+        """Test that content_feature_refs table has feature_setting_id column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(content_feature_refs)")
+        columns = [row[1] for row in cursor.fetchall()]
+        assert "feature_setting_id" in columns
+
+
+class TestFeatureOptionsTable:
+    """Tests for v2.0 feature_options table."""
+
+    def test_feature_options_table_created(self, temp_db):
+        """Test that feature_options table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_options'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_feature_options_table_schema(self, temp_db):
+        """Test that feature_options table has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {
+            "option_id", "feature_id", "name", "canonical_name", "description",
+            "summary", "meta_summary", "meta_summary_updated_at", "implementation_status",
+            "lifecycle_stage", "prod_account_state", "prod_course_state",
+            "beta_account_state", "beta_course_state", "source", "doc_url",
+            "user_group_url",
+            "beta_date", "production_date", "deprecation_date",
+            "first_announced", "last_updated", "first_seen", "last_seen",
+            "llm_generated_at"
+        }
+        assert expected == columns
+
+    def test_upsert_feature_option_creates_record(self, temp_db):
+        """Test upsert creates new feature option record."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="speedgrader-perf-upgrades",
+            feature_id="speedgrader",
+            name="Performance and usability upgrades for SpeedGrader",
+            status="preview",
+            summary="Improves SpeedGrader performance",
+            config_level="account",
+            default_state="disabled"
+        )
+        options = temp_db.get_feature_options("speedgrader")
+        assert len(options) == 1
+        assert options[0]["option_id"] == "speedgrader-perf-upgrades"
+        assert options[0]["lifecycle_stage"] == "preview"
+        assert options[0]["prod_account_state"] == "disabled_unlocked"
+
+    def test_upsert_feature_option_updates_existing(self, temp_db):
+        """Test upsert updates existing feature option."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="test-option",
+            feature_id="gradebook",
+            name="Test Option",
+            status="preview"
+        )
+        temp_db.upsert_feature_option(
+            option_id="test-option",
+            feature_id="gradebook",
+            name="Updated Test Option",
+            status="optional"
+        )
+        options = temp_db.get_feature_options("gradebook")
+        assert len(options) == 1
+        assert options[0]["name"] == "Updated Test Option"
+        assert options[0]["lifecycle_stage"] == "stable"  # 'optional' maps to 'stable'
+
+    def test_get_feature_options_empty(self, temp_db):
+        """Test get_feature_options returns empty list for feature with no options."""
+        temp_db.seed_features()
+        options = temp_db.get_feature_options("assignments")
+        assert options == []
+
+    def test_get_active_feature_options(self, temp_db):
+        """Test get_active_feature_options returns preview and pending options."""
+        temp_db.seed_features()
+        # Add options with different lifecycle stages
+        temp_db.upsert_feature_option("opt1", "gradebook", "Preview Option", "preview")
+        temp_db.upsert_feature_option("opt2", "speedgrader", "Stable Option", "optional")  # maps to stable
+        temp_db.upsert_feature_option("opt3", "assignments", "Released Option", "released")  # maps to stable
+        temp_db.upsert_feature_option("opt4", "modules", "Pending Option", "pending")
+
+        active = temp_db.get_active_feature_options()
+        option_ids = {o["option_id"] for o in active}
+        assert "opt1" in option_ids  # preview - included
+        assert "opt2" not in option_ids  # stable - excluded
+        assert "opt3" not in option_ids  # stable - excluded
+        assert "opt4" in option_ids  # pending - included
+        # Should include feature_name from JOIN
+        assert all("feature_name" in o for o in active)
+
+
+class TestContentFeatureRefs:
+    """Tests for v2.0 content_feature_refs junction table."""
+
+    def test_content_feature_refs_table_created(self, temp_db):
+        """Test that content_feature_refs table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='content_feature_refs'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_add_content_feature_ref_with_feature(self, temp_db):
+        """Test adding a content-feature reference."""
+        temp_db.seed_features()
+        temp_db.add_content_feature_ref(
+            content_id="release_note_123",
+            feature_id="speedgrader",
+            mention_type="announces"
+        )
+        refs = temp_db.get_features_for_content("release_note_123")
+        assert len(refs) == 1
+        assert refs[0]["feature_id"] == "speedgrader"
+        assert refs[0]["mention_type"] == "announces"
+
+    def test_add_content_feature_ref_with_option(self, temp_db):
+        """Test adding a content-feature_option reference."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option("opt1", "gradebook", "Test Option", "preview")
+        temp_db.add_content_feature_ref(
+            content_id="blog_456",
+            feature_option_id="opt1",
+            mention_type="discusses"
+        )
+        refs = temp_db.get_features_for_content("blog_456")
+        assert len(refs) == 1
+        assert refs[0]["option_id"] == "opt1"
+
+    def test_add_content_feature_ref_requires_feature_or_option(self, temp_db):
+        """Test that add_content_feature_ref raises error without feature or option."""
+        import pytest
+        with pytest.raises(ValueError, match="Must provide"):
+            temp_db.add_content_feature_ref(content_id="test_123")
+
+    def test_add_content_feature_ref_idempotent(self, temp_db):
+        """Test that adding same ref twice doesn't create duplicates."""
+        temp_db.seed_features()
+        temp_db.add_content_feature_ref("content_1", feature_id="gradebook")
+        temp_db.add_content_feature_ref("content_1", feature_id="gradebook")
+        refs = temp_db.get_features_for_content("content_1")
+        assert len(refs) == 1
+
+    def test_get_content_for_feature_direct(self, temp_db, sample_content_item):
+        """Test get_content_for_feature returns content directly linked to feature."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.add_content_feature_ref(
+            content_id=sample_content_item.source_id,
+            feature_id="gradebook"
+        )
+        content = temp_db.get_content_for_feature("gradebook")
+        assert len(content) == 1
+        assert content[0]["source_id"] == sample_content_item.source_id
+
+    def test_get_content_for_feature_via_option(self, temp_db, sample_content_item):
+        """Test get_content_for_feature returns content linked via feature options."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option("speedgrader-opt", "speedgrader", "SpeedGrader Option", "preview")
+        temp_db.insert_item(sample_content_item)
+        temp_db.add_content_feature_ref(
+            content_id=sample_content_item.source_id,
+            feature_option_id="speedgrader-opt"
+        )
+        # Query by parent feature should find content linked to its options
+        content = temp_db.get_content_for_feature("speedgrader")
+        assert len(content) == 1
+        assert content[0]["source_id"] == sample_content_item.source_id
+
+    def test_get_features_for_content_multiple(self, temp_db):
+        """Test get_features_for_content returns multiple features."""
+        temp_db.seed_features()
+        temp_db.add_content_feature_ref("content_1", feature_id="gradebook", mention_type="discusses")
+        temp_db.add_content_feature_ref("content_1", feature_id="speedgrader", mention_type="questions")
+        refs = temp_db.get_features_for_content("content_1")
+        assert len(refs) == 2
+        feature_ids = {r["feature_id"] for r in refs}
+        assert feature_ids == {"gradebook", "speedgrader"}
+
+
+class TestDeprecatedTablesDropped:
+    """Tests to verify deprecated tables are dropped."""
+
+    def test_discussion_tracking_table_not_exists(self, temp_db):
+        """Test that discussion_tracking table is dropped."""
         conn = temp_db._get_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='discussion_tracking'"
         )
-        assert cursor.fetchone() is not None
+        assert cursor.fetchone() is None
 
-    def test_discussion_tracking_schema(self, temp_db):
-        """Test that discussion_tracking has correct columns."""
-        conn = temp_db._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(discussion_tracking)")
-        columns = {row[1] for row in cursor.fetchall()}
-        expected = {"source_id", "post_type", "comment_count", "first_seen", "last_checked"}
-        assert expected == columns
-
-    def test_get_discussion_tracking_returns_none_for_unknown(self, temp_db):
-        """Test get_discussion_tracking returns None for unknown source_id."""
-        result = temp_db.get_discussion_tracking("unknown-id")
-        assert result is None
-
-    def test_upsert_discussion_tracking_creates_record(self, temp_db):
-        """Test upsert creates new tracking record."""
-        temp_db.upsert_discussion_tracking("question_123", "question", 5)
-        result = temp_db.get_discussion_tracking("question_123")
-        assert result is not None
-        assert result["comment_count"] == 5
-
-    def test_upsert_discussion_tracking_updates_existing(self, temp_db):
-        """Test upsert updates comment_count but preserves first_seen."""
-        temp_db.upsert_discussion_tracking("question_789", "question", 2)
-        first = temp_db.get_discussion_tracking("question_789")
-
-        temp_db.upsert_discussion_tracking("question_789", "question", 8)
-        updated = temp_db.get_discussion_tracking("question_789")
-
-        assert updated["comment_count"] == 8
-        assert updated["first_seen"] == first["first_seen"]
-
-    def test_is_discussion_tracking_empty(self, temp_db):
-        """Test first-run detection."""
-        assert temp_db.is_discussion_tracking_empty() is True
-        temp_db.upsert_discussion_tracking("q_1", "question", 0)
-        assert temp_db.is_discussion_tracking_empty() is False
-
-    def test_is_first_run_for_type(self, temp_db):
-        """Test type-specific first-run detection."""
-        # All empty initially
-        assert temp_db.is_first_run_for_type("question") is True
-        assert temp_db.is_first_run_for_type("blog") is True
-        assert temp_db.is_first_run_for_type("release_note") is True
-
-        # Add a question
-        temp_db.upsert_discussion_tracking("q_1", "question", 0)
-        assert temp_db.is_first_run_for_type("question") is False
-        assert temp_db.is_first_run_for_type("blog") is True  # Still empty
-
-        # Add a release feature
-        temp_db.upsert_feature_tracking("r#f", "r", "release_note_feature", "f")
-        assert temp_db.is_first_run_for_type("release_note") is False
-
-
-class TestFeatureTracking:
-    """Tests for release/deploy feature tracking."""
-
-    def test_feature_tracking_table_created(self, temp_db):
-        """Test that feature_tracking table is created."""
+    def test_feature_tracking_table_not_exists(self, temp_db):
+        """Test that feature_tracking table is dropped."""
         conn = temp_db._get_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_tracking'"
         )
-        assert cursor.fetchone() is not None
+        assert cursor.fetchone() is None
 
-    def test_feature_tracking_schema(self, temp_db):
-        """Test feature_tracking columns."""
+
+class TestFeatureAnnouncements:
+    """Tests for v2.0 feature_announcements table."""
+
+    def test_feature_announcements_table_created(self, temp_db):
+        """Test that feature_announcements table is created on init."""
         conn = temp_db._get_connection()
         cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(feature_tracking)")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_announcements'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_feature_announcements_table_schema(self, temp_db):
+        """Test that feature_announcements table has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
         columns = {row[1] for row in cursor.fetchall()}
-        expected = {"source_id", "parent_id", "feature_type", "anchor_id", "first_seen", "last_checked"}
+        expected = {
+            "id", "feature_id", "option_id", "setting_id", "content_id", "h4_title", "anchor_id",
+            "section", "category", "raw_content", "description", "summary",
+            "enable_location_account", "enable_location_course",
+            "subaccount_config", "account_course_setting", "permissions",
+            "affected_areas", "affects_ui", "added_date", "announced_at", "created_at",
+            "beta_date", "production_date"
+        }
         assert expected == columns
 
-    def test_get_feature_tracking_returns_none_for_unknown(self, temp_db):
-        """Test get_feature_tracking returns None for unknown."""
-        result = temp_db.get_feature_tracking("unknown")
-        assert result is None
-
-    def test_upsert_feature_tracking_creates_record(self, temp_db):
-        """Test upsert creates feature tracking record."""
-        temp_db.upsert_feature_tracking(
-            source_id="release-2026-02-21#doc-app",
-            parent_id="release-2026-02-21",
-            feature_type="release_note_feature",
-            anchor_id="doc-app"
+    def test_insert_feature_announcement(self, temp_db, sample_content_item):
+        """Test inserting a feature announcement."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.upsert_feature_option(
+            option_id="document_processor",
+            feature_id="assignments",
+            name="Document Processor",
+            canonical_name="Document Processor",
+            status="pending"
         )
-        result = temp_db.get_feature_tracking("release-2026-02-21#doc-app")
-        assert result is not None
-        assert result["anchor_id"] == "doc-app"
 
-    def test_get_features_for_parent(self, temp_db):
-        """Test getting all features for a parent release/deploy."""
-        temp_db.upsert_feature_tracking("release-2026-02-21#f1", "release-2026-02-21", "release_note_feature", "f1")
-        temp_db.upsert_feature_tracking("release-2026-02-21#f2", "release-2026-02-21", "release_note_feature", "f2")
-        temp_db.upsert_feature_tracking("release-2026-02-22#f1", "release-2026-02-22", "release_note_feature", "f1")
+        announcement_id = temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Document Processing App",
+            announced_at="2026-02-21T00:00:00",
+            option_id="document_processor",
+            anchor_id="document-processing-app",
+            section="New Features",
+            category="Assignments",
+            raw_content="<p>This feature enables...</p>",
+            summary="Enables document processing for assignments.",
+            enable_location_account="Disabled/Unlocked",
+            enable_location_course="Disabled",
+            subaccount_config=False,
+            permissions="Inherent to user role",
+            affected_areas=["Grades", "SpeedGrader"],
+            affects_ui=True
+        )
 
-        features = temp_db.get_features_for_parent("release-2026-02-21")
-        assert len(features) == 2
+        assert announcement_id > 0
 
-    def test_is_feature_tracking_empty(self, temp_db):
-        """Test first-run detection for features."""
-        assert temp_db.is_feature_tracking_empty() is True
-        temp_db.upsert_feature_tracking("r#f", "r", "release_note_feature", "f")
-        assert temp_db.is_feature_tracking_empty() is False
+    def test_get_announcements_for_option(self, temp_db, sample_content_item):
+        """Test retrieving announcements for a feature option."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.upsert_feature_option("doc_proc", "assignments", "Doc Proc", status="pending")
+
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Document Processing App",
+            announced_at="2026-02-21T00:00:00",
+            option_id="doc_proc",
+            affected_areas=["Grades"]
+        )
+
+        announcements = temp_db.get_announcements_for_option("doc_proc")
+        assert len(announcements) == 1
+        assert announcements[0]["h4_title"] == "Document Processing App"
+        assert announcements[0]["affected_areas"] == ["Grades"]
+
+    def test_get_announcements_for_content(self, temp_db, sample_content_item):
+        """Test retrieving all announcements in a release note."""
+        temp_db.seed_features()
+        temp_db.insert_item(sample_content_item)
+        temp_db.upsert_feature_option("opt1", "assignments", "Option 1", status="pending")
+        temp_db.upsert_feature_option("opt2", "gradebook", "Option 2", status="preview")
+
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Feature One",
+            announced_at="2026-02-21T00:00:00",
+            option_id="opt1",
+            section="New Features",
+            category="Assignments"
+        )
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Feature Two",
+            announced_at="2026-02-21T00:00:00",
+            option_id="opt2",
+            section="New Features",
+            category="Gradebook"
+        )
+
+        announcements = temp_db.get_announcements_for_content(sample_content_item.source_id)
+        assert len(announcements) == 2
+        titles = {a["h4_title"] for a in announcements}
+        assert titles == {"Feature One", "Feature Two"}
+
+    def test_announcement_exists(self, temp_db, sample_content_item):
+        """Test checking if announcement exists."""
+        temp_db.insert_item(sample_content_item)
+
+        assert not temp_db.announcement_exists(sample_content_item.source_id, "test-anchor")
+
+        temp_db.insert_feature_announcement(
+            content_id=sample_content_item.source_id,
+            h4_title="Test Feature",
+            announced_at="2026-02-21T00:00:00",
+            anchor_id="test-anchor"
+        )
+
+        assert temp_db.announcement_exists(sample_content_item.source_id, "test-anchor")
 
 
-class TestTrackingStats:
-    """Tests for get_tracking_stats method."""
+class TestFeatureOptions:
+    """Tests for feature option methods."""
 
-    def test_get_tracking_stats_empty(self, temp_db):
-        """Test stats on empty database."""
-        stats = temp_db.get_tracking_stats()
-        assert stats["discussion_total"] == 0
-        assert stats["question_count"] == 0
-        assert stats["blog_count"] == 0
-        assert stats["feature_total"] == 0
-        assert stats["release_feature_count"] == 0
-        assert stats["deploy_change_count"] == 0
+    def test_get_all_feature_options_empty(self, temp_db):
+        """Test get_all_feature_options returns empty list when no options exist."""
+        options = temp_db.get_all_feature_options()
+        assert options == []
 
-    def test_get_tracking_stats_with_data(self, temp_db):
-        """Test stats with tracked items."""
-        # Add discussion tracking records
-        temp_db.upsert_discussion_tracking("q1", "question", 5)
-        temp_db.upsert_discussion_tracking("q2", "question", 3)
-        temp_db.upsert_discussion_tracking("b1", "blog", 10)
+    def test_get_all_feature_options_returns_options_with_canonical_name(self, temp_db):
+        """Test get_all_feature_options returns options that have canonical_name."""
+        # Seed features first
+        temp_db.seed_features()
 
-        # Add feature tracking records
-        temp_db.upsert_feature_tracking("r1#f1", "r1", "release_note_feature", "f1")
-        temp_db.upsert_feature_tracking("r1#f2", "r1", "release_note_feature", "f2")
-        temp_db.upsert_feature_tracking("d1#c1", "d1", "deploy_note_change", "c1")
+        # Insert option with canonical_name
+        temp_db.upsert_feature_option(
+            option_id="doc_processor",
+            feature_id="assignments",
+            name="Document Processor",
+            canonical_name="Document Processor",
+            status="preview",
+        )
 
-        stats = temp_db.get_tracking_stats()
-        assert stats["discussion_total"] == 3
-        assert stats["question_count"] == 2
-        assert stats["blog_count"] == 1
-        assert stats["feature_total"] == 3
-        assert stats["release_feature_count"] == 2
-        assert stats["deploy_change_count"] == 1
+        # Insert option without canonical_name (should not be returned)
+        temp_db.upsert_feature_option(
+            option_id="some_legacy_option",
+            feature_id="gradebook",
+            name="Legacy Option",
+            canonical_name=None,
+            status="released",
+        )
+
+        options = temp_db.get_all_feature_options()
+
+        assert len(options) == 1
+        assert options[0]["option_id"] == "doc_processor"
+        assert options[0]["canonical_name"] == "Document Processor"
+        assert options[0]["feature_id"] == "assignments"
+
+    def test_get_all_feature_options_includes_name_field(self, temp_db):
+        """Test that returned options include name field for fallback matching."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id="new_quizzes_logs",
+            feature_id="new_quizzes",
+            name="New Quizzes Build Logs",
+            canonical_name="New Quizzes Build Logs",
+            status="optional",
+        )
+
+        options = temp_db.get_all_feature_options()
+
+        assert options[0]["name"] == "New Quizzes Build Logs"
+
+
+class TestFeatureOptionsTableV2:
+    """Tests for v2.0 feature_options table columns."""
+
+    def test_feature_options_has_description_column(self, temp_db):
+        """Test that feature_options has description column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'description' in columns
+
+    def test_feature_options_has_meta_summary_column(self, temp_db):
+        """Test that feature_options has meta_summary column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'meta_summary' in columns
+
+    def test_feature_options_has_meta_summary_updated_at_column(self, temp_db):
+        """Test that feature_options has meta_summary_updated_at column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'meta_summary_updated_at' in columns
+
+    def test_feature_options_has_implementation_status_column(self, temp_db):
+        """Test that feature_options has implementation_status column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'implementation_status' in columns
+
+    def test_feature_options_has_lifecycle_date_columns(self, temp_db):
+        """Test that feature_options has beta_date, production_date, deprecation_date."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'beta_date' in columns
+        assert 'production_date' in columns
+        assert 'deprecation_date' in columns
+
+    def test_feature_options_has_llm_generated_at_column(self, temp_db):
+        """Test that feature_options has llm_generated_at column."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'llm_generated_at' in columns
+
+
+class TestFeatureAnnouncementsTableV2:
+    """Tests for v2.0 feature_announcements table columns."""
+
+    def test_feature_announcements_has_description_column(self, temp_db):
+        """Test that feature_announcements has description column (replaces summary)."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(feature_announcements)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'description' in columns
+
+class TestUpcomingChanges:
+    """Tests for v2.0 upcoming_changes table."""
+
+    def test_upcoming_changes_table_created(self, temp_db):
+        """Test that upcoming_changes table is created on init."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='upcoming_changes'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_upcoming_changes_table_schema(self, temp_db):
+        """Test that upcoming_changes table has correct columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(upcoming_changes)")
+        columns = {row[1] for row in cursor.fetchall()}
+        expected = {"id", "content_id", "change_date", "description", "created_at"}
+        assert expected == columns
+
+    def test_insert_upcoming_change(self, temp_db, sample_content_item):
+        """Test inserting an upcoming change."""
+        temp_db.insert_item(sample_content_item)
+
+        change_id = temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-03-15",
+            description="Classic Quizzes will be deprecated"
+        )
+
+        assert change_id > 0
+
+    def test_get_upcoming_changes(self, temp_db, sample_content_item):
+        """Test retrieving upcoming changes."""
+        temp_db.insert_item(sample_content_item)
+
+        temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-03-01",
+            description="Change happening soon"
+        )
+        temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-04-01",
+            description="Change happening later"
+        )
+
+        changes = temp_db.get_upcoming_changes(days_ahead=90)
+        assert len(changes) == 2
+        # Should be ordered by date ascending
+        assert changes[0]["description"] == "Change happening soon"
+        assert changes[1]["description"] == "Change happening later"
+
+    def test_upcoming_change_exists(self, temp_db, sample_content_item):
+        """Test checking if upcoming change exists."""
+        temp_db.insert_item(sample_content_item)
+
+        assert not temp_db.upcoming_change_exists(
+            sample_content_item.source_id,
+            "2026-03-15",
+            "Test change"
+        )
+
+        temp_db.insert_upcoming_change(
+            content_id=sample_content_item.source_id,
+            change_date="2026-03-15",
+            description="Test change"
+        )
+
+        assert temp_db.upcoming_change_exists(
+            sample_content_item.source_id,
+            "2026-03-15",
+            "Test change"
+        )
+
+
+class TestFeatureDescriptionMethods:
+    """Tests for feature description update methods."""
+
+    def test_update_feature_description(self, temp_db):
+        """Test updating a feature's description."""
+        temp_db.seed_features()
+
+        temp_db.update_feature_description('speedgrader', 'SpeedGrader is an inline grading tool.')
+
+        feature = temp_db.get_feature('speedgrader')
+        assert feature['description'] == 'SpeedGrader is an inline grading tool.'
+        assert feature['llm_generated_at'] is not None
+
+    def test_update_feature_option_description(self, temp_db):
+        """Test updating a feature option's description."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option(
+            option_id='test_option',
+            feature_id='speedgrader',
+            name='Test Option',
+            status='preview'
+        )
+
+        temp_db.update_feature_option_description('test_option', 'This option enables testing.')
+
+        option = temp_db.get_feature_option('test_option')
+        assert option['description'] == 'This option enables testing.'
+        assert option['llm_generated_at'] is not None
+
+    def test_get_feature_option(self, temp_db):
+        """Test getting a feature option by ID."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        option = temp_db.get_feature_option('test_opt')
+        assert option is not None
+        assert option['name'] == 'Test'
+
+    def test_get_feature_option_not_found(self, temp_db):
+        """Test getting a non-existent feature option."""
+        option = temp_db.get_feature_option('nonexistent')
+        assert option is None
+
+    def test_get_features_missing_description(self, temp_db):
+        """Test getting features that don't have descriptions."""
+        temp_db.seed_features()
+        temp_db.update_feature_description('speedgrader', 'Has description')
+
+        missing = temp_db.get_features_missing_description()
+        feature_ids = [f['feature_id'] for f in missing]
+        assert 'speedgrader' not in feature_ids
+        assert len(missing) > 0  # Other features should be missing
+
+    def test_get_feature_options_missing_description(self, temp_db):
+        """Test getting feature options that don't have descriptions."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('opt1', 'speedgrader', 'Opt1', status='preview')
+        temp_db.upsert_feature_option('opt2', 'speedgrader', 'Opt2', status='preview')
+        temp_db.update_feature_option_description('opt1', 'Has description')
+
+        missing = temp_db.get_feature_options_missing_description()
+        option_ids = [o['option_id'] for o in missing]
+        assert 'opt1' not in option_ids
+        assert 'opt2' in option_ids
+
+
+class TestContentCommentsTable:
+    """Tests for content_comments table."""
+
+    def test_content_comments_table_exists(self, temp_db):
+        """Test that content_comments table exists."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='content_comments'"
+        )
+        assert cursor.fetchone() is not None
+
+    def test_content_comments_has_required_columns(self, temp_db):
+        """Test that content_comments has all required columns."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(content_comments)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'id' in columns
+        assert 'content_id' in columns
+        assert 'comment_text' in columns
+        assert 'posted_at' in columns
+        assert 'position' in columns
+        assert 'created_at' in columns
+
+    def test_content_comments_has_no_author_column(self, temp_db):
+        """Test that content_comments does NOT have author column (anonymity)."""
+        conn = temp_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(content_comments)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        assert 'author' not in columns
+        assert 'user' not in columns
+        assert 'username' not in columns
+
+
+class TestContentCommentsMethods:
+    """Tests for content_comments database methods."""
+
+    def test_insert_comment(self, temp_db, sample_content_item):
+        """Test inserting a comment."""
+        temp_db.insert_item(sample_content_item)
+        comment_id = temp_db.insert_comment(
+            content_id=sample_content_item.source_id,
+            comment_text="This is a test comment",
+            posted_at=datetime.now(),
+            position=1
+        )
+        assert comment_id > 0
+
+    def test_get_comments_for_content(self, temp_db, sample_content_item):
+        """Test retrieving comments for a content item."""
+        temp_db.insert_item(sample_content_item)
+        temp_db.insert_comment(sample_content_item.source_id, "First comment", datetime.now(), 1)
+        temp_db.insert_comment(sample_content_item.source_id, "Second comment", datetime.now(), 2)
+
+        comments = temp_db.get_comments_for_content(sample_content_item.source_id)
+        assert len(comments) == 2
+        assert comments[0]['position'] == 1
+        assert comments[1]['position'] == 2
+
+    def test_get_comments_ordered_by_posted_at_desc(self, temp_db, sample_content_item):
+        """Test that comments are returned newest first when order='desc'."""
+        temp_db.insert_item(sample_content_item)
+        older = datetime.now() - timedelta(hours=2)
+        newer = datetime.now()
+        temp_db.insert_comment(sample_content_item.source_id, "Older", older, 1)
+        temp_db.insert_comment(sample_content_item.source_id, "Newer", newer, 2)
+
+        comments = temp_db.get_comments_for_content(sample_content_item.source_id, order='desc')
+        assert comments[0]['comment_text'] == "Newer"
+
+    def test_get_latest_comments_with_limit(self, temp_db, sample_content_item):
+        """Test retrieving limited number of recent comments."""
+        temp_db.insert_item(sample_content_item)
+        for i in range(10):
+            temp_db.insert_comment(sample_content_item.source_id, f"Comment {i}", datetime.now(), i)
+
+        comments = temp_db.get_comments_for_content(sample_content_item.source_id, limit=5)
+        assert len(comments) == 5
+
+
+class TestMetaSummaryMethods:
+    """Tests for meta_summary database methods."""
+
+    def test_update_feature_option_meta_summary(self, temp_db):
+        """Test updating meta_summary for a feature option."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        temp_db.update_feature_option_meta_summary('test_opt', 'Ready for deployment. Positive feedback.')
+
+        option = temp_db.get_feature_option('test_opt')
+        assert option['meta_summary'] == 'Ready for deployment. Positive feedback.'
+        assert option['meta_summary_updated_at'] is not None
+
+    def test_get_latest_content_for_option(self, temp_db, sample_content_item):
+        """Test getting latest content items for meta_summary generation."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+        temp_db.insert_item(sample_content_item)
+        temp_db.add_content_feature_ref(
+            content_id=sample_content_item.source_id,
+            feature_option_id='test_opt',
+            mention_type='announces'
+        )
+
+        content = temp_db.get_latest_content_for_option('test_opt', limit=5)
+        assert len(content) == 1
+        assert content[0]['source_id'] == sample_content_item.source_id
+
+
+class TestLifecycleDateMethods:
+    """Tests for feature option lifecycle date methods."""
+
+    def test_update_feature_option_lifecycle_dates(self, temp_db):
+        """Test updating beta_date and production_date."""
+        from datetime import date
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        temp_db.update_feature_option_lifecycle_dates(
+            option_id='test_opt',
+            beta_date=date(2026, 1, 19),
+            production_date=date(2026, 2, 21)
+        )
+
+        option = temp_db.get_feature_option('test_opt')
+        assert option['beta_date'] == '2026-01-19'
+        assert option['production_date'] == '2026-02-21'
+
+    def test_update_implementation_status(self, temp_db):
+        """Test updating implementation_status."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_option('test_opt', 'speedgrader', 'Test', status='preview')
+
+        temp_db.update_feature_option_implementation_status(
+            'test_opt',
+            'In feature preview (beta). Account-level setting. Beta: Jan 19, 2026.'
+        )
+
+        option = temp_db.get_feature_option('test_opt')
+        assert 'feature preview' in option['implementation_status']
+
+
+class TestFeatureSettingsMethods:
+    """Tests for feature settings CRUD methods."""
+
+    def test_upsert_feature_setting(self, temp_db):
+        """Test inserting and updating a feature setting."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(
+            setting_id="speed-improvement",
+            feature_id="assignments",
+            name="Speed Improvement for Large Courses",
+        )
+        setting = temp_db.get_feature_setting("speed-improvement")
+        assert setting is not None
+        assert setting["name"] == "Speed Improvement for Large Courses"
+        assert setting["status"] == "active"
+
+        # Update should merge
+        temp_db.upsert_feature_setting(
+            setting_id="speed-improvement",
+            feature_id="assignments",
+            name="Speed Improvement for Large Courses",
+            affected_areas=["Assignments", "Gradebook"],
+        )
+        setting = temp_db.get_feature_setting("speed-improvement")
+        assert setting["affected_areas"] is not None
+
+    def test_get_feature_settings(self, temp_db):
+        """Test getting settings for a feature."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Setting 1")
+        temp_db.upsert_feature_setting(setting_id="s2", feature_id="assignments", name="Setting 2")
+        settings = temp_db.get_feature_settings("assignments")
+        assert len(settings) == 2
+
+    def test_get_all_feature_settings(self, temp_db):
+        """Test getting all feature settings."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Speed Improvement")
+        settings = temp_db.get_all_feature_settings()
+        assert len(settings) >= 1
+        assert settings[0]["name"] == "Speed Improvement"
+
+    def test_add_content_feature_ref_with_setting(self, temp_db):
+        """Test linking content to a feature setting."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Setting 1")
+        # Need a content item
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+        item = ContentItem(source="test", source_id="test-ref-setting", title="Test", url="https://example.com", content="Test", published_date=datetime.now())
+        temp_db.insert_item(item)
+        temp_db.add_content_feature_ref(content_id="test-ref-setting", feature_setting_id="s1", mention_type="announces")
+        # Should not raise
+
+    def test_insert_feature_announcement_with_setting_id(self, temp_db):
+        """Test inserting announcement with setting_id."""
+        temp_db.seed_features({"assignments": "Assignments"})
+        temp_db.upsert_feature_setting(setting_id="s1", feature_id="assignments", name="Setting 1")
+        from processor.content_processor import ContentItem
+        from datetime import datetime
+        item = ContentItem(source="test", source_id="test-ann-setting", title="Test", url="https://example.com", content="Test", published_date=datetime.now())
+        temp_db.insert_item(item)
+        row_id = temp_db.insert_feature_announcement(
+            content_id="test-ann-setting",
+            h4_title="Setting 1",
+            announced_at=datetime.now().isoformat(),
+            feature_id="assignments",
+            setting_id="s1",
+        )
+        assert row_id > 0
+
+    def test_get_latest_content_for_setting(self, temp_db):
+        """Test getting latest content items referencing a feature setting."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_setting('test_setting', 'speedgrader', 'Test Setting')
+
+        from processor.content_processor import ContentItem
+        item = ContentItem(
+            source="instructure_community",
+            source_id="test-content-1",
+            title="Test Release Note",
+            url="https://example.com",
+            content="Test content",
+            published_date="2026-01-15",
+        )
+        temp_db.insert_item(item)
+
+        temp_db.add_content_feature_ref(
+            content_id="test-content-1",
+            feature_id="speedgrader",
+            feature_setting_id="test_setting",
+            mention_type="announces",
+        )
+
+        temp_db.insert_feature_announcement(
+            content_id="test-content-1",
+            h4_title="Test Setting",
+            announced_at="2026-01-15",
+            feature_id="speedgrader",
+            setting_id="test_setting",
+            anchor_id="test-anchor-1",
+        )
+
+        temp_db.update_announcement_summary(
+            content_id="test-content-1",
+            anchor_id="test-anchor-1",
+            description="A test description",
+        )
+
+        content = temp_db.get_latest_content_for_setting("test_setting", limit=5)
+        assert len(content) == 1
+        assert content[0]["source_id"] == "test-content-1"
+        assert content[0]["announcement_description"] == "A test description"
+
+    def test_get_latest_content_for_setting_empty(self, temp_db):
+        """Test returns empty list when no content linked."""
+        temp_db.seed_features()
+        temp_db.upsert_feature_setting('orphan', 'speedgrader', 'Orphan Setting')
+
+        content = temp_db.get_latest_content_for_setting("orphan")
+        assert content == []
+
+
+def test_feature_options_schema_has_new_columns(tmp_path):
+    """Verify feature_options has lifecycle_stage and state columns, not old status/config_level/default_state."""
+    import sqlite3
+    from utils.database import Database
+    db = Database(db_path=str(tmp_path / "test.db"))
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(feature_options)")
+    columns = {row[1] for row in cursor.fetchall()}
+    assert 'lifecycle_stage' in columns
+    assert 'prod_account_state' in columns
+    assert 'prod_course_state' in columns
+    assert 'beta_account_state' in columns
+    assert 'beta_course_state' in columns
+    assert 'source' in columns
+    assert 'doc_url' in columns
+    assert 'status' not in columns
+    assert 'config_level' not in columns
+    assert 'default_state' not in columns
+    db.close()
+
+
+def test_upsert_feature_option_canonical_overrides_release_notes(tmp_path):
+    """Canonical page source overwrites release note data."""
+    from utils.database import Database
+    db = Database(db_path=str(tmp_path / "test.db"))
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO features (feature_id, name) VALUES ('assignments', 'Assignments')")
+    conn.commit()
+
+    # First: release notes creates the option
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option',
+        status='pending', source='release_notes',
+    )
+    cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
+    row = dict(cursor.fetchone())
+    assert row['lifecycle_stage'] == 'pending'
+    assert row['source'] == 'release_notes'
+
+    # Then: canonical page overwrites
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option',
+        lifecycle_stage='preview', prod_account_state='disabled_unlocked',
+        prod_course_state='N/A', beta_account_state='N/A', beta_course_state='N/A',
+        source='canonical_page',
+    )
+    cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
+    row = dict(cursor.fetchone())
+    assert row['lifecycle_stage'] == 'preview'  # canonical wins
+    assert row['prod_account_state'] == 'disabled_unlocked'
+    assert row['source'] == 'canonical_page'
+    db.close()
+
+
+def test_upsert_feature_option_release_notes_preserves_canonical(tmp_path):
+    """Release notes don't overwrite canonical page data."""
+    from utils.database import Database
+    db = Database(db_path=str(tmp_path / "test.db"))
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO features (feature_id, name) VALUES ('assignments', 'Assignments')")
+    conn.commit()
+
+    # First: canonical page creates the option
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option',
+        lifecycle_stage='preview', prod_account_state='disabled_unlocked',
+        prod_course_state='N/A', beta_account_state='N/A', beta_course_state='N/A',
+        source='canonical_page',
+    )
+
+    # Then: release notes tries to update
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option Updated',
+        status='pending', source='release_notes',
+    )
+    cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
+    row = dict(cursor.fetchone())
+    assert row['lifecycle_stage'] == 'preview'  # canonical preserved
+    assert row['prod_account_state'] == 'disabled_unlocked'  # canonical preserved
+    assert row['source'] == 'canonical_page'  # canonical preserved
+    db.close()
