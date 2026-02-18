@@ -384,6 +384,35 @@ def store_deploy_notes(
         beta_date = lifecycle_dates.get('beta_date')
         production_date = lifecycle_dates.get('production_date')
 
+        # For deploy notes, deploy_date IS the production date if not parsed from content
+        if not production_date and page.deploy_date:
+            production_date = page.deploy_date.date() if hasattr(page.deploy_date, 'date') else page.deploy_date
+        if not beta_date and page.beta_date:
+            beta_date = page.beta_date.date() if hasattr(page.beta_date, 'date') else page.beta_date
+
+        # Update lifecycle dates on feature options AND settings from this deploy page
+        if beta_date or production_date:
+            for change in page.changes:
+                entity_id = change.anchor_id
+                if not entity_id:
+                    continue
+                try:
+                    db.update_feature_option_lifecycle_dates(
+                        option_id=entity_id,
+                        beta_date=beta_date,
+                        production_date=production_date,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to update option lifecycle dates for {entity_id}: {e}")
+                try:
+                    db.update_feature_setting_lifecycle_dates(
+                        setting_id=entity_id,
+                        beta_date=beta_date,
+                        production_date=production_date,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to update setting lifecycle dates for {entity_id}: {e}")
+
         # Update per-announcement lifecycle dates
         if beta_date or production_date:
             try:

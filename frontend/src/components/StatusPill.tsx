@@ -34,6 +34,11 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
     color: 'text-status-released',
     bg: 'bg-status-released/15',
   },
+  delayed: {
+    label: 'Delayed',
+    color: 'text-amber-400',
+    bg: 'bg-amber-400/15',
+  },
   deprecated: {
     label: 'Deprecated',
     color: 'text-status-deprecated',

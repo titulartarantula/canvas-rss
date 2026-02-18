@@ -11,6 +11,7 @@ const STATUS_OPTIONS = [
   { value: 'optional', label: 'Optional', color: 'bg-status-optional' },
   { value: 'default_on', label: 'Default On', color: 'bg-status-optional' },
   { value: 'released', label: 'Released', color: 'bg-status-released' },
+  { value: 'delayed', label: 'Delayed', color: 'bg-amber-400' },
   { value: 'deprecated', label: 'Deprecated', color: 'bg-status-deprecated' },
 ]
 

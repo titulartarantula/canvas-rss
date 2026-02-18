@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, Literal
 
-from src.api.database import get_db, row_to_dict, rows_to_list
+from src.api.database import get_db, row_to_dict, rows_to_list, SETTING_STATUS_SQL
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
@@ -17,13 +17,13 @@ def get_settings(
     with get_db() as conn:
         cursor = conn.cursor()
 
-        query = """
+        query = f"""
             SELECT
                 fs.setting_id,
                 fs.feature_id,
                 fs.name,
                 fs.description,
-                fs.status,
+                {SETTING_STATUS_SQL} as status,
                 fs.beta_date,
                 fs.production_date,
                 fs.affected_areas,
@@ -37,7 +37,7 @@ def get_settings(
         params = []
 
         if status:
-            query += " AND fs.status = ?"
+            query += f" AND ({SETTING_STATUS_SQL}) = ?"
             params.append(status)
 
         if feature:
@@ -65,9 +65,10 @@ def get_setting_detail(setting_id: str):
     with get_db() as conn:
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 fs.*,
+                {SETTING_STATUS_SQL} as computed_status,
                 f.name as feature_name,
                 f.description as feature_description
             FROM feature_settings fs
@@ -84,7 +85,7 @@ def get_setting_detail(setting_id: str):
             "name": setting["name"],
             "description": setting["description"],
             "meta_summary": setting["meta_summary"],
-            "status": setting["status"],
+            "status": setting["computed_status"],
             "beta_date": setting["beta_date"],
             "production_date": setting["production_date"],
             "affected_areas": setting["affected_areas"],

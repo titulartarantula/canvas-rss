@@ -3,7 +3,7 @@ import re
 from fastapi import APIRouter, Query
 from typing import Optional
 
-from src.api.database import get_db, row_to_dict, rows_to_list
+from src.api.database import get_db, row_to_dict, rows_to_list, announcement_status_sql
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -16,7 +16,7 @@ _TITLE_DATE_SQL = """
 
 def _get_announcements(cursor, content_id: str) -> list:
     """Get feature announcements for a content item."""
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             fa.id,
             fa.h4_title,
@@ -26,7 +26,7 @@ def _get_announcements(cursor, content_id: str) -> list:
             fa.option_id,
             COALESCE(fa.beta_date, fo.beta_date) as beta_date,
             COALESCE(fa.production_date, fo.production_date) as production_date,
-            fo.status as option_status
+            {announcement_status_sql()} as option_status
         FROM feature_announcements fa
         LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
         WHERE fa.content_id = ?

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, Literal
 
-from src.api.database import get_db, row_to_dict, rows_to_list
+from src.api.database import get_db, row_to_dict, rows_to_list, OPTION_STATUS_SQL
 
 router = APIRouter(prefix="/api", tags=["options"])
 
@@ -17,15 +17,15 @@ def get_options(
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Build query
-        query = """
+        # Build query with computed status
+        query = f"""
             SELECT
                 fo.option_id,
                 fo.feature_id,
                 fo.canonical_name,
                 fo.name,
                 fo.description,
-                fo.status,
+                {OPTION_STATUS_SQL} as status,
                 fo.beta_date,
                 fo.production_date,
                 fo.deprecation_date,
@@ -38,7 +38,7 @@ def get_options(
         params = []
 
         if status:
-            query += " AND fo.status = ?"
+            query += f" AND ({OPTION_STATUS_SQL}) = ?"
             params.append(status)
 
         if feature:
@@ -68,9 +68,10 @@ def get_option_detail(option_id: str):
         cursor = conn.cursor()
 
         # Get option
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 fo.*,
+                {OPTION_STATUS_SQL} as computed_status,
                 f.name as feature_name,
                 f.description as feature_description
             FROM feature_options fo
@@ -89,7 +90,7 @@ def get_option_detail(option_id: str):
             "name": option["name"],
             "description": option["description"],
             "meta_summary": option["meta_summary"],
-            "status": option["status"],
+            "status": option["computed_status"],
             "beta_date": option["beta_date"],
             "production_date": option["production_date"],
             "deprecation_date": option["deprecation_date"],

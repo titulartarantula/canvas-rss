@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
-from src.api.database import get_db, row_to_dict, rows_to_list
+from src.api.database import get_db, row_to_dict, rows_to_list, announcement_status_sql
 
 router = APIRouter(prefix="/api", tags=["releases"])
 
@@ -79,14 +79,14 @@ def get_release_detail(content_id: str):
             raise HTTPException(status_code=404, detail="Release not found")
 
         # Get announcements grouped by section
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 fa.id, fa.h4_title, fa.anchor_id, fa.section, fa.category,
                 fa.description, fa.option_id,
                 fa.enable_location_account, fa.enable_location_course,
                 COALESCE(fa.beta_date, fo.beta_date) as beta_date,
                 COALESCE(fa.production_date, fo.production_date) as production_date,
-                fo.status as option_status
+                {announcement_status_sql()} as option_status
             FROM feature_announcements fa
             LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
             WHERE fa.content_id = ?
@@ -112,14 +112,14 @@ def get_announcement_detail(announcement_id: int):
     with get_db() as conn:
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 fa.id, fa.h4_title, fa.anchor_id, fa.section, fa.category,
                 fa.description, fa.option_id, fa.setting_id,
                 fa.enable_location_account, fa.enable_location_course,
                 COALESCE(fa.beta_date, fo.beta_date) as beta_date,
                 COALESCE(fa.production_date, fo.production_date) as production_date,
-                fo.status as option_status,
+                {announcement_status_sql()} as option_status,
                 fa.content_id,
                 ci.title as release_title,
                 ci.url as release_url,

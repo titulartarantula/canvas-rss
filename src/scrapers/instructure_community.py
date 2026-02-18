@@ -2579,6 +2579,11 @@ def classify_deploy_changes(
         elif entity_id in force_settings:
             is_option = False
 
+        # Determine status: use delayed annotation if present, otherwise pending
+        # (actual released/active status is computed at query time from production_date)
+        option_status = change.status if change.status == 'delayed' else 'pending'
+        setting_status = change.status if change.status == 'delayed' else 'pending'
+
         # Create/update feature option or feature setting record
         if entity_id:
             if is_option:
@@ -2588,7 +2593,7 @@ def classify_deploy_changes(
                     feature_id=feature_id,
                     name=change.name,
                     canonical_name=canonical_name,
-                    status='released',  # Deploy notes announce released changes
+                    status=option_status,
                     summary=None,
                     config_level=None,
                     default_state=None,
@@ -2608,7 +2613,7 @@ def classify_deploy_changes(
                     setting_id=entity_id,
                     feature_id=feature_id,
                     name=change.name,
-                    status='active',  # Deploy notes announce active changes
+                    status=setting_status,
                     first_announced=announced_at,
                 )
 

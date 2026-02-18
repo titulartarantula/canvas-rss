@@ -829,7 +829,11 @@ class Database:
                 name = COALESCE(excluded.name, feature_options.name),
                 canonical_name = COALESCE(excluded.canonical_name, feature_options.canonical_name),
                 summary = COALESCE(excluded.summary, feature_options.summary),
-                status = excluded.status,
+                status = CASE
+                    WHEN excluded.status IN ('delayed', 'deprecated') THEN excluded.status
+                    WHEN feature_options.status IN ('delayed', 'deprecated') THEN feature_options.status
+                    ELSE excluded.status
+                END,
                 config_level = COALESCE(excluded.config_level, feature_options.config_level),
                 default_state = COALESCE(excluded.default_state, feature_options.default_state),
                 user_group_url = COALESCE(excluded.user_group_url, feature_options.user_group_url),
@@ -968,7 +972,11 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(setting_id) DO UPDATE SET
                 name = COALESCE(excluded.name, feature_settings.name),
-                status = excluded.status,
+                status = CASE
+                    WHEN excluded.status IN ('delayed', 'deprecated') THEN excluded.status
+                    WHEN feature_settings.status IN ('delayed', 'deprecated') THEN feature_settings.status
+                    ELSE excluded.status
+                END,
                 affected_areas = COALESCE(excluded.affected_areas, feature_settings.affected_areas),
                 affects_ui = COALESCE(excluded.affects_ui, feature_settings.affects_ui),
                 affects_roles = COALESCE(excluded.affects_roles, feature_settings.affects_roles),

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
-from src.api.database import get_db, row_to_dict, rows_to_list
+from src.api.database import get_db, row_to_dict, rows_to_list, OPTION_STATUS_SQL, SETTING_STATUS_SQL
 
 router = APIRouter(prefix="/api", tags=["features"])
 
@@ -30,7 +30,7 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
         cursor = conn.cursor()
 
         # Build query with optional category filter
-        query = """
+        query = f"""
             SELECT
                 f.feature_id,
                 f.name,
@@ -38,9 +38,11 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
                 f.status,
                 COUNT(fo.option_id) as option_count,
                 (SELECT COUNT(*) FROM feature_settings fs WHERE fs.feature_id = f.feature_id) as setting_count,
-                SUM(CASE WHEN fo.status = 'preview' THEN 1 ELSE 0 END) as preview_count,
-                SUM(CASE WHEN fo.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-                SUM(CASE WHEN fo.status = 'optional' THEN 1 ELSE 0 END) as optional_count
+                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'preview' THEN 1 ELSE 0 END) as preview_count,
+                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'pending' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'optional' THEN 1 ELSE 0 END) as optional_count,
+                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'beta' THEN 1 ELSE 0 END) as beta_count,
+                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'delayed' THEN 1 ELSE 0 END) as delayed_count
             FROM features f
             LEFT JOIN feature_options fo ON f.feature_id = fo.feature_id
         """
@@ -59,8 +61,12 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
         # Add status summary to each feature
         for feature in features:
             summaries = []
+            if feature.get("delayed_count"):
+                summaries.append(f"{feature['delayed_count']} delayed")
             if feature["preview_count"]:
                 summaries.append(f"{feature['preview_count']} in preview")
+            if feature.get("beta_count"):
+                summaries.append(f"{feature['beta_count']} in beta")
             if feature["pending_count"]:
                 summaries.append(f"{feature['pending_count']} pending")
             if feature["optional_count"]:
@@ -90,28 +96,30 @@ def get_feature_detail(feature_id: str):
             raise HTTPException(status_code=404, detail="Feature not found")
 
         # Get associated options
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
-                option_id, canonical_name, name, description, meta_summary,
-                status, beta_date, production_date, deprecation_date,
-                config_level, default_state, user_group_url,
-                first_seen, last_seen
-            FROM feature_options
-            WHERE feature_id = ?
-            ORDER BY name
+                fo.option_id, fo.canonical_name, fo.name, fo.description, fo.meta_summary,
+                {OPTION_STATUS_SQL} as status,
+                fo.beta_date, fo.production_date, fo.deprecation_date,
+                fo.config_level, fo.default_state, fo.user_group_url,
+                fo.first_seen, fo.last_seen
+            FROM feature_options fo
+            WHERE fo.feature_id = ?
+            ORDER BY fo.name
         """, (feature_id,))
         feature["options"] = rows_to_list(cursor.fetchall())
 
         # Get associated settings
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
-                setting_id, name, description, meta_summary,
-                status, beta_date, production_date,
-                affected_areas, affects_ui,
-                first_seen, last_seen
-            FROM feature_settings
-            WHERE feature_id = ?
-            ORDER BY name
+                fs.setting_id, fs.name, fs.description, fs.meta_summary,
+                {SETTING_STATUS_SQL} as status,
+                fs.beta_date, fs.production_date,
+                fs.affected_areas, fs.affects_ui,
+                fs.first_seen, fs.last_seen
+            FROM feature_settings fs
+            WHERE fs.feature_id = ?
+            ORDER BY fs.name
         """, (feature_id,))
         feature["settings"] = rows_to_list(cursor.fetchall())
 
