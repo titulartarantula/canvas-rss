@@ -7,6 +7,7 @@ import OptionDetail from './pages/OptionDetail'
 import SettingDetail from './pages/SettingDetail'
 import Releases from './pages/Releases'
 import ReleaseDetail from './pages/ReleaseDetail'
+import AnnouncementDetail from './pages/AnnouncementDetail'
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
         <Route path="settings/:settingId" element={<SettingDetail />} />
         <Route path="releases" element={<Releases />} />
         <Route path="releases/:contentId" element={<ReleaseDetail />} />
+        <Route path="announcements/:id" element={<AnnouncementDetail />} />
         {/* Redirects from old routes */}
         <Route path="features" element={<Navigate to="/registry" replace />} />
         <Route path="options" element={<Navigate to="/registry" replace />} />
