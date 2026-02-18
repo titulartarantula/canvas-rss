@@ -220,7 +220,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       >
                         <div className="flex-1 min-w-0 flex items-center gap-2">
                           <p className="text-sm text-zinc-200 truncate">{option.canonical_name || option.name}</p>
-                          <StatusPill status={option.status} size="sm" showDot={false} />
+                          <StatusPill status={option.lifecycle_stage} size="sm" showDot={false} />
                         </div>
                       </ResultItem>
                     ))}

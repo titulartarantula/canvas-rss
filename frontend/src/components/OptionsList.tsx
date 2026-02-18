@@ -22,7 +22,7 @@ export default function OptionsList({ options, emptyMessage = 'No feature option
           className="data-row group"
         >
           <div className="w-20 flex-shrink-0">
-            <StatusPill status={option.status} size="sm" showDot={false} />
+            <StatusPill status={option.lifecycle_stage} size="sm" showDot={false} />
           </div>
           <div className="flex-1 min-w-0">
             <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">

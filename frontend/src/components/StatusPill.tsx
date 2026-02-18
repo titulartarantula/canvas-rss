@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-type StatusType = 'beta' | 'preview' | 'optional' | 'released' | 'deprecated' | 'pending' | 'default_on' | string
+type StatusType = 'beta' | 'preview' | 'optional' | 'released' | 'deprecated' | 'pending' | 'default_on' | 'stable' | string
 
 interface StatusPillProps {
   status: StatusType
@@ -38,6 +38,11 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
     label: 'Delayed',
     color: 'text-amber-400',
     bg: 'bg-amber-400/15',
+  },
+  stable: {
+    label: 'Stable',
+    color: 'text-status-released',
+    bg: 'bg-status-released/15',
   },
   deprecated: {
     label: 'Deprecated',

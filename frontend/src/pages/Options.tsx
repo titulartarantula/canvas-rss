@@ -3,20 +3,20 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { optionsApi } from '../api/client'
 import type { FeatureOption } from '../types'
-import StatusFilter from '../components/StatusFilter'
+import StatusFilter, { LIFECYCLE_OPTIONS } from '../components/StatusFilter'
 import SortSelect from '../components/SortSelect'
 import StatusPill, { DatePill } from '../components/StatusPill'
 import { SearchIcon, XMarkIcon, ArrowRightIcon, AdjustmentsIcon } from '../components/icons'
 
 export default function Options() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const status = searchParams.get('status') || ''
+  const status = searchParams.get('lifecycle_stage') || ''
   const sort = searchParams.get('sort') || 'updated'
   const [searchQuery, setSearchQuery] = useState('')
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['options', { status, sort }],
-    queryFn: () => optionsApi.list({ status: status || undefined, sort }),
+    queryFn: () => optionsApi.list({ lifecycle_stage: status || undefined, sort }),
     staleTime: 1000 * 60 * 5,
   })
 
@@ -81,7 +81,8 @@ export default function Options() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <StatusFilter
             value={status}
-            onChange={(newStatus) => updateParams({ status: newStatus })}
+            onChange={(newStatus) => updateParams({ lifecycle_stage: newStatus })}
+            options={LIFECYCLE_OPTIONS}
           />
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-zinc-400">sort</span>
@@ -119,7 +120,7 @@ export default function Options() {
             <p className="mt-2 text-sm text-zinc-500">No options found</p>
             {(status || searchQuery) && (
               <button
-                onClick={() => { setSearchQuery(''); updateParams({ status: '' }) }}
+                onClick={() => { setSearchQuery(''); updateParams({ lifecycle_stage: '' }) }}
                 className="mt-3 text-xs font-mono text-signal-blue hover:text-signal-blue/80"
               >
                 clear filters
@@ -142,7 +143,7 @@ function OptionRow({ option }: { option: FeatureOption }) {
   return (
     <Link to={`/options/${option.option_id}`} className="data-row group">
       <div className="w-20 flex-shrink-0">
-        <StatusPill status={option.status} size="sm" showDot={false} />
+        <StatusPill status={option.lifecycle_stage} size="sm" showDot={false} />
       </div>
 
       <div className="flex-1 min-w-0">

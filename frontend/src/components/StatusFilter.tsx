@@ -1,9 +1,16 @@
+interface FilterOption {
+  value: string
+  label: string
+  color?: string
+}
+
 interface StatusFilterProps {
   value: string
   onChange: (status: string) => void
+  options?: FilterOption[]
 }
 
-const STATUS_OPTIONS = [
+const DEFAULT_OPTIONS: FilterOption[] = [
   { value: '', label: 'All' },
   { value: 'pending', label: 'Pending', color: 'bg-status-pending' },
   { value: 'preview', label: 'Preview', color: 'bg-status-preview' },
@@ -15,10 +22,19 @@ const STATUS_OPTIONS = [
   { value: 'deprecated', label: 'Deprecated', color: 'bg-status-deprecated' },
 ]
 
-export default function StatusFilter({ value, onChange }: StatusFilterProps) {
+export const LIFECYCLE_OPTIONS: FilterOption[] = [
+  { value: '', label: 'All' },
+  { value: 'preview', label: 'Preview', color: 'bg-status-preview' },
+  { value: 'stable', label: 'Stable', color: 'bg-status-released' },
+  { value: 'pending', label: 'Pending', color: 'bg-amber-400' },
+]
+
+export default function StatusFilter({ value, onChange, options }: StatusFilterProps) {
+  const filterOptions = options || DEFAULT_OPTIONS
+
   return (
     <div className="flex flex-wrap items-center gap-0.5">
-      {STATUS_OPTIONS.map((option) => {
+      {filterOptions.map((option) => {
         const isSelected = option.value === value
         return (
           <button
@@ -44,7 +60,9 @@ export default function StatusFilter({ value, onChange }: StatusFilterProps) {
   )
 }
 
-export function StatusFilterCompact({ value, onChange }: StatusFilterProps) {
+export function StatusFilterCompact({ value, onChange, options }: StatusFilterProps) {
+  const filterOptions = options || DEFAULT_OPTIONS
+
   return (
     <select
       value={value}
@@ -53,7 +71,7 @@ export function StatusFilterCompact({ value, onChange }: StatusFilterProps) {
                  px-2.5 pr-7 py-1.5 text-xs font-mono text-zinc-400
                  focus:outline-none focus:border-zinc-600 focus-visible:ring-2 focus-visible:ring-signal-blue/40 cursor-pointer"
     >
-      {STATUS_OPTIONS.map((option) => (
+      {filterOptions.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
     </select>

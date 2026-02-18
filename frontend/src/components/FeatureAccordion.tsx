@@ -153,7 +153,7 @@ function FeatureAccordionContent({ featureId, featureName }: { featureId: string
                 to={`/options/${option.option_id}`}
                 className="flex items-center gap-3 px-3 py-2 border-b border-zinc-800/30 last:border-b-0 hover:bg-surface-3/50 transition-colors group"
               >
-                <StatusPill status={option.status} size="sm" showDot={false} />
+                <StatusPill status={option.lifecycle_stage} size="sm" showDot={false} />
                 <span className="flex-1 text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors truncate">
                   {option.canonical_name || option.name}
                 </span>

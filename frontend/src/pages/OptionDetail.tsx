@@ -63,7 +63,7 @@ export default function OptionDetail() {
       <header className="mt-4">
         <div className="flex items-center gap-3">
           <h1 className="text-title text-zinc-100">{displayName}</h1>
-          <StatusPill status={data.status} size="md" />
+          <StatusPill status={data.lifecycle_stage} size="md" />
         </div>
 
         {data.feature && (
@@ -97,6 +97,12 @@ export default function OptionDetail() {
             <InlineMarkdown text={data.meta_summary} className="text-sm text-zinc-400 leading-relaxed max-w-3xl" />
           </div>
         )}
+        {data.doc_url && (
+          <a href={data.doc_url} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-1 text-xs font-mono text-signal-blue hover:text-signal-blue/80 transition-colors mt-2">
+            Documentation ↗
+          </a>
+        )}
       </header>
 
       <div className="mt-6 border-t border-zinc-800/50" />
@@ -106,7 +112,7 @@ export default function OptionDetail() {
           <Section title="Deployment Status">
             <div className="card p-5">
               <DeploymentTimeline
-                status={data.status}
+                status={data.lifecycle_stage}
                 firstSeen={data.first_seen}
                 betaDate={data.beta_date}
                 productionDate={data.production_date}

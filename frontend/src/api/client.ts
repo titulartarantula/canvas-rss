@@ -39,7 +39,7 @@ export const featuresApi = {
 
 export const optionsApi = {
   list: async (params?: {
-    status?: string;
+    lifecycle_stage?: string;
     feature?: string;
     sort?: string;
   }): Promise<{ options: FeatureOption[] }> => {

@@ -20,13 +20,17 @@ export interface FeatureOption {
   name: string;
   description: string | null;
   meta_summary: string | null;
-  status: string;
+  lifecycle_stage: string;  // 'preview' | 'stable' | 'pending'
+  prod_account_state: string;
+  prod_course_state: string;
+  beta_account_state: string;
+  beta_course_state: string;
   beta_date: string | null;
   production_date: string | null;
   deprecation_date: string | null;
-  config_level: string | null;
-  default_state: string | null;
   user_group_url: string | null;
+  doc_url: string | null;
+  source: string | null;
   first_seen: string | null;
   last_seen: string | null;
   feature_name?: string;
@@ -39,14 +43,10 @@ export interface FeatureOptionDetail extends FeatureOption {
     description: string | null;
   };
   configuration: {
-    config_level: string | null;
-    default_state: string | null;
-    enable_location_account: string | null;
-    enable_location_course: string | null;
-    subaccount_config: boolean | null;
-    permissions: string | null;
-    affected_areas: string | null;
-    affects_ui: boolean | null;
+    prod_account_state: string;
+    prod_course_state: string;
+    beta_account_state: string;
+    beta_course_state: string;
   };
   announcements: Announcement[];
   community_posts: CommunityPost[];
