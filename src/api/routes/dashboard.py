@@ -18,6 +18,7 @@ def _get_announcements(cursor, content_id: str) -> list:
     """Get feature announcements for a content item."""
     cursor.execute("""
         SELECT
+            fa.id,
             fa.h4_title,
             fa.section,
             fa.category,
