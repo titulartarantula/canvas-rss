@@ -2,14 +2,14 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, Literal
 
-from src.api.database import get_db, row_to_dict, rows_to_list, OPTION_STATUS_SQL
+from src.api.database import get_db, row_to_dict, rows_to_list
 
 router = APIRouter(prefix="/api", tags=["options"])
 
 
 @router.get("/options")
 def get_options(
-    status: Optional[str] = Query(None, description="Filter by status (pending, preview, optional, default_optional, released)"),
+    lifecycle_stage: Optional[str] = Query(None, description="Filter by lifecycle_stage (preview, stable, pending)"),
     feature: Optional[str] = Query(None, description="Filter by feature_id"),
     sort: Optional[Literal["updated", "alphabetical", "beta_date", "production_date"]] = Query("updated", description="Sort order"),
 ):
@@ -17,18 +17,24 @@ def get_options(
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Build query with computed status
-        query = f"""
+        query = """
             SELECT
                 fo.option_id,
                 fo.feature_id,
                 fo.canonical_name,
                 fo.name,
                 fo.description,
-                {OPTION_STATUS_SQL} as status,
+                fo.lifecycle_stage,
+                fo.prod_account_state,
+                fo.prod_course_state,
+                fo.beta_account_state,
+                fo.beta_course_state,
                 fo.beta_date,
                 fo.production_date,
                 fo.deprecation_date,
+                fo.user_group_url,
+                fo.doc_url,
+                fo.source,
                 fo.last_updated,
                 f.name as feature_name
             FROM feature_options fo
@@ -37,9 +43,9 @@ def get_options(
         """
         params = []
 
-        if status:
-            query += f" AND ({OPTION_STATUS_SQL}) = ?"
-            params.append(status)
+        if lifecycle_stage:
+            query += " AND fo.lifecycle_stage = ?"
+            params.append(lifecycle_stage)
 
         if feature:
             query += " AND fo.feature_id = ?"
@@ -67,11 +73,17 @@ def get_option_detail(option_id: str):
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Get option
-        cursor.execute(f"""
+        # Get option with all new columns
+        cursor.execute("""
             SELECT
-                fo.*,
-                {OPTION_STATUS_SQL} as computed_status,
+                fo.option_id, fo.feature_id, fo.canonical_name, fo.name,
+                fo.description, fo.meta_summary,
+                fo.lifecycle_stage,
+                fo.prod_account_state, fo.prod_course_state,
+                fo.beta_account_state, fo.beta_course_state,
+                fo.beta_date, fo.production_date, fo.deprecation_date,
+                fo.user_group_url, fo.doc_url, fo.source,
+                fo.first_seen, fo.last_seen,
                 f.name as feature_name,
                 f.description as feature_description
             FROM feature_options fo
@@ -90,21 +102,25 @@ def get_option_detail(option_id: str):
             "name": option["name"],
             "description": option["description"],
             "meta_summary": option["meta_summary"],
-            "status": option["computed_status"],
+            "lifecycle_stage": option["lifecycle_stage"],
             "beta_date": option["beta_date"],
             "production_date": option["production_date"],
             "deprecation_date": option["deprecation_date"],
             "first_seen": option["first_seen"],
             "last_seen": option["last_seen"],
             "user_group_url": option["user_group_url"],
+            "doc_url": option["doc_url"],
+            "source": option["source"],
             "feature": {
                 "feature_id": option["feature_id"],
                 "name": option["feature_name"],
                 "description": option["feature_description"],
             },
             "configuration": {
-                "config_level": option["config_level"],
-                "default_state": option["default_state"],
+                "prod_account_state": option["prod_account_state"],
+                "prod_course_state": option["prod_course_state"],
+                "beta_account_state": option["beta_account_state"],
+                "beta_course_state": option["beta_course_state"],
             },
         }
 
@@ -123,18 +139,6 @@ def get_option_detail(option_id: str):
             ORDER BY fa.announced_at DESC
         """, (option_id,))
         result["announcements"] = rows_to_list(cursor.fetchall())
-
-        # Get configuration from most recent announcement
-        if result["announcements"]:
-            latest = result["announcements"][0]
-            result["configuration"].update({
-                "enable_location_account": latest.get("enable_location_account"),
-                "enable_location_course": latest.get("enable_location_course"),
-                "subaccount_config": latest.get("subaccount_config"),
-                "permissions": latest.get("permissions"),
-                "affected_areas": latest.get("affected_areas"),
-                "affects_ui": latest.get("affects_ui"),
-            })
 
         # Get community posts
         cursor.execute("""

@@ -31,7 +31,7 @@ def search(q: str = Query("", description="Search query")):
         cursor.execute("""
             SELECT
                 fo.option_id, fo.canonical_name, fo.name, fo.description,
-                fo.status, fo.feature_id,
+                fo.lifecycle_stage, fo.feature_id,
                 f.name as feature_name
             FROM feature_options fo
             JOIN features f ON fo.feature_id = f.feature_id

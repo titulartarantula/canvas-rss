@@ -31,20 +31,20 @@ def rows_to_list(rows: list[sqlite3.Row]) -> list[dict]:
 
 
 # --- Computed status SQL expressions ---
-# Status is derived from production_date/beta_date at query time.
+# Feature settings: status is derived from production_date/beta_date at query time.
 # Explicit override statuses (delayed, deprecated) are preserved as-is.
 
 def _computed_status(date_prefix: str, status_col: str, released_label: str = "released") -> str:
     """Build a CASE expression that computes status from dates.
 
-    Explicit lifecycle statuses (delayed, deprecated, preview, optional, default_on,
-    default_optional) are preserved as-is. Date-based computation only applies when
-    the stored status is 'pending' (the default).
+    Used for feature_settings which still have a status column.
+    Explicit lifecycle statuses are preserved as-is. Date-based computation
+    only applies when the stored status is 'pending' (the default).
 
     Args:
-        date_prefix: Table alias for production_date/beta_date columns (e.g. "fo", "fs").
-        status_col: Fully-qualified status column (e.g. "fo.status").
-        released_label: Label for the 'released' state ('released' for options, 'active' for settings).
+        date_prefix: Table alias for production_date/beta_date columns (e.g. "fs").
+        status_col: Fully-qualified status column (e.g. "fs.status").
+        released_label: Label for the 'released' state ('active' for settings).
     """
     return f"""CASE
         WHEN {status_col} IN ('delayed', 'deprecated', 'preview', 'optional', 'default_on', 'default_optional', '{released_label}')
@@ -57,26 +57,38 @@ def _computed_status(date_prefix: str, status_col: str, released_label: str = "r
     END"""
 
 
-# Feature options: fo.status → computed from fo.production_date / fo.beta_date
-OPTION_STATUS_SQL = _computed_status("fo", "fo.status", "released")
-
 # Feature settings: fs.status → computed from fs.production_date / fs.beta_date
 SETTING_STATUS_SQL = _computed_status("fs", "fs.status", "active")
+
+
+def compute_availability(beta_date: str | None, production_date: str | None) -> str:
+    """Compute availability label from dates."""
+    from datetime import date
+    today = date.today().isoformat()
+    if production_date and production_date <= today:
+        return 'in_production'
+    if beta_date and beta_date <= today:
+        if production_date:
+            return 'upcoming_production'
+        return 'in_beta'
+    if beta_date:
+        return 'upcoming_beta'
+    return 'no_dates'
 
 
 def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo") -> str:
     """Compute status for announcements that join to feature_options.
 
-    Uses COALESCE so announcement-level dates take precedence over option-level.
-    Preserves explicit lifecycle statuses from the linked feature option.
+    Uses the option's lifecycle_stage directly, with date-based availability
+    as a fallback when no option is linked.
     """
     return f"""CASE
-        WHEN {fo_alias}.status IN ('delayed', 'deprecated', 'preview', 'optional', 'default_on', 'default_optional')
-             THEN {fo_alias}.status
+        WHEN {fo_alias}.lifecycle_stage IS NOT NULL
+             THEN {fo_alias}.lifecycle_stage
         WHEN COALESCE({fa_alias}.production_date, {fo_alias}.production_date) IS NOT NULL
-             AND COALESCE({fa_alias}.production_date, {fo_alias}.production_date) <= date('now') THEN 'released'
+             AND COALESCE({fa_alias}.production_date, {fo_alias}.production_date) <= date('now') THEN 'stable'
         WHEN COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) IS NOT NULL
-             AND COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) <= date('now') THEN 'beta'
+             AND COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) <= date('now') THEN 'preview'
         WHEN {fa_alias}.option_id IS NOT NULL THEN 'pending'
         ELSE NULL
     END"""

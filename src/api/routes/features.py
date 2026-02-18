@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
-from src.api.database import get_db, row_to_dict, rows_to_list, OPTION_STATUS_SQL, SETTING_STATUS_SQL
+from src.api.database import get_db, row_to_dict, rows_to_list, SETTING_STATUS_SQL
 
 router = APIRouter(prefix="/api", tags=["features"])
 
@@ -29,8 +29,8 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Build query with optional category filter
-        query = f"""
+        # Build query with lifecycle_stage counts
+        query = """
             SELECT
                 f.feature_id,
                 f.name,
@@ -38,11 +38,9 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
                 f.status,
                 COUNT(fo.option_id) as option_count,
                 (SELECT COUNT(*) FROM feature_settings fs WHERE fs.feature_id = f.feature_id) as setting_count,
-                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'preview' THEN 1 ELSE 0 END) as preview_count,
-                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'pending' THEN 1 ELSE 0 END) as pending_count,
-                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'optional' THEN 1 ELSE 0 END) as optional_count,
-                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'beta' THEN 1 ELSE 0 END) as beta_count,
-                SUM(CASE WHEN ({OPTION_STATUS_SQL}) = 'delayed' THEN 1 ELSE 0 END) as delayed_count
+                SUM(CASE WHEN fo.lifecycle_stage = 'preview' THEN 1 ELSE 0 END) as preview_count,
+                SUM(CASE WHEN fo.lifecycle_stage = 'pending' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN fo.lifecycle_stage = 'stable' THEN 1 ELSE 0 END) as stable_count
             FROM features f
             LEFT JOIN feature_options fo ON f.feature_id = fo.feature_id
         """
@@ -61,16 +59,12 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
         # Add status summary to each feature
         for feature in features:
             summaries = []
-            if feature.get("delayed_count"):
-                summaries.append(f"{feature['delayed_count']} delayed")
             if feature["preview_count"]:
                 summaries.append(f"{feature['preview_count']} in preview")
-            if feature.get("beta_count"):
-                summaries.append(f"{feature['beta_count']} in beta")
             if feature["pending_count"]:
                 summaries.append(f"{feature['pending_count']} pending")
-            if feature["optional_count"]:
-                summaries.append(f"{feature['optional_count']} optional")
+            if feature["stable_count"]:
+                summaries.append(f"{feature['stable_count']} stable")
             if not summaries and feature["option_count"]:
                 summaries.append("all stable")
             feature["status_summary"] = ", ".join(summaries) if summaries else ""
@@ -95,13 +89,15 @@ def get_feature_detail(feature_id: str):
         if not feature:
             raise HTTPException(status_code=404, detail="Feature not found")
 
-        # Get associated options
-        cursor.execute(f"""
+        # Get associated options using lifecycle_stage directly
+        cursor.execute("""
             SELECT
                 fo.option_id, fo.canonical_name, fo.name, fo.description, fo.meta_summary,
-                {OPTION_STATUS_SQL} as status,
+                fo.lifecycle_stage,
+                fo.prod_account_state, fo.prod_course_state,
+                fo.beta_account_state, fo.beta_course_state,
                 fo.beta_date, fo.production_date, fo.deprecation_date,
-                fo.config_level, fo.default_state, fo.user_group_url,
+                fo.user_group_url, fo.doc_url, fo.source,
                 fo.first_seen, fo.last_seen
             FROM feature_options fo
             WHERE fo.feature_id = ?
@@ -109,7 +105,7 @@ def get_feature_detail(feature_id: str):
         """, (feature_id,))
         feature["options"] = rows_to_list(cursor.fetchall())
 
-        # Get associated settings
+        # Get associated settings (still uses computed status)
         cursor.execute(f"""
             SELECT
                 fs.setting_id, fs.name, fs.description, fs.meta_summary,

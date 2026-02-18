@@ -11,11 +11,14 @@ def test_get_features_list(client, populated_db):
     assert "features" in data
     assert len(data["features"]) == 3  # assignments, gradebook, speedgrader
 
-    # Each feature should have counts
+    # Each feature should have counts and status_summary
     assignments = next(f for f in data["features"] if f["feature_id"] == "assignments")
     assert assignments["name"] == "Assignments"
     assert assignments["option_count"] >= 1
     assert "status_summary" in assignments
+
+    # Assignments has document_processor (preview), so summary should mention preview
+    assert "preview" in assignments["status_summary"]
 
 
 def test_get_features_with_category_filter(client, populated_db):
@@ -37,6 +40,10 @@ def test_get_feature_detail(client, populated_db):
     assert len(data["options"]) >= 1
     assert "announcements" in data
     assert "community_posts" in data
+
+    # Options should have lifecycle_stage instead of status
+    option = data["options"][0]
+    assert "lifecycle_stage" in option
 
 
 def test_get_feature_detail_not_found(client, populated_db):
