@@ -1449,3 +1449,67 @@ def test_feature_options_schema_has_new_columns(tmp_path):
     assert 'config_level' not in columns
     assert 'default_state' not in columns
     db.close()
+
+
+def test_upsert_feature_option_canonical_overrides_release_notes(tmp_path):
+    """Canonical page source overwrites release note data."""
+    from utils.database import Database
+    db = Database(db_path=str(tmp_path / "test.db"))
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO features (feature_id, name) VALUES ('assignments', 'Assignments')")
+    conn.commit()
+
+    # First: release notes creates the option
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option',
+        status='pending', source='release_notes',
+    )
+    cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
+    row = dict(cursor.fetchone())
+    assert row['lifecycle_stage'] == 'pending'
+    assert row['source'] == 'release_notes'
+
+    # Then: canonical page overwrites
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option',
+        lifecycle_stage='preview', prod_account_state='disabled_unlocked',
+        prod_course_state='N/A', beta_account_state='N/A', beta_course_state='N/A',
+        source='canonical_page',
+    )
+    cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
+    row = dict(cursor.fetchone())
+    assert row['lifecycle_stage'] == 'preview'  # canonical wins
+    assert row['prod_account_state'] == 'disabled_unlocked'
+    assert row['source'] == 'canonical_page'
+    db.close()
+
+
+def test_upsert_feature_option_release_notes_preserves_canonical(tmp_path):
+    """Release notes don't overwrite canonical page data."""
+    from utils.database import Database
+    db = Database(db_path=str(tmp_path / "test.db"))
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO features (feature_id, name) VALUES ('assignments', 'Assignments')")
+    conn.commit()
+
+    # First: canonical page creates the option
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option',
+        lifecycle_stage='preview', prod_account_state='disabled_unlocked',
+        prod_course_state='N/A', beta_account_state='N/A', beta_course_state='N/A',
+        source='canonical_page',
+    )
+
+    # Then: release notes tries to update
+    db.upsert_feature_option(
+        option_id='test_option', feature_id='assignments', name='Test Option Updated',
+        status='pending', source='release_notes',
+    )
+    cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
+    row = dict(cursor.fetchone())
+    assert row['lifecycle_stage'] == 'preview'  # canonical preserved
+    assert row['prod_account_state'] == 'disabled_unlocked'  # canonical preserved
+    assert row['source'] == 'canonical_page'  # canonical preserved
+    db.close()

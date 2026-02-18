@@ -942,15 +942,32 @@ class Database:
         option_id: str,
         feature_id: str,
         name: str,
-        status: str = 'pending',
+        # Legacy params (still used by release note classifier)
+        status: str = None,
         canonical_name: str = None,
         summary: str = None,
         config_level: str = None,
         default_state: str = None,
         user_group_url: str = None,
         first_announced: str = None,
+        # New direct params (used by canonical scraper)
+        lifecycle_stage: str = None,
+        prod_account_state: str = None,
+        prod_course_state: str = None,
+        beta_account_state: str = None,
+        beta_course_state: str = None,
+        source: str = 'release_notes',
+        doc_url: str = None,
     ) -> None:
         """Insert or update a feature option.
+
+        Supports two calling patterns:
+        1. Legacy (release note classifier): passes status, config_level, default_state
+           which are mapped to the new columns.
+        2. Direct (canonical scraper): passes lifecycle_stage, state columns, source directly.
+
+        When source='canonical_page', canonical fields overwrite existing values.
+        When source='release_notes', existing canonical values are preserved.
 
         Args:
             option_id: Slugified option ID (e.g., 'document_processor').
@@ -963,54 +980,89 @@ class Database:
             default_state: Legacy default state - mapped to state columns.
             user_group_url: URL to Feature Preview community user group (for feedback).
             first_announced: When first announced (ISO timestamp).
+            lifecycle_stage: Direct lifecycle stage (preview, pending, stable).
+            prod_account_state: Direct production account state.
+            prod_course_state: Direct production course state.
+            beta_account_state: Direct beta account state.
+            beta_course_state: Direct beta course state.
+            source: Data source ('release_notes' or 'canonical_page').
+            doc_url: URL to documentation page.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
         now = datetime.now().isoformat()
 
-        # Map legacy status to lifecycle_stage
-        if status in ('preview',):
-            lifecycle_stage = 'preview'
-        elif status in ('pending',):
-            lifecycle_stage = 'pending'
-        else:
-            lifecycle_stage = 'stable'
+        # Determine lifecycle_stage
+        if lifecycle_stage is None:
+            # Map from legacy status
+            if status == 'preview':
+                lifecycle_stage = 'preview'
+            elif status == 'pending':
+                lifecycle_stage = 'pending'
+            else:
+                lifecycle_stage = 'stable'
 
-        # Map legacy config_level + default_state to state columns
-        state_value = 'N/A'
-        if default_state == 'disabled':
-            state_value = 'disabled_unlocked'
-        elif default_state == 'enabled':
-            state_value = 'enabled_unlocked'
-
-        prod_account_state = state_value if config_level in ('account', 'both') else 'N/A'
-        prod_course_state = state_value if config_level in ('course', 'both') else 'N/A'
+        # Determine state columns - use direct values if provided, else map from legacy
+        if prod_account_state is None:
+            # Map from legacy config_level + default_state
+            state_value = 'N/A'
+            if default_state == 'disabled':
+                state_value = 'disabled_unlocked'
+            elif default_state == 'enabled':
+                state_value = 'enabled_unlocked'
+            prod_account_state = state_value if config_level in ('account', 'both') else 'N/A'
+            prod_course_state = state_value if config_level in ('course', 'both') else 'N/A'
+            beta_account_state = 'N/A'
+            beta_course_state = 'N/A'
 
         cursor.execute("""
             INSERT INTO feature_options
                 (option_id, feature_id, name, canonical_name, summary, lifecycle_stage,
-                 prod_account_state, prod_course_state, user_group_url, first_announced,
+                 prod_account_state, prod_course_state, beta_account_state, beta_course_state,
+                 source, doc_url, user_group_url, first_announced,
                  last_updated, first_seen, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(option_id) DO UPDATE SET
                 name = COALESCE(excluded.name, feature_options.name),
                 canonical_name = COALESCE(excluded.canonical_name, feature_options.canonical_name),
                 summary = COALESCE(excluded.summary, feature_options.summary),
-                lifecycle_stage = excluded.lifecycle_stage,
+                lifecycle_stage = CASE
+                    WHEN excluded.source = 'canonical_page' THEN excluded.lifecycle_stage
+                    WHEN feature_options.source = 'canonical_page' THEN feature_options.lifecycle_stage
+                    ELSE excluded.lifecycle_stage
+                END,
                 prod_account_state = CASE
-                    WHEN excluded.prod_account_state != 'N/A' THEN excluded.prod_account_state
-                    ELSE feature_options.prod_account_state
+                    WHEN excluded.source = 'canonical_page' THEN excluded.prod_account_state
+                    WHEN feature_options.source = 'canonical_page' THEN feature_options.prod_account_state
+                    ELSE COALESCE(NULLIF(excluded.prod_account_state, 'N/A'), feature_options.prod_account_state)
                 END,
                 prod_course_state = CASE
-                    WHEN excluded.prod_course_state != 'N/A' THEN excluded.prod_course_state
-                    ELSE feature_options.prod_course_state
+                    WHEN excluded.source = 'canonical_page' THEN excluded.prod_course_state
+                    WHEN feature_options.source = 'canonical_page' THEN feature_options.prod_course_state
+                    ELSE COALESCE(NULLIF(excluded.prod_course_state, 'N/A'), feature_options.prod_course_state)
                 END,
+                beta_account_state = CASE
+                    WHEN excluded.source = 'canonical_page' THEN excluded.beta_account_state
+                    WHEN feature_options.source = 'canonical_page' THEN feature_options.beta_account_state
+                    ELSE COALESCE(NULLIF(excluded.beta_account_state, 'N/A'), feature_options.beta_account_state)
+                END,
+                beta_course_state = CASE
+                    WHEN excluded.source = 'canonical_page' THEN excluded.beta_course_state
+                    WHEN feature_options.source = 'canonical_page' THEN feature_options.beta_course_state
+                    ELSE COALESCE(NULLIF(excluded.beta_course_state, 'N/A'), feature_options.beta_course_state)
+                END,
+                source = CASE
+                    WHEN excluded.source = 'canonical_page' THEN 'canonical_page'
+                    ELSE feature_options.source
+                END,
+                doc_url = COALESCE(excluded.doc_url, feature_options.doc_url),
                 user_group_url = COALESCE(excluded.user_group_url, feature_options.user_group_url),
                 last_updated = ?,
                 last_seen = ?
         """, (
             option_id, feature_id, name, canonical_name, summary, lifecycle_stage,
-            prod_account_state, prod_course_state, user_group_url, first_announced, now, now, now, now, now
+            prod_account_state, prod_course_state, beta_account_state, beta_course_state,
+            source, doc_url, user_group_url, first_announced, now, now, now, now, now
         ))
         conn.commit()
 
