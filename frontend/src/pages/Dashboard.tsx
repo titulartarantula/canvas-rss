@@ -292,7 +292,7 @@ function AnnouncementRow({ announcement }: { announcement: Announcement }) {
           {announcement.h4_title}
         </Link>
         {announcement.description && (
-          <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{announcement.description}</p>
+          <p className="text-xs text-zinc-500 mt-0.5 line-clamp-4">{announcement.description}</p>
         )}
       </div>
 

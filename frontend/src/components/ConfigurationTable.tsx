@@ -41,32 +41,35 @@ export default function ConfigurationTable({ configuration, userGroupUrl }: Conf
 
 type ConfigRow = { label: string; value: string; type: 'text' | 'link' }
 
-function formatState(state: string): string {
+function formatState(state: string, level: 'account' | 'course'): string {
   const states: Record<string, string> = {
     'enabled_unlocked': 'Enabled / Unlocked',
     'enabled_locked': 'Enabled / Locked',
     'disabled_unlocked': 'Disabled / Unlocked',
     'disabled_locked': 'Disabled / Locked',
-    'enabled': 'Enabled (account-only)',
-    'disabled': 'Disabled (account-only)',
     'csm_managed': 'CSM Managed',
     'lti_required': 'LTI Required',
     'user_setting': 'User Setting',
   }
-  return states[state] || state
+  if (states[state]) return states[state]
+  // Bare enabled/disabled: at account level means "account-only" (no lock concept);
+  // at course level just means on/off (course never has locks)
+  if (state === 'enabled') return level === 'account' ? 'Enabled (account-only)' : 'Enabled'
+  if (state === 'disabled') return level === 'account' ? 'Disabled (account-only)' : 'Disabled'
+  return state
 }
 
 function buildConfigRows(config: Configuration, userGroupUrl?: string | null): ConfigRow[] {
   const rows: ConfigRow[] = []
 
   if (config.prod_account_state && config.prod_account_state !== 'N/A')
-    rows.push({ label: 'Prod Account', value: formatState(config.prod_account_state), type: 'text' })
+    rows.push({ label: 'Prod Account', value: formatState(config.prod_account_state, 'account'), type: 'text' })
   if (config.prod_course_state && config.prod_course_state !== 'N/A')
-    rows.push({ label: 'Prod Course', value: formatState(config.prod_course_state), type: 'text' })
+    rows.push({ label: 'Prod Course', value: formatState(config.prod_course_state, 'course'), type: 'text' })
   if (config.beta_account_state && config.beta_account_state !== 'N/A')
-    rows.push({ label: 'Beta Account', value: formatState(config.beta_account_state), type: 'text' })
+    rows.push({ label: 'Beta Account', value: formatState(config.beta_account_state, 'account'), type: 'text' })
   if (config.beta_course_state && config.beta_course_state !== 'N/A')
-    rows.push({ label: 'Beta Course', value: formatState(config.beta_course_state), type: 'text' })
+    rows.push({ label: 'Beta Course', value: formatState(config.beta_course_state, 'course'), type: 'text' })
   if (userGroupUrl)
     rows.push({ label: 'User Group', value: userGroupUrl, type: 'link' })
 

@@ -664,12 +664,24 @@ def scrape_canonical_options(db: "Database") -> List[CanonicalOption]:
         return []
 
     # Upsert each option into the database
+    # Track seen slugs to disambiguate duplicates (e.g., "New Quizzes" appears
+    # in both Pending and Feature Previews sections)
+    seen_slugs: Dict[str, int] = {}
     upserted = 0
     for option in options:
         option_id = _slugify(option.name)
         if not option_id:
             logger.warning("Could not generate option_id for: %r", option.name)
             continue
+
+        if option_id in seen_slugs:
+            # Disambiguate with lifecycle stage suffix
+            option_id = f"{option_id}_{option.lifecycle_stage}"
+            logger.info(
+                "Disambiguated duplicate slug for '%s' -> '%s'",
+                option.name, option_id,
+            )
+        seen_slugs[option_id] = seen_slugs.get(option_id, 0) + 1
 
         feature_id = _match_feature_id(option.name)
 
@@ -678,6 +690,7 @@ def scrape_canonical_options(db: "Database") -> List[CanonicalOption]:
                 option_id=option_id,
                 feature_id=feature_id,
                 name=option.name,
+                canonical_name=option.name,
                 summary=option.description,
                 lifecycle_stage=option.lifecycle_stage,
                 prod_account_state=option.prod_account_state,
