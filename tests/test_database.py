@@ -592,7 +592,9 @@ class TestFeatureOptionsTable:
         expected = {
             "option_id", "feature_id", "name", "canonical_name", "description",
             "summary", "meta_summary", "meta_summary_updated_at", "implementation_status",
-            "status", "config_level", "default_state", "user_group_url",
+            "lifecycle_stage", "prod_account_state", "prod_course_state",
+            "beta_account_state", "beta_course_state", "source", "doc_url",
+            "user_group_url",
             "beta_date", "production_date", "deprecation_date",
             "first_announced", "last_updated", "first_seen", "last_seen",
             "llm_generated_at"
@@ -614,7 +616,8 @@ class TestFeatureOptionsTable:
         options = temp_db.get_feature_options("speedgrader")
         assert len(options) == 1
         assert options[0]["option_id"] == "speedgrader-perf-upgrades"
-        assert options[0]["status"] == "preview"
+        assert options[0]["lifecycle_stage"] == "preview"
+        assert options[0]["prod_account_state"] == "disabled_unlocked"
 
     def test_upsert_feature_option_updates_existing(self, temp_db):
         """Test upsert updates existing feature option."""
@@ -634,7 +637,7 @@ class TestFeatureOptionsTable:
         options = temp_db.get_feature_options("gradebook")
         assert len(options) == 1
         assert options[0]["name"] == "Updated Test Option"
-        assert options[0]["status"] == "optional"
+        assert options[0]["lifecycle_stage"] == "stable"  # 'optional' maps to 'stable'
 
     def test_get_feature_options_empty(self, temp_db):
         """Test get_feature_options returns empty list for feature with no options."""
@@ -643,20 +646,20 @@ class TestFeatureOptionsTable:
         assert options == []
 
     def test_get_active_feature_options(self, temp_db):
-        """Test get_active_feature_options returns non-released options."""
+        """Test get_active_feature_options returns preview and pending options."""
         temp_db.seed_features()
-        # Add options with different statuses
+        # Add options with different lifecycle stages
         temp_db.upsert_feature_option("opt1", "gradebook", "Preview Option", "preview")
-        temp_db.upsert_feature_option("opt2", "speedgrader", "Optional Option", "optional")
-        temp_db.upsert_feature_option("opt3", "assignments", "Released Option", "released")
+        temp_db.upsert_feature_option("opt2", "speedgrader", "Stable Option", "optional")  # maps to stable
+        temp_db.upsert_feature_option("opt3", "assignments", "Released Option", "released")  # maps to stable
         temp_db.upsert_feature_option("opt4", "modules", "Pending Option", "pending")
 
         active = temp_db.get_active_feature_options()
         option_ids = {o["option_id"] for o in active}
-        assert "opt1" in option_ids  # preview
-        assert "opt2" in option_ids  # optional
-        assert "opt3" not in option_ids  # released - excluded
-        assert "opt4" in option_ids  # pending
+        assert "opt1" in option_ids  # preview - included
+        assert "opt2" not in option_ids  # stable - excluded
+        assert "opt3" not in option_ids  # stable - excluded
+        assert "opt4" in option_ids  # pending - included
         # Should include feature_name from JOIN
         assert all("feature_name" in o for o in active)
 
@@ -1424,3 +1427,25 @@ class TestFeatureSettingsMethods:
 
         content = temp_db.get_latest_content_for_setting("orphan")
         assert content == []
+
+
+def test_feature_options_schema_has_new_columns(tmp_path):
+    """Verify feature_options has lifecycle_stage and state columns, not old status/config_level/default_state."""
+    import sqlite3
+    from utils.database import Database
+    db = Database(db_path=str(tmp_path / "test.db"))
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(feature_options)")
+    columns = {row[1] for row in cursor.fetchall()}
+    assert 'lifecycle_stage' in columns
+    assert 'prod_account_state' in columns
+    assert 'prod_course_state' in columns
+    assert 'beta_account_state' in columns
+    assert 'beta_course_state' in columns
+    assert 'source' in columns
+    assert 'doc_url' in columns
+    assert 'status' not in columns
+    assert 'config_level' not in columns
+    assert 'default_state' not in columns
+    db.close()

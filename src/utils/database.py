@@ -134,9 +134,13 @@ class Database:
                 meta_summary TEXT,
                 meta_summary_updated_at TIMESTAMP,
                 implementation_status TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                config_level TEXT,
-                default_state TEXT,
+                lifecycle_stage TEXT NOT NULL DEFAULT 'stable',
+                prod_account_state TEXT DEFAULT 'N/A',
+                prod_course_state TEXT DEFAULT 'N/A',
+                beta_account_state TEXT DEFAULT 'N/A',
+                beta_course_state TEXT DEFAULT 'N/A',
+                source TEXT DEFAULT 'release_notes',
+                doc_url TEXT,
                 user_group_url TEXT,
                 beta_date DATE,
                 production_date DATE,
@@ -164,6 +168,13 @@ class Database:
             ('production_date', 'DATE'),
             ('deprecation_date', 'DATE'),
             ('llm_generated_at', 'TIMESTAMP'),
+            ('lifecycle_stage', "TEXT NOT NULL DEFAULT 'stable'"),
+            ('prod_account_state', "TEXT DEFAULT 'N/A'"),
+            ('prod_course_state', "TEXT DEFAULT 'N/A'"),
+            ('beta_account_state', "TEXT DEFAULT 'N/A'"),
+            ('beta_course_state', "TEXT DEFAULT 'N/A'"),
+            ('source', "TEXT DEFAULT 'release_notes'"),
+            ('doc_url', 'TEXT'),
         ]
         for col, col_type in new_option_cols:
             try:
@@ -171,6 +182,10 @@ class Database:
                 conn.commit()
             except sqlite3.OperationalError:
                 pass
+
+        # Migration: Migrate data from old columns (status, config_level, default_state)
+        # to new columns (lifecycle_stage, *_state) and drop old columns
+        self._migrate_feature_options_schema(conn)
 
         # Feature settings table (non-toggle feature changes)
         cursor.execute("""
@@ -236,7 +251,7 @@ class Database:
 
         # Create indexes for feature tables
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_feature ON feature_options(feature_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_status ON feature_options(status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_feature_options_lifecycle ON feature_options(lifecycle_stage)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_feature ON content_feature_refs(feature_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_option ON content_feature_refs(feature_option_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_content_feature_refs_setting ON content_feature_refs(feature_setting_id)")
@@ -368,6 +383,140 @@ class Database:
         # Migration: Merge feature_options with annotation-polluted option_ids
         self._migrate_merge_annotated_option_ids(conn)
 
+    def _migrate_feature_options_schema(self, conn):
+        """Migrate feature_options from old status/config_level/default_state columns
+        to new lifecycle_stage and per-environment state columns.
+
+        Uses SQLite table rebuild pattern since DROP COLUMN isn't supported
+        in older SQLite versions (before 3.35).
+        """
+        cursor = conn.cursor()
+
+        # Check if old columns still exist
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        has_old_status = 'status' in columns
+        has_old_config_level = 'config_level' in columns
+        has_old_default_state = 'default_state' in columns
+        has_lifecycle_stage = 'lifecycle_stage' in columns
+
+        if not has_old_status and not has_old_config_level and not has_old_default_state:
+            return  # Nothing to migrate
+
+        if not has_lifecycle_stage:
+            return  # New columns not yet added, skip
+
+        # Step 1: Migrate data from old columns to new columns
+        if has_old_status:
+            # status='preview' → lifecycle_stage='preview'
+            cursor.execute("""
+                UPDATE feature_options
+                SET lifecycle_stage = 'preview'
+                WHERE status = 'preview' AND (lifecycle_stage = 'stable' OR lifecycle_stage IS NULL)
+            """)
+            # status='pending' → lifecycle_stage='pending'
+            cursor.execute("""
+                UPDATE feature_options
+                SET lifecycle_stage = 'pending'
+                WHERE status = 'pending' AND (lifecycle_stage = 'stable' OR lifecycle_stage IS NULL)
+            """)
+            # All other statuses → lifecycle_stage='stable'
+            cursor.execute("""
+                UPDATE feature_options
+                SET lifecycle_stage = 'stable'
+                WHERE status IN ('optional', 'default_on', 'default_optional', 'beta', 'released', 'delayed', 'deprecated')
+                  AND (lifecycle_stage = 'stable' OR lifecycle_stage IS NULL)
+            """)
+
+        if has_old_config_level and has_old_default_state:
+            # Best-effort migration: map config_level+default_state to state columns
+            # config_level='account' or 'both' → prod_account_state gets default_state-based value
+            cursor.execute("""
+                UPDATE feature_options
+                SET prod_account_state = CASE
+                    WHEN default_state = 'disabled' THEN 'disabled_unlocked'
+                    WHEN default_state = 'enabled' THEN 'enabled_unlocked'
+                    ELSE 'N/A'
+                END
+                WHERE config_level IN ('account', 'both')
+                  AND prod_account_state = 'N/A'
+                  AND default_state IS NOT NULL
+            """)
+            # config_level='course' or 'both' → prod_course_state gets default_state-based value
+            cursor.execute("""
+                UPDATE feature_options
+                SET prod_course_state = CASE
+                    WHEN default_state = 'disabled' THEN 'disabled_unlocked'
+                    WHEN default_state = 'enabled' THEN 'enabled_unlocked'
+                    ELSE 'N/A'
+                END
+                WHERE config_level IN ('course', 'both')
+                  AND prod_course_state = 'N/A'
+                  AND default_state IS NOT NULL
+            """)
+
+        conn.commit()
+
+        # Step 2: Rebuild table without old columns (SQLite table rebuild pattern)
+        # Define the new schema columns
+        new_columns = [
+            'option_id', 'feature_id', 'name', 'canonical_name', 'description',
+            'summary', 'meta_summary', 'meta_summary_updated_at', 'implementation_status',
+            'lifecycle_stage', 'prod_account_state', 'prod_course_state',
+            'beta_account_state', 'beta_course_state', 'source', 'doc_url',
+            'user_group_url', 'beta_date', 'production_date', 'deprecation_date',
+            'first_announced', 'last_updated', 'first_seen', 'last_seen',
+            'llm_generated_at',
+        ]
+
+        # Only proceed if old columns still exist (need to rebuild)
+        if not (has_old_status or has_old_config_level or has_old_default_state):
+            return
+
+        cols_csv = ', '.join(new_columns)
+
+        cursor.execute(f"""
+            CREATE TABLE feature_options_new (
+                option_id TEXT PRIMARY KEY,
+                feature_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                canonical_name TEXT,
+                description TEXT,
+                summary TEXT,
+                meta_summary TEXT,
+                meta_summary_updated_at TIMESTAMP,
+                implementation_status TEXT,
+                lifecycle_stage TEXT NOT NULL DEFAULT 'stable',
+                prod_account_state TEXT DEFAULT 'N/A',
+                prod_course_state TEXT DEFAULT 'N/A',
+                beta_account_state TEXT DEFAULT 'N/A',
+                beta_course_state TEXT DEFAULT 'N/A',
+                source TEXT DEFAULT 'release_notes',
+                doc_url TEXT,
+                user_group_url TEXT,
+                beta_date DATE,
+                production_date DATE,
+                deprecation_date DATE,
+                first_announced TIMESTAMP,
+                last_updated TIMESTAMP,
+                first_seen TIMESTAMP,
+                last_seen TIMESTAMP,
+                llm_generated_at TIMESTAMP,
+                FOREIGN KEY (feature_id) REFERENCES features(feature_id)
+            )
+        """)
+
+        cursor.execute(f"""
+            INSERT INTO feature_options_new ({cols_csv})
+            SELECT {cols_csv} FROM feature_options
+        """)
+
+        cursor.execute("DROP TABLE feature_options")
+        cursor.execute("ALTER TABLE feature_options_new RENAME TO feature_options")
+
+        conn.commit()
+
     def _migrate_merge_annotated_option_ids(self, conn):
         """Merge feature_options whose option_id contains bracket annotation slugs.
 
@@ -399,7 +548,7 @@ class Database:
             r'-this-feature-is-currently-delayed.*$',
         ]
 
-        cursor.execute("SELECT option_id, feature_id, name, canonical_name, status, "
+        cursor.execute("SELECT option_id, feature_id, name, canonical_name, lifecycle_stage, "
                         "beta_date, production_date, first_seen, last_seen FROM feature_options")
         all_options = cursor.fetchall()
 
@@ -420,7 +569,7 @@ class Database:
 
         for clean_id, dirty_rows in merge_groups.items():
             # Check if clean_id already exists
-            cursor.execute("SELECT option_id, feature_id, name, canonical_name, status, "
+            cursor.execute("SELECT option_id, feature_id, name, canonical_name, lifecycle_stage, "
                             "beta_date, production_date, first_seen, last_seen "
                             "FROM feature_options WHERE option_id = ?", (clean_id,))
             existing = cursor.fetchone()
@@ -459,8 +608,8 @@ class Database:
                 # Create the clean row from the best dirty data
                 cursor.execute("""
                     INSERT INTO feature_options (option_id, feature_id, name, canonical_name,
-                        status, beta_date, production_date, first_seen, last_seen)
-                    VALUES (?, ?, ?, ?, 'released', ?, ?, ?, ?)
+                        lifecycle_stage, beta_date, production_date, first_seen, last_seen)
+                    VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?)
                 """, (clean_id, best_feature_id, best_name, best_canonical,
                       best_beta, best_prod, earliest_seen, latest_seen))
 
@@ -807,11 +956,11 @@ class Database:
             option_id: Slugified option ID (e.g., 'document_processor').
             feature_id: FK to features table.
             name: Display name (may be H4 title for backwards compat).
-            status: Lifecycle status ('pending', 'preview', 'optional', 'default_on', 'released').
+            status: Legacy lifecycle status - mapped to lifecycle_stage.
             canonical_name: Exact name from "Feature Option to Enable" table cell.
             summary: Description or raw content excerpt.
-            config_level: Where it can be enabled ('account', 'course', 'both').
-            default_state: Default status ('enabled', 'disabled').
+            config_level: Legacy config level - mapped to state columns.
+            default_state: Legacy default state - mapped to state columns.
             user_group_url: URL to Feature Preview community user group (for feedback).
             first_announced: When first announced (ISO timestamp).
         """
@@ -819,29 +968,49 @@ class Database:
         cursor = conn.cursor()
         now = datetime.now().isoformat()
 
+        # Map legacy status to lifecycle_stage
+        if status in ('preview',):
+            lifecycle_stage = 'preview'
+        elif status in ('pending',):
+            lifecycle_stage = 'pending'
+        else:
+            lifecycle_stage = 'stable'
+
+        # Map legacy config_level + default_state to state columns
+        state_value = 'N/A'
+        if default_state == 'disabled':
+            state_value = 'disabled_unlocked'
+        elif default_state == 'enabled':
+            state_value = 'enabled_unlocked'
+
+        prod_account_state = state_value if config_level in ('account', 'both') else 'N/A'
+        prod_course_state = state_value if config_level in ('course', 'both') else 'N/A'
+
         cursor.execute("""
             INSERT INTO feature_options
-                (option_id, feature_id, name, canonical_name, summary, status,
-                 config_level, default_state, user_group_url, first_announced,
+                (option_id, feature_id, name, canonical_name, summary, lifecycle_stage,
+                 prod_account_state, prod_course_state, user_group_url, first_announced,
                  last_updated, first_seen, last_seen)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(option_id) DO UPDATE SET
                 name = COALESCE(excluded.name, feature_options.name),
                 canonical_name = COALESCE(excluded.canonical_name, feature_options.canonical_name),
                 summary = COALESCE(excluded.summary, feature_options.summary),
-                status = CASE
-                    WHEN excluded.status IN ('delayed', 'deprecated') THEN excluded.status
-                    WHEN feature_options.status IN ('delayed', 'deprecated') THEN feature_options.status
-                    ELSE excluded.status
+                lifecycle_stage = excluded.lifecycle_stage,
+                prod_account_state = CASE
+                    WHEN excluded.prod_account_state != 'N/A' THEN excluded.prod_account_state
+                    ELSE feature_options.prod_account_state
                 END,
-                config_level = COALESCE(excluded.config_level, feature_options.config_level),
-                default_state = COALESCE(excluded.default_state, feature_options.default_state),
+                prod_course_state = CASE
+                    WHEN excluded.prod_course_state != 'N/A' THEN excluded.prod_course_state
+                    ELSE feature_options.prod_course_state
+                END,
                 user_group_url = COALESCE(excluded.user_group_url, feature_options.user_group_url),
                 last_updated = ?,
                 last_seen = ?
         """, (
-            option_id, feature_id, name, canonical_name, summary, status,
-            config_level, default_state, user_group_url, first_announced, now, now, now, now, now
+            option_id, feature_id, name, canonical_name, summary, lifecycle_stage,
+            prod_account_state, prod_course_state, user_group_url, first_announced, now, now, now, now, now
         ))
         conn.commit()
 
@@ -856,14 +1025,14 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def get_active_feature_options(self) -> List[dict]:
-        """Get all non-released feature options."""
+        """Get all non-stable feature options (preview and pending)."""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             SELECT fo.*, f.name as feature_name
             FROM feature_options fo
             JOIN features f ON fo.feature_id = f.feature_id
-            WHERE fo.status IN ('pending', 'preview', 'optional', 'default_optional')
+            WHERE fo.lifecycle_stage IN ('pending', 'preview')
             ORDER BY fo.first_announced DESC
         """)
         return [dict(row) for row in cursor.fetchall()]
@@ -1276,7 +1445,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT fa.*, ci.title as release_note_title, ci.url as release_note_url,
-                   fo.canonical_name, fo.status as option_status,
+                   fo.canonical_name, fo.lifecycle_stage as option_status,
                    fs.name as setting_name, fs.status as setting_status
             FROM feature_announcements fa
             JOIN content_items ci ON fa.content_id = ci.source_id
@@ -1311,7 +1480,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT fa.*, f.name as feature_name,
-                   fo.canonical_name, fo.status as option_status,
+                   fo.canonical_name, fo.lifecycle_stage as option_status,
                    fs.name as setting_name, fs.status as setting_status
             FROM feature_announcements fa
             LEFT JOIN features f ON fa.feature_id = f.feature_id

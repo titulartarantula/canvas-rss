@@ -31,16 +31,21 @@ def test_db(tmp_path):
             canonical_name TEXT,
             name TEXT NOT NULL,
             description TEXT,
+            summary TEXT,
             meta_summary TEXT,
             meta_summary_updated_at TIMESTAMP,
             implementation_status TEXT,
-            status TEXT NOT NULL DEFAULT 'pending',
+            lifecycle_stage TEXT NOT NULL DEFAULT 'stable',
+            prod_account_state TEXT DEFAULT 'N/A',
+            prod_course_state TEXT DEFAULT 'N/A',
+            beta_account_state TEXT DEFAULT 'N/A',
+            beta_course_state TEXT DEFAULT 'N/A',
+            source TEXT DEFAULT 'release_notes',
+            doc_url TEXT,
+            user_group_url TEXT,
             beta_date DATE,
             production_date DATE,
             deprecation_date DATE,
-            config_level TEXT,
-            default_state TEXT,
-            user_group_url TEXT,
             first_announced TIMESTAMP,
             last_updated TIMESTAMP,
             first_seen TIMESTAMP,
@@ -181,11 +186,11 @@ def populated_db(test_db):
             ('gradebook', 'Gradebook', 'View and manage grades', 'active'),
             ('speedgrader', 'SpeedGrader', 'Grade submissions quickly', 'active');
 
-        INSERT INTO feature_options (option_id, feature_id, canonical_name, name, status, beta_date, production_date, description, meta_summary)
+        INSERT INTO feature_options (option_id, feature_id, canonical_name, name, lifecycle_stage, prod_account_state, prod_course_state, beta_date, production_date, description, meta_summary)
         VALUES
-            ('document_processor', 'assignments', 'Document Processor', 'Document Processing App', 'preview', '2026-03-01', '2026-03-15', 'Enables document annotation', 'Feature is in preview. Available in beta March 1.'),
-            ('enhanced_filters', 'gradebook', 'Enhanced Gradebook Filters', 'Enhanced Filters', 'optional', NULL, '2026-01-15', 'Additional filtering options', 'Feature is available and optional.'),
-            ('speedgrader_sort', 'speedgrader', 'Sort by Student Name', 'Sort by Name', 'released', NULL, '2025-12-01', 'Sort submissions alphabetically', 'Feature is fully released.');
+            ('document_processor', 'assignments', 'Document Processor', 'Document Processing App', 'preview', 'disabled_unlocked', 'N/A', '2026-03-01', '2026-03-15', 'Enables document annotation', 'Feature is in preview. Available in beta March 1.'),
+            ('enhanced_filters', 'gradebook', 'Enhanced Gradebook Filters', 'Enhanced Filters', 'stable', 'disabled_unlocked', 'disabled', NULL, '2026-01-15', 'Additional filtering options', 'Feature is available and optional.'),
+            ('speedgrader_sort', 'speedgrader', 'Sort by Student Name', 'Sort by Name', 'stable', 'enabled_unlocked', 'N/A', NULL, '2025-12-01', 'Sort submissions alphabetically', 'Feature is fully released.');
 
         INSERT INTO content_items (source_id, url, title, content_type, summary, first_posted, published_date)
         VALUES
