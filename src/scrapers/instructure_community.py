@@ -2381,9 +2381,8 @@ def classify_release_features(
                     feature_id=feature_id,
                     name=feature.name,
                     canonical_name=canonical_name,
-                    status='pending',  # Release notes announce pending features
-                    config_level=feature.table_data.enable_location_account if feature.table_data else None,
-                    default_state=feature.table_data.enable_location_account if feature.table_data else None,
+                    source='release_notes',
+                    user_group_url=feature.table_data.user_group_url if feature.table_data and hasattr(feature.table_data, 'user_group_url') else None,
                     first_announced=announced_at,
                 )
 
@@ -2579,9 +2578,8 @@ def classify_deploy_changes(
         elif entity_id in force_settings:
             is_option = False
 
-        # Determine status: use delayed annotation if present, otherwise pending
+        # Determine status for settings: use delayed annotation if present, otherwise pending
         # (actual released/active status is computed at query time from production_date)
-        option_status = change.status if change.status == 'delayed' else 'pending'
         setting_status = change.status if change.status == 'delayed' else 'pending'
 
         # Create/update feature option or feature setting record
@@ -2593,10 +2591,8 @@ def classify_deploy_changes(
                     feature_id=feature_id,
                     name=change.name,
                     canonical_name=canonical_name,
-                    status=option_status,
-                    summary=None,
-                    config_level=None,
-                    default_state=None,
+                    source='release_notes',
+                    user_group_url=change.table_data.user_group_url if change.table_data and hasattr(change.table_data, 'user_group_url') else None,
                     first_announced=announced_at,
                 )
 
