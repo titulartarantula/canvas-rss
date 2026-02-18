@@ -246,7 +246,7 @@ function AnnouncementsTable({
             rel="noopener noreferrer"
             className="text-xs font-mono text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
           >
-            View on Canvas
+            View Online
             <ExternalLinkIcon className="w-3 h-3" />
           </a>
         </div>

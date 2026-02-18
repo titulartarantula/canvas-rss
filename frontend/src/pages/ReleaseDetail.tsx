@@ -97,7 +97,7 @@ export default function ReleaseDetail() {
           rel="noopener noreferrer"
           className="mt-2 inline-flex items-center gap-1 text-xs font-mono text-signal-blue hover:text-signal-blue/80 transition-colors"
         >
-          view original <ExternalLinkIcon className="w-3 h-3" />
+          View Online <ExternalLinkIcon className="w-3 h-3" />
         </a>
       </header>
 
