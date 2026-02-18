@@ -2436,7 +2436,8 @@ class TestClassifyDeployChanges:
 
         setting = temp_db.get_feature_setting("fixed-sorting-in-grade-export")
         assert setting is not None
-        assert setting["status"] == "active"
+        # Status is stored as 'pending' and computed to 'active' at query time
+        assert setting["status"] == "pending"
 
         option = temp_db.get_feature_option("fixed-sorting-in-grade-export")
         assert option is None
@@ -2487,7 +2488,7 @@ class TestClassifyDeployChanges:
         # Should have created a feature_option (slugified from canonical_name)
         option = temp_db.get_feature_option("enhanced_rubrics")
         assert option is not None
-        assert option["status"] == "released"
+        assert option["lifecycle_stage"] == "stable"
 
         # Should NOT have created a feature_setting
         setting = temp_db.get_feature_setting("enhanced_rubrics")
