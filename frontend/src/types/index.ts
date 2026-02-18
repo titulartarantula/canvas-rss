@@ -102,6 +102,17 @@ export interface Announcement {
   affects_ui?: boolean | null;
 }
 
+export interface AnnouncementDetail extends Announcement {
+  anchor_id: string | null;
+  content_id: string;
+  release_title: string;
+  release_url: string;
+  release_type: string;
+  option_name: string | null;
+  option_display_name: string | null;
+  setting_name: string | null;
+}
+
 export interface CommunityPost {
   source_id: string;
   url: string;

@@ -9,6 +9,7 @@ import type {
   Release,
   SearchResults,
   Announcement,
+  AnnouncementDetail,
   CommunityPost,
 } from '../types';
 
@@ -77,6 +78,13 @@ export const releasesApi = {
   },
   get: async (contentId: string): Promise<Release> => {
     const { data } = await api.get(`/releases/${contentId}`);
+    return data;
+  },
+};
+
+export const announcementsApi = {
+  get: async (id: number): Promise<AnnouncementDetail> => {
+    const { data } = await api.get(`/announcements/${id}`);
     return data;
   },
 };
