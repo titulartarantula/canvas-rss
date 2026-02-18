@@ -80,9 +80,14 @@ export default function FeatureDetail() {
           )}
         </div>
         {data.description && (
-          <p className="mt-3 text-sm text-zinc-400 leading-relaxed max-w-3xl">
-            {data.description}
-          </p>
+          <div className="mt-4">
+            <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 mb-1.5">
+              Description
+            </h3>
+            <p className="text-sm text-zinc-400 leading-relaxed max-w-3xl">
+              {data.description}
+            </p>
+          </div>
         )}
       </header>
 

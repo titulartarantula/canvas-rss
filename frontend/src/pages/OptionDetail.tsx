@@ -78,15 +78,25 @@ export default function OptionDetail() {
           </div>
         )}
 
-        {data.meta_summary && (
-          <p className="mt-3 text-sm text-zinc-400 leading-relaxed max-w-3xl">
-            {data.meta_summary}
-          </p>
+        {data.description && (
+          <div className="mt-4">
+            <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 mb-1.5">
+              Description
+            </h3>
+            <p className="text-sm text-zinc-400 leading-relaxed max-w-3xl">
+              {data.description}
+            </p>
+          </div>
         )}
-        {data.description && data.description !== data.meta_summary && (
-          <p className="mt-2 text-xs text-zinc-500 leading-relaxed max-w-3xl">
-            {data.description}
-          </p>
+        {data.meta_summary && (
+          <div className="mt-4">
+            <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 mb-1.5">
+              Deployment Readiness
+            </h3>
+            <p className="text-sm text-zinc-400 leading-relaxed max-w-3xl">
+              {data.meta_summary}
+            </p>
+          </div>
         )}
       </header>
 

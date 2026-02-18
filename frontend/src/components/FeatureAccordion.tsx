@@ -121,6 +121,18 @@ function FeatureAccordionContent({ featureId, featureName }: { featureId: string
 
   return (
     <div className="px-4 pb-4 pl-8 animate-fade-in">
+      {/* Description */}
+      {data?.description && (
+        <div className="mb-4">
+          <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 mb-1.5">
+            Description
+          </h3>
+          <p className="text-sm text-zinc-400 leading-relaxed max-w-2xl">
+            {data.description}
+          </p>
+        </div>
+      )}
+
       {/* Options section */}
       {options.length > 0 && (
         <div className="mb-3">
