@@ -155,7 +155,12 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
           {announcement.category}
         </span>
       )}
-      <h3 className="text-sm font-medium text-zinc-200">{announcement.h4_title}</h3>
+      <Link
+        to={`/announcements/${announcement.id}`}
+        className="text-sm font-medium text-zinc-200 hover:text-white transition-colors"
+      >
+        {announcement.h4_title}
+      </Link>
       {announcement.description && (
         <p className="mt-2 text-xs text-zinc-400 leading-relaxed">{announcement.description}</p>
       )}

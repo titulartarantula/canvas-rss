@@ -272,14 +272,6 @@ function AnnouncementsTable({
 }
 
 function AnnouncementRow({ announcement }: { announcement: Announcement }) {
-  const detailLink = announcement.option_id
-    ? `/options/${announcement.option_id}`
-    : announcement.setting_id
-      ? `/settings/${announcement.setting_id}`
-      : null
-  const TitleTag = detailLink ? Link : 'span'
-  const titleProps = detailLink ? { to: detailLink } : {}
-
   return (
     <div className="data-row">
       {/* Status */}
@@ -293,12 +285,12 @@ function AnnouncementRow({ announcement }: { announcement: Announcement }) {
 
       {/* Title & Description */}
       <div className="flex-1 min-w-0">
-        <TitleTag
-          {...titleProps as any}
-          className={`text-sm text-zinc-300 truncate block ${detailLink ? 'hover:text-white transition-colors' : ''}`}
+        <Link
+          to={`/announcements/${announcement.id}`}
+          className="text-sm text-zinc-300 truncate block hover:text-white transition-colors"
         >
           {announcement.h4_title}
-        </TitleTag>
+        </Link>
         {announcement.description && (
           <p className="text-xs text-zinc-500 truncate mt-0.5">{announcement.description}</p>
         )}
