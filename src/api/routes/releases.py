@@ -104,3 +104,38 @@ def get_release_detail(content_id: str):
         release["upcoming_changes"] = rows_to_list(cursor.fetchall())
 
         return release
+
+
+@router.get("/announcements/{announcement_id}")
+def get_announcement_detail(announcement_id: int):
+    """Get a single feature announcement with parent release info."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                fa.id, fa.h4_title, fa.anchor_id, fa.section, fa.category,
+                fa.description, fa.option_id, fa.setting_id,
+                fa.enable_location_account, fa.enable_location_course,
+                COALESCE(fa.beta_date, fo.beta_date) as beta_date,
+                COALESCE(fa.production_date, fo.production_date) as production_date,
+                fo.status as option_status,
+                fa.content_id,
+                ci.title as release_title,
+                ci.url as release_url,
+                ci.content_type as release_type,
+                fo.canonical_name as option_name,
+                fo.name as option_display_name,
+                fs.name as setting_name
+            FROM feature_announcements fa
+            JOIN content_items ci ON fa.content_id = ci.source_id
+            LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
+            LEFT JOIN feature_settings fs ON fa.setting_id = fs.setting_id
+            WHERE fa.id = ?
+        """, (announcement_id,))
+        announcement = row_to_dict(cursor.fetchone())
+
+        if not announcement:
+            raise HTTPException(status_code=404, detail="Announcement not found")
+
+        return announcement
