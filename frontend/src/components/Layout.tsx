@@ -11,6 +11,7 @@ export default function Layout() {
     { path: '/', label: 'Dashboard' },
     { path: '/registry', label: 'Feature Registry' },
     { path: '/releases', label: 'Release History' },
+    { path: '/glossary', label: 'Glossary' },
   ]
 
   const isActive = (path: string) => {

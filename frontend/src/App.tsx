@@ -8,6 +8,7 @@ import SettingDetail from './pages/SettingDetail'
 import Releases from './pages/Releases'
 import ReleaseDetail from './pages/ReleaseDetail'
 import AnnouncementDetail from './pages/AnnouncementDetail'
+import Glossary from './pages/Glossary'
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="releases" element={<Releases />} />
         <Route path="releases/:contentId" element={<ReleaseDetail />} />
         <Route path="announcements/:id" element={<AnnouncementDetail />} />
+        <Route path="glossary" element={<Glossary />} />
         {/* Redirects from old routes */}
         <Route path="features" element={<Navigate to="/registry" replace />} />
         <Route path="options" element={<Navigate to="/registry" replace />} />
