@@ -247,10 +247,11 @@ Category: {category}
 Content:
 {raw_content}
 
-Write a 2-3 sentence summary that covers:
-1. What this feature does
+Write a 3-5 sentence summary that covers:
+1. What this feature does or what changed
 2. Who benefits from it (students, instructors, admins)
 3. The key improvement or capability it provides
+4. Any important configuration or rollout details
 
 Keep it concise and jargon-free."""
 
@@ -263,10 +264,11 @@ Section: {section}
 Content:
 {raw_content}
 
-Write a 2-3 sentence summary that covers:
+Write a 3-5 sentence summary that covers:
 1. What behavior changed
 2. Why it was changed (bug fix, improvement, accessibility, etc.)
 3. Who needs to be aware of this change
+4. Any action items or things to watch for
 
 Keep it concise and jargon-free."""
 
@@ -928,7 +930,7 @@ Describe the "{setting_name}" change in the {feature_name} area of Canvas LMS in
         if not self.client:
             return ""
 
-        prompt = f"""Summarize this Canvas release note entry in 1-2 sentences. What changed or was added?
+        prompt = f"""Summarize this Canvas release note entry in 3-5 sentences for educational technologists. Cover what changed or was added, why it matters, and who it affects.
 
 Title: {h4_title}
 Content: {raw_content[:2000]}"""
