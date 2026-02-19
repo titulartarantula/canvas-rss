@@ -76,24 +76,21 @@ def compute_availability(beta_date: str | None, production_date: str | None) -> 
     return 'no_dates'
 
 
-def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo", fs_alias: str = "fs") -> str:
-    """Compute announcement category: feature_option, feature_preview, or feature_setting.
+def announcement_status_sql(fa_alias: str = "fa", fs_alias: str = "fs", fo_alias: str = "fo", **_kwargs) -> str:
+    """Compute announcement category: setting or preview.
 
-    The pill indicates WHAT TYPE of thing the announcement is about.
-    Beta/prod timing is already shown via date pills.
+    Announcements linked to a known feature (option or setting) are
+    categorised as 'feature_setting'. Only truly unlinked announcements
+    are 'feature_preview'.
 
-    Priority:
-    1. Option with optional lifecycle → 'feature_option'
-    2. Option with feature_preview lifecycle → 'feature_preview'
-    3. Setting → 'feature_setting'
-    4. Unlinked → 'feature_preview' (new/unstable features default to preview)
+    Categories:
+    - 'feature_setting': linked to a feature_settings or feature_options record
+    - 'feature_preview': not linked to any known feature
     """
     return f"""CASE
-        WHEN {fo_alias}.lifecycle_stage = 'optional'
-             THEN 'feature_option'
-        WHEN {fo_alias}.lifecycle_stage IS NOT NULL
-             THEN 'feature_preview'
         WHEN {fa_alias}.setting_id IS NOT NULL AND {fs_alias}.setting_id IS NOT NULL
+             THEN 'feature_setting'
+        WHEN {fa_alias}.option_id IS NOT NULL AND {fo_alias}.option_id IS NOT NULL
              THEN 'feature_setting'
         ELSE 'feature_preview'
     END"""

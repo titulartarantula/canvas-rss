@@ -120,7 +120,7 @@ def get_announcement_detail(announcement_id: int):
                 fa.enable_location_account, fa.enable_location_course,
                 COALESCE(fa.beta_date, fo.beta_date) as beta_date,
                 COALESCE(fa.production_date, fo.production_date) as production_date,
-                {announcement_status_sql("fa", "fo", "fs")} as option_status,
+                {announcement_status_sql("fa", "fs")} as option_status,
                 fa.content_id,
                 ci.title as release_title,
                 ci.url as release_url,
