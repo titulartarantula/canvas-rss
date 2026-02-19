@@ -91,11 +91,11 @@ CANVAS_FEATURES = {
 }
 
 FEATURE_OPTION_STATUSES = {
-    'pending',          # Announced but not yet available
-    'preview',          # Feature preview / beta
-    'optional',         # Available but disabled by default
-    'default_optional', # Enabled by default, can be disabled
-    'released',         # Fully released, no longer a feature option
+    'future_enforcement',  # Will be enforced by Canvas eventually
+    'feature_preview',     # Feature preview / beta
+    'optional',            # Available but disabled by default
+    'default_optional',    # Enabled by default, can be disabled
+    'released',            # Fully released, no longer a feature option
 }
 
 MENTION_TYPES = {

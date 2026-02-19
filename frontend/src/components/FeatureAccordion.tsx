@@ -224,6 +224,7 @@ function FeatureAccordionContent({ featureId, featureName }: { featureId: string
 }
 
 function getStatusTextColor(text: string): string {
+  if (text.includes('enforcement')) return 'text-amber-400'
   if (text.includes('preview')) return 'text-status-preview'
   if (text.includes('pending')) return 'text-status-pending'
   if (text.includes('optional')) return 'text-status-optional'

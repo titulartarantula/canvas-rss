@@ -134,7 +134,7 @@ class Database:
                 meta_summary TEXT,
                 meta_summary_updated_at TIMESTAMP,
                 implementation_status TEXT,
-                lifecycle_stage TEXT NOT NULL DEFAULT 'stable',
+                lifecycle_stage TEXT NOT NULL DEFAULT 'optional',
                 prod_account_state TEXT DEFAULT 'N/A',
                 prod_course_state TEXT DEFAULT 'N/A',
                 beta_account_state TEXT DEFAULT 'N/A',
@@ -168,7 +168,7 @@ class Database:
             ('production_date', 'DATE'),
             ('deprecation_date', 'DATE'),
             ('llm_generated_at', 'TIMESTAMP'),
-            ('lifecycle_stage', "TEXT NOT NULL DEFAULT 'stable'"),
+            ('lifecycle_stage', "TEXT NOT NULL DEFAULT 'optional'"),
             ('prod_account_state', "TEXT DEFAULT 'N/A'"),
             ('prod_course_state', "TEXT DEFAULT 'N/A'"),
             ('beta_account_state', "TEXT DEFAULT 'N/A'"),
@@ -383,6 +383,9 @@ class Database:
         # Migration: Merge feature_options with annotation-polluted option_ids
         self._migrate_merge_annotated_option_ids(conn)
 
+        # Migration: Rename lifecycle_stage values and clean up spurious options
+        self._migrate_lifecycle_stage_rename(conn)
+
     def _migrate_feature_options_schema(self, conn):
         """Migrate feature_options from old status/config_level/default_state columns
         to new lifecycle_stage and per-environment state columns.
@@ -409,24 +412,24 @@ class Database:
 
         # Step 1: Migrate data from old columns to new columns
         if has_old_status:
-            # status='preview' → lifecycle_stage='preview'
+            # status='preview' → lifecycle_stage='feature_preview'
             cursor.execute("""
                 UPDATE feature_options
-                SET lifecycle_stage = 'preview'
-                WHERE status = 'preview' AND (lifecycle_stage = 'stable' OR lifecycle_stage IS NULL)
+                SET lifecycle_stage = 'feature_preview'
+                WHERE status = 'preview' AND (lifecycle_stage IN ('stable', 'optional') OR lifecycle_stage IS NULL)
             """)
-            # status='pending' → lifecycle_stage='pending'
+            # status='pending' → lifecycle_stage='future_enforcement'
             cursor.execute("""
                 UPDATE feature_options
-                SET lifecycle_stage = 'pending'
-                WHERE status = 'pending' AND (lifecycle_stage = 'stable' OR lifecycle_stage IS NULL)
+                SET lifecycle_stage = 'future_enforcement'
+                WHERE status = 'pending' AND (lifecycle_stage IN ('stable', 'optional') OR lifecycle_stage IS NULL)
             """)
-            # All other statuses → lifecycle_stage='stable'
+            # All other statuses → lifecycle_stage='optional'
             cursor.execute("""
                 UPDATE feature_options
-                SET lifecycle_stage = 'stable'
+                SET lifecycle_stage = 'optional'
                 WHERE status IN ('optional', 'default_on', 'default_optional', 'beta', 'released', 'delayed', 'deprecated')
-                  AND (lifecycle_stage = 'stable' OR lifecycle_stage IS NULL)
+                  AND (lifecycle_stage IN ('stable', 'optional') OR lifecycle_stage IS NULL)
             """)
 
         if has_old_config_level and has_old_default_state:
@@ -487,7 +490,7 @@ class Database:
                 meta_summary TEXT,
                 meta_summary_updated_at TIMESTAMP,
                 implementation_status TEXT,
-                lifecycle_stage TEXT NOT NULL DEFAULT 'stable',
+                lifecycle_stage TEXT NOT NULL DEFAULT 'optional',
                 prod_account_state TEXT DEFAULT 'N/A',
                 prod_course_state TEXT DEFAULT 'N/A',
                 beta_account_state TEXT DEFAULT 'N/A',
@@ -609,7 +612,7 @@ class Database:
                 cursor.execute("""
                     INSERT INTO feature_options (option_id, feature_id, name, canonical_name,
                         lifecycle_stage, beta_date, production_date, first_seen, last_seen)
-                    VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, 'optional', ?, ?, ?, ?)
                 """, (clean_id, best_feature_id, best_name, best_canonical,
                       best_beta, best_prod, earliest_seen, latest_seen))
 
@@ -645,6 +648,70 @@ class Database:
             if cleaned_name != row[1] and cleaned_name:
                 cursor.execute("UPDATE feature_options SET name = ? WHERE option_id = ?",
                                (cleaned_name, row[0]))
+
+        conn.commit()
+
+    def _migrate_lifecycle_stage_rename(self, conn):
+        """Rename lifecycle_stage values from old to new and clean up spurious options.
+
+        Old -> New:
+          'pending' -> 'future_enforcement'
+          'stable'  -> 'optional'
+          'preview' -> 'feature_preview'
+
+        Also renames disambiguated option_ids that used old suffixes,
+        and deletes spurious feature options that don't exist on the canonical page.
+        """
+        cursor = conn.cursor()
+
+        # Check if migration is needed (any old values still exist?)
+        cursor.execute("""
+            SELECT COUNT(*) FROM feature_options
+            WHERE lifecycle_stage IN ('pending', 'stable', 'preview')
+        """)
+        old_count = cursor.fetchone()[0]
+
+        if old_count > 0:
+            # Rename lifecycle_stage values
+            cursor.execute("UPDATE feature_options SET lifecycle_stage = 'future_enforcement' WHERE lifecycle_stage = 'pending'")
+            cursor.execute("UPDATE feature_options SET lifecycle_stage = 'optional' WHERE lifecycle_stage = 'stable'")
+            cursor.execute("UPDATE feature_options SET lifecycle_stage = 'feature_preview' WHERE lifecycle_stage = 'preview'")
+
+        # Rename disambiguated option_ids that used old lifecycle suffixes
+        renames = [
+            ('new_quizzes_pending', 'new_quizzes_future_enforcement'),
+            ('new_quizzes_preview', 'new_quizzes_feature_preview'),
+        ]
+        for old_id, new_id in renames:
+            cursor.execute("SELECT 1 FROM feature_options WHERE option_id = ?", (old_id,))
+            if cursor.fetchone() is None:
+                continue
+            # Check if new_id already exists (avoid conflict)
+            cursor.execute("SELECT 1 FROM feature_options WHERE option_id = ?", (new_id,))
+            if cursor.fetchone() is not None:
+                # Merge: re-point FK refs from old_id to new_id, then delete old_id
+                cursor.execute("UPDATE feature_announcements SET option_id = ? WHERE option_id = ?", (new_id, old_id))
+                cursor.execute("UPDATE content_feature_refs SET feature_option_id = ? WHERE feature_option_id = ?", (new_id, old_id))
+                cursor.execute("DELETE FROM feature_options WHERE option_id = ?", (old_id,))
+            else:
+                # Rename: update FK refs and the option itself
+                cursor.execute("UPDATE feature_announcements SET option_id = ? WHERE option_id = ?", (new_id, old_id))
+                cursor.execute("UPDATE content_feature_refs SET feature_option_id = ? WHERE feature_option_id = ?", (new_id, old_id))
+                cursor.execute("UPDATE feature_options SET option_id = ? WHERE option_id = ?", (new_id, old_id))
+
+        # Delete spurious feature options that came from release notes but don't exist
+        # on the canonical page
+        spurious_ids = ('document_processor', 'accessibility_checker', 'perform_dsr_exports_for_users', 'lti_apps_page')
+        for sp_id in spurious_ids:
+            cursor.execute(
+                "SELECT 1 FROM feature_options WHERE option_id = ? AND source = 'release_notes'",
+                (sp_id,)
+            )
+            if cursor.fetchone() is not None:
+                # Null out FK refs first
+                cursor.execute("UPDATE feature_announcements SET option_id = NULL WHERE option_id = ?", (sp_id,))
+                cursor.execute("UPDATE content_feature_refs SET feature_option_id = NULL WHERE feature_option_id = ?", (sp_id,))
+                cursor.execute("DELETE FROM feature_options WHERE option_id = ? AND source = 'release_notes'", (sp_id,))
 
         conn.commit()
 
@@ -996,11 +1063,11 @@ class Database:
         if lifecycle_stage is None:
             # Map from legacy status
             if status == 'preview':
-                lifecycle_stage = 'preview'
+                lifecycle_stage = 'feature_preview'
             elif status == 'pending':
-                lifecycle_stage = 'pending'
+                lifecycle_stage = 'future_enforcement'
             else:
-                lifecycle_stage = 'stable'
+                lifecycle_stage = 'optional'
 
         # Determine state columns - use direct values if provided, else map from legacy
         if prod_account_state is None:
@@ -1084,7 +1151,7 @@ class Database:
             SELECT fo.*, f.name as feature_name
             FROM feature_options fo
             JOIN features f ON fo.feature_id = f.feature_id
-            WHERE fo.lifecycle_stage IN ('pending', 'preview')
+            WHERE fo.lifecycle_stage IN ('future_enforcement', 'feature_preview')
             ORDER BY fo.first_announced DESC
         """)
         return [dict(row) for row in cursor.fetchall()]

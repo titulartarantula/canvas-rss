@@ -1517,7 +1517,7 @@ class TestImplementationStatusGenerator:
         from datetime import date
 
         status = generate_implementation_status(
-            status='preview',
+            status='feature_preview',
             config_level='account',
             beta_date=date(2026, 1, 19),
             production_date=date(2026, 2, 21),

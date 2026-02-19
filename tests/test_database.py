@@ -616,7 +616,7 @@ class TestFeatureOptionsTable:
         options = temp_db.get_feature_options("speedgrader")
         assert len(options) == 1
         assert options[0]["option_id"] == "speedgrader-perf-upgrades"
-        assert options[0]["lifecycle_stage"] == "preview"
+        assert options[0]["lifecycle_stage"] == "feature_preview"
         assert options[0]["prod_account_state"] == "disabled_unlocked"
 
     def test_upsert_feature_option_updates_existing(self, temp_db):
@@ -637,7 +637,7 @@ class TestFeatureOptionsTable:
         options = temp_db.get_feature_options("gradebook")
         assert len(options) == 1
         assert options[0]["name"] == "Updated Test Option"
-        assert options[0]["lifecycle_stage"] == "stable"  # 'optional' maps to 'stable'
+        assert options[0]["lifecycle_stage"] == "optional"  # 'optional' maps to 'optional'
 
     def test_get_feature_options_empty(self, temp_db):
         """Test get_feature_options returns empty list for feature with no options."""
@@ -656,10 +656,10 @@ class TestFeatureOptionsTable:
 
         active = temp_db.get_active_feature_options()
         option_ids = {o["option_id"] for o in active}
-        assert "opt1" in option_ids  # preview - included
-        assert "opt2" not in option_ids  # stable - excluded
-        assert "opt3" not in option_ids  # stable - excluded
-        assert "opt4" in option_ids  # pending - included
+        assert "opt1" in option_ids  # feature_preview - included
+        assert "opt2" not in option_ids  # optional - excluded
+        assert "opt3" not in option_ids  # optional - excluded
+        assert "opt4" in option_ids  # future_enforcement - included
         # Should include feature_name from JOIN
         assert all("feature_name" in o for o in active)
 
@@ -1467,19 +1467,19 @@ def test_upsert_feature_option_canonical_overrides_release_notes(tmp_path):
     )
     cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
     row = dict(cursor.fetchone())
-    assert row['lifecycle_stage'] == 'pending'
+    assert row['lifecycle_stage'] == 'future_enforcement'
     assert row['source'] == 'release_notes'
 
     # Then: canonical page overwrites
     db.upsert_feature_option(
         option_id='test_option', feature_id='assignments', name='Test Option',
-        lifecycle_stage='preview', prod_account_state='disabled_unlocked',
+        lifecycle_stage='feature_preview', prod_account_state='disabled_unlocked',
         prod_course_state='N/A', beta_account_state='N/A', beta_course_state='N/A',
         source='canonical_page',
     )
     cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
     row = dict(cursor.fetchone())
-    assert row['lifecycle_stage'] == 'preview'  # canonical wins
+    assert row['lifecycle_stage'] == 'feature_preview'  # canonical wins
     assert row['prod_account_state'] == 'disabled_unlocked'
     assert row['source'] == 'canonical_page'
     db.close()
@@ -1497,7 +1497,7 @@ def test_upsert_feature_option_release_notes_preserves_canonical(tmp_path):
     # First: canonical page creates the option
     db.upsert_feature_option(
         option_id='test_option', feature_id='assignments', name='Test Option',
-        lifecycle_stage='preview', prod_account_state='disabled_unlocked',
+        lifecycle_stage='feature_preview', prod_account_state='disabled_unlocked',
         prod_course_state='N/A', beta_account_state='N/A', beta_course_state='N/A',
         source='canonical_page',
     )
@@ -1509,7 +1509,7 @@ def test_upsert_feature_option_release_notes_preserves_canonical(tmp_path):
     )
     cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
     row = dict(cursor.fetchone())
-    assert row['lifecycle_stage'] == 'preview'  # canonical preserved
+    assert row['lifecycle_stage'] == 'feature_preview'  # canonical preserved
     assert row['prod_account_state'] == 'disabled_unlocked'  # canonical preserved
     assert row['source'] == 'canonical_page'  # canonical preserved
     db.close()

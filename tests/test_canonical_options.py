@@ -459,12 +459,12 @@ class TestParseCanonicalPageHtml:
     # --- Pending Feature Options section ---
 
     def test_pending_count(self, options):
-        pending = [o for o in options if o.lifecycle_stage == "pending"]
+        pending = [o for o in options if o.lifecycle_stage == "future_enforcement"]
         assert len(pending) == 3
 
     def test_pending_disable_classic_quiz(self, options):
         opt = next(o for o in options if o.name == "Disable Classic Quiz Creation")
-        assert opt.lifecycle_stage == "pending"
+        assert opt.lifecycle_stage == "future_enforcement"
         assert opt.prod_account_state == "disabled_unlocked"
         assert opt.prod_course_state == "N/A"
         assert opt.doc_url is None  # no link in name cell
@@ -473,7 +473,7 @@ class TestParseCanonicalPageHtml:
     def test_pending_new_quizzes_has_doc_url(self, options):
         opt = next(
             o for o in options
-            if o.name == "New Quizzes" and o.lifecycle_stage == "pending"
+            if o.name == "New Quizzes" and o.lifecycle_stage == "future_enforcement"
         )
         assert opt.doc_url is not None
         assert "new-quizzes-doc" in opt.doc_url
@@ -488,7 +488,7 @@ class TestParseCanonicalPageHtml:
     def test_optional_count(self, options):
         optional_stable = [
             o for o in options
-            if o.lifecycle_stage == "stable"
+            if o.lifecycle_stage == "optional"
             and o.name not in ("Admin Analytics", "Comment Library")  # default optional
         ]
         assert len(optional_stable) == 7
@@ -498,7 +498,7 @@ class TestParseCanonicalPageHtml:
             o for o in options
             if o.name == "Account and Course Level Outcome Mastery Scales"
         )
-        assert opt.lifecycle_stage == "stable"
+        assert opt.lifecycle_stage == "optional"
         assert opt.prod_account_state == "csm_managed"
         assert opt.doc_url is not None
         assert "mastery-scales-doc" in opt.doc_url
@@ -543,7 +543,7 @@ class TestParseCanonicalPageHtml:
     def test_default_optional_enabled_unlocked(self, options):
         """Default optional features should be enabled_unlocked (no config column)."""
         opt = next(o for o in options if o.name == "Admin Analytics")
-        assert opt.lifecycle_stage == "stable"
+        assert opt.lifecycle_stage == "optional"
         assert opt.prod_account_state == "enabled_unlocked"
         assert opt.prod_course_state == "N/A"
         assert opt.doc_url is not None
@@ -552,19 +552,19 @@ class TestParseCanonicalPageHtml:
     def test_default_optional_no_doc_url(self, options):
         """Comment Library has no link in name cell."""
         opt = next(o for o in options if o.name == "Comment Library")
-        assert opt.lifecycle_stage == "stable"
+        assert opt.lifecycle_stage == "optional"
         assert opt.prod_account_state == "enabled_unlocked"
         assert opt.doc_url is None
 
     # --- Feature Previews section ---
 
     def test_preview_count(self, options):
-        previews = [o for o in options if o.lifecycle_stage == "preview"]
+        previews = [o for o in options if o.lifecycle_stage == "feature_preview"]
         assert len(previews) == 5
 
     def test_preview_assignment_enhancements(self, options):
         opt = next(o for o in options if o.name == "Assignment Enhancements")
-        assert opt.lifecycle_stage == "preview"
+        assert opt.lifecycle_stage == "feature_preview"
         assert opt.prod_account_state == "disabled_unlocked"
         assert opt.doc_url is not None
         assert "assignment-enhancements-doc" in opt.doc_url
@@ -573,7 +573,7 @@ class TestParseCanonicalPageHtml:
 
     def test_preview_course_pacing(self, options):
         opt = next(o for o in options if o.name == "Course Pacing")
-        assert opt.lifecycle_stage == "preview"
+        assert opt.lifecycle_stage == "feature_preview"
         assert opt.prod_account_state == "N/A"
         assert opt.prod_course_state == "disabled"
         assert opt.user_group_url is not None
@@ -581,7 +581,7 @@ class TestParseCanonicalPageHtml:
     def test_preview_enhanced_rubrics_beta_prod_split(self, options):
         """Enhanced Rubrics has separate beta and prod configuration."""
         opt = next(o for o in options if o.name == "Enhanced Rubrics")
-        assert opt.lifecycle_stage == "preview"
+        assert opt.lifecycle_stage == "feature_preview"
         assert opt.beta_account_state == "enabled_unlocked"
         assert opt.beta_course_state == "enabled"
         assert opt.prod_account_state == "disabled_unlocked"
@@ -590,13 +590,13 @@ class TestParseCanonicalPageHtml:
 
     def test_preview_canvas_portfolio_lti(self, options):
         opt = next(o for o in options if o.name == "Canvas Portfolio")
-        assert opt.lifecycle_stage == "preview"
+        assert opt.lifecycle_stage == "feature_preview"
         assert opt.prod_account_state == "lti_required"
         assert opt.user_group_url is None  # empty user group cell
 
     def test_preview_discussion_summaries_locked(self, options):
         opt = next(o for o in options if o.name == "Discussion Summaries")
-        assert opt.lifecycle_stage == "preview"
+        assert opt.lifecycle_stage == "feature_preview"
         assert opt.prod_account_state == "disabled_locked"
         assert opt.user_group_url is not None
 
@@ -709,7 +709,7 @@ class TestParseCanonicalPageHtmlEdgeCases:
         """
         options = parse_canonical_page_html(html)
         assert len(options) == 1
-        assert options[0].lifecycle_stage == "pending"
+        assert options[0].lifecycle_stage == "future_enforcement"
 
 
 class TestExtractConfigTextFromCell:

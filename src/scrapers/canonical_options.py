@@ -34,10 +34,10 @@ CANONICAL_PAGE_URL = (
 
 # Section heading text -> lifecycle_stage mapping
 SECTION_LIFECYCLE_MAP: Dict[str, str] = {
-    "Pending Feature Options": "pending",
-    "Optional Features": "stable",
-    "Default Optional Features": "stable",
-    "Feature Previews": "preview",
+    "Pending Feature Options": "future_enforcement",
+    "Optional Features": "optional",
+    "Default Optional Features": "optional",
+    "Feature Previews": "feature_preview",
 }
 
 
@@ -47,7 +47,7 @@ class CanonicalOption:
 
     name: str
     description: str
-    lifecycle_stage: str  # 'preview' | 'stable' | 'pending'
+    lifecycle_stage: str  # 'feature_preview' | 'optional' | 'future_enforcement'
     prod_account_state: str = "N/A"
     prod_course_state: str = "N/A"
     beta_account_state: str = "N/A"

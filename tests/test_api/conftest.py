@@ -188,9 +188,9 @@ def populated_db(test_db):
 
         INSERT INTO feature_options (option_id, feature_id, canonical_name, name, lifecycle_stage, prod_account_state, prod_course_state, beta_date, production_date, description, meta_summary)
         VALUES
-            ('document_processor', 'assignments', 'Document Processor', 'Document Processing App', 'preview', 'disabled_unlocked', 'N/A', '2026-03-01', '2026-03-15', 'Enables document annotation', 'Feature is in preview. Available in beta March 1.'),
-            ('enhanced_filters', 'gradebook', 'Enhanced Gradebook Filters', 'Enhanced Filters', 'stable', 'disabled_unlocked', 'disabled', NULL, '2026-01-15', 'Additional filtering options', 'Feature is available and optional.'),
-            ('speedgrader_sort', 'speedgrader', 'Sort by Student Name', 'Sort by Name', 'stable', 'enabled_unlocked', 'N/A', NULL, '2025-12-01', 'Sort submissions alphabetically', 'Feature is fully released.');
+            ('document_processor', 'assignments', 'Document Processor', 'Document Processing App', 'feature_preview', 'disabled_unlocked', 'N/A', '2026-03-01', '2026-03-15', 'Enables document annotation', 'Feature is in preview. Available in beta March 1.'),
+            ('enhanced_filters', 'gradebook', 'Enhanced Gradebook Filters', 'Enhanced Filters', 'optional', 'disabled_unlocked', 'disabled', NULL, '2026-01-15', 'Additional filtering options', 'Feature is available and optional.'),
+            ('speedgrader_sort', 'speedgrader', 'Sort by Student Name', 'Sort by Name', 'optional', 'enabled_unlocked', 'N/A', NULL, '2025-12-01', 'Sort submissions alphabetically', 'Feature is fully released.');
 
         INSERT INTO content_items (source_id, url, title, content_type, summary, first_posted, published_date)
         VALUES

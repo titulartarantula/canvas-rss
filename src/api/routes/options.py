@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api", tags=["options"])
 
 @router.get("/options")
 def get_options(
-    lifecycle_stage: Optional[str] = Query(None, description="Filter by lifecycle_stage (preview, stable, pending)"),
+    lifecycle_stage: Optional[str] = Query(None, description="Filter by lifecycle_stage (feature_preview, optional, future_enforcement)"),
     feature: Optional[str] = Query(None, description="Filter by feature_id"),
     sort: Optional[Literal["updated", "alphabetical", "beta_date", "production_date"]] = Query("updated", description="Sort order"),
 ):

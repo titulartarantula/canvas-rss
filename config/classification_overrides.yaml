@@ -13,5 +13,8 @@ classification_overrides:
     # - "some_edge_case_option_id"
 
   # Force specific entries as feature_settings even if table has a canonical name
-  force_settings: []
-    # - "some_misleading_option_id"
+  force_settings:
+    - "document_processor"
+    - "accessibility_checker"
+    - "perform_dsr_exports_for_users"
+    - "lti_apps_page"

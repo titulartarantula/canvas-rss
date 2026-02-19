@@ -14,12 +14,12 @@ def test_get_options_list(client, populated_db):
     # Each option should have feature info and lifecycle_stage
     doc_processor = next(o for o in data["options"] if o["option_id"] == "document_processor")
     assert doc_processor["feature_id"] == "assignments"
-    assert doc_processor["lifecycle_stage"] == "preview"
+    assert doc_processor["lifecycle_stage"] == "feature_preview"
 
 
 def test_get_options_filtered_by_lifecycle_stage(client, populated_db):
     """Test filtering options by lifecycle_stage."""
-    response = client.get("/api/options?lifecycle_stage=preview")
+    response = client.get("/api/options?lifecycle_stage=feature_preview")
     assert response.status_code == 200
     data = response.json()
 
@@ -68,7 +68,7 @@ def test_get_option_detail(client, populated_db):
 
     assert data["option_id"] == "document_processor"
     assert data["canonical_name"] == "Document Processor"
-    assert data["lifecycle_stage"] == "preview"
+    assert data["lifecycle_stage"] == "feature_preview"
     assert data["feature"]["feature_id"] == "assignments"
     assert "announcements" in data
     assert "community_posts" in data

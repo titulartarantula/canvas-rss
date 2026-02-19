@@ -2288,12 +2288,12 @@ class TestClassifyReleaseFeatures:
 
         feature = Feature(
             category="Assignments",
-            name="Document Processing App",
-            anchor_id="document-processing-app",
+            name="Inline Grading Tools",
+            anchor_id="inline-grading-tools",
             added_date=None,
-            raw_content="<p>New document feature</p>",
+            raw_content="<p>New inline grading feature</p>",
             table_data=FeatureTableData(
-                canonical_name="Document Processor",
+                canonical_name="Inline Grading",
                 enable_location_account="Disabled/Unlocked",
             ),
             section="New Features",
@@ -2319,7 +2319,7 @@ class TestClassifyReleaseFeatures:
         is_new, anchors = classify_release_features(page, temp_db)
 
         # Should have created a feature_option (slugified from canonical_name)
-        option = temp_db.get_feature_option("document_processor")
+        option = temp_db.get_feature_option("inline_grading")
         assert option is not None
 
     def test_creates_setting_when_canonical_name_is_na(self, temp_db):
@@ -2488,7 +2488,7 @@ class TestClassifyDeployChanges:
         # Should have created a feature_option (slugified from canonical_name)
         option = temp_db.get_feature_option("enhanced_rubrics")
         assert option is not None
-        assert option["lifecycle_stage"] == "stable"
+        assert option["lifecycle_stage"] == "optional"
 
         # Should NOT have created a feature_setting
         setting = temp_db.get_feature_setting("enhanced_rubrics")

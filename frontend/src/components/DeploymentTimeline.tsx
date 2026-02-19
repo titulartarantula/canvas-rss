@@ -24,7 +24,7 @@ export default function DeploymentTimeline({
 
   stages.push({
     key: 'announced', label: 'Announced', date: firstSeen,
-    isActive: true, isComplete: !!firstSeen, isCurrent: normalizedStatus === 'pending',
+    isActive: true, isComplete: !!firstSeen, isCurrent: normalizedStatus === 'future_enforcement' || normalizedStatus === 'pending',
   })
   stages.push({
     key: 'beta', label: 'Beta', date: betaDate,
@@ -32,7 +32,7 @@ export default function DeploymentTimeline({
     isComplete: !!betaDate && betaDate <= today && normalizedStatus !== 'beta',
     isCurrent: normalizedStatus === 'beta',
   })
-  const isProdPhase = ['optional', 'default_on', 'preview'].includes(normalizedStatus)
+  const isProdPhase = ['optional', 'default_on', 'feature_preview', 'preview'].includes(normalizedStatus)
   stages.push({
     key: 'production', label: productionDate ? 'Production' : 'Optional', date: productionDate,
     isActive: !!productionDate || isProdPhase,

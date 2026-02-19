@@ -86,9 +86,9 @@ def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo") -> str:
         WHEN {fo_alias}.lifecycle_stage IS NOT NULL
              THEN {fo_alias}.lifecycle_stage
         WHEN COALESCE({fa_alias}.production_date, {fo_alias}.production_date) IS NOT NULL
-             AND COALESCE({fa_alias}.production_date, {fo_alias}.production_date) <= date('now') THEN 'stable'
+             AND COALESCE({fa_alias}.production_date, {fo_alias}.production_date) <= date('now') THEN 'optional'
         WHEN COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) IS NOT NULL
-             AND COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) <= date('now') THEN 'preview'
-        WHEN {fa_alias}.option_id IS NOT NULL THEN 'pending'
+             AND COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) <= date('now') THEN 'feature_preview'
+        WHEN {fa_alias}.option_id IS NOT NULL THEN 'future_enforcement'
         ELSE NULL
     END"""

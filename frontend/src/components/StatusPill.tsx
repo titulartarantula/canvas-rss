@@ -9,6 +9,23 @@ interface StatusPillProps {
 }
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  // New lifecycle_stage values for feature_options
+  future_enforcement: {
+    label: 'Future Enforcement',
+    color: 'text-amber-400',
+    bg: 'bg-amber-400/15',
+  },
+  feature_preview: {
+    label: 'Preview',
+    color: 'text-status-preview',
+    bg: 'bg-status-preview/15',
+  },
+  optional: {
+    label: 'Optional',
+    color: 'text-status-optional',
+    bg: 'bg-status-optional/15',
+  },
+  // Feature settings statuses (legacy aliases kept for feature_settings display)
   beta: {
     label: 'Beta',
     color: 'text-status-beta',
@@ -18,11 +35,6 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
     label: 'Preview',
     color: 'text-status-preview',
     bg: 'bg-status-preview/15',
-  },
-  optional: {
-    label: 'Optional',
-    color: 'text-status-optional',
-    bg: 'bg-status-optional/15',
   },
   default_on: {
     label: 'Default On',
@@ -58,8 +70,8 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
 
 export default function StatusPill({ status, size = 'sm', showDot = true }: StatusPillProps) {
   const config = useMemo(() => {
-    const normalizedStatus = status?.toLowerCase().replace(/\s+/g, '_') || 'pending'
-    return statusConfig[normalizedStatus] || statusConfig.pending
+    const normalizedStatus = status?.toLowerCase().replace(/\s+/g, '_') || 'optional'
+    return statusConfig[normalizedStatus] || statusConfig.optional
   }, [status])
 
   const sizeClasses = size === 'sm'

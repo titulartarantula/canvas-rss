@@ -24,9 +24,9 @@ const DEFAULT_OPTIONS: FilterOption[] = [
 
 export const LIFECYCLE_OPTIONS: FilterOption[] = [
   { value: '', label: 'All' },
-  { value: 'preview', label: 'Preview', color: 'bg-status-preview' },
-  { value: 'stable', label: 'Stable', color: 'bg-status-released' },
-  { value: 'pending', label: 'Pending', color: 'bg-amber-400' },
+  { value: 'feature_preview', label: 'Preview', color: 'bg-status-preview' },
+  { value: 'optional', label: 'Optional', color: 'bg-status-optional' },
+  { value: 'future_enforcement', label: 'Future Enforcement', color: 'bg-amber-400' },
 ]
 
 export default function StatusFilter({ value, onChange, options }: StatusFilterProps) {
