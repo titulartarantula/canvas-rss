@@ -55,3 +55,25 @@ def test_dashboard_upcoming_changes_sorted_by_date(client, populated_db):
     changes = data["upcoming_changes"]
     dates = [c["change_date"] for c in changes]
     assert dates == sorted(dates)
+
+
+def test_dashboard_announcements_include_setting_id(client, populated_db):
+    """Test dashboard announcements include setting_id field."""
+    import sqlite3
+    conn = sqlite3.connect(populated_db)
+    conn.execute("""
+        INSERT INTO feature_settings (setting_id, feature_id, name, status)
+        VALUES ('dash_setting', 'gradebook', 'Dashboard Setting', 'active')
+    """)
+    conn.execute("""
+        INSERT INTO feature_announcements (feature_id, setting_id, content_id, h4_title, section, category, description, announced_at)
+        VALUES ('gradebook', 'dash_setting', 'release_note_2026-02-21', 'Dashboard Setting', 'Bug Fixes', 'Gradebook', 'Fix', '2026-02-21 00:00:00')
+    """)
+    conn.commit()
+    conn.close()
+
+    response = client.get("/api/dashboard")
+    data = response.json()
+    all_announcements = data["release_note"]["announcements"]
+    setting_announcements = [a for a in all_announcements if a.get("setting_id")]
+    assert len(setting_announcements) >= 1

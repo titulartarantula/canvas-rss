@@ -63,3 +63,25 @@ def test_get_release_detail_not_found(client, populated_db):
     """Test 404 for non-existent release."""
     response = client.get("/api/releases/nonexistent")
     assert response.status_code == 404
+
+
+def test_release_detail_announcements_include_setting_id(client, populated_db):
+    """Test release detail announcements include setting_id field."""
+    import sqlite3
+    conn = sqlite3.connect(populated_db)
+    conn.execute("""
+        INSERT INTO feature_settings (setting_id, feature_id, name, status)
+        VALUES ('test_setting', 'gradebook', 'Gradebook Redesign', 'active')
+    """)
+    conn.execute("""
+        INSERT INTO feature_announcements (feature_id, setting_id, content_id, h4_title, section, category, description, announced_at)
+        VALUES ('gradebook', 'test_setting', 'deploy_note_2026-02-18', 'Gradebook Redesign', 'Bug Fixes', 'Gradebook', 'UI improvements', '2026-02-18 00:00:00')
+    """)
+    conn.commit()
+    conn.close()
+
+    response = client.get("/api/releases/deploy_note_2026-02-18")
+    data = response.json()
+    setting_announcements = [a for a in data["announcements"] if a.get("setting_id")]
+    assert len(setting_announcements) >= 1
+    assert setting_announcements[0]["setting_id"] == "test_setting"

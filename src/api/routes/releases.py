@@ -82,7 +82,7 @@ def get_release_detail(content_id: str):
         cursor.execute(f"""
             SELECT
                 fa.id, fa.h4_title, fa.anchor_id, fa.section, fa.category,
-                fa.description, fa.option_id,
+                fa.description, fa.option_id, fa.setting_id,
                 fa.enable_location_account, fa.enable_location_course,
                 COALESCE(fa.beta_date, fo.beta_date) as beta_date,
                 COALESCE(fa.production_date, fo.production_date) as production_date,

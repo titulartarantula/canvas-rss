@@ -24,6 +24,7 @@ def _get_announcements(cursor, content_id: str) -> list:
             fa.category,
             fa.description,
             fa.option_id,
+            fa.setting_id,
             COALESCE(fa.beta_date, fo.beta_date) as beta_date,
             COALESCE(fa.production_date, fo.production_date) as production_date,
             {announcement_status_sql()} as option_status
