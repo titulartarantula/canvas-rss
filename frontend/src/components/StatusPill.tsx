@@ -20,6 +20,17 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
     color: 'text-status-optional',
     bg: 'bg-status-optional/15',
   },
+  // Announcement category pills (type of thing, not lifecycle)
+  feature_option: {
+    label: 'Feature Option',
+    color: 'text-status-optional',
+    bg: 'bg-status-optional/15',
+  },
+  feature_setting: {
+    label: 'Feature Setting',
+    color: 'text-signal-cyan',
+    bg: 'bg-signal-cyan/15',
+  },
   // Feature settings statuses (legacy aliases kept for feature_settings display)
   beta: {
     label: 'Beta',

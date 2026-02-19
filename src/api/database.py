@@ -77,18 +77,23 @@ def compute_availability(beta_date: str | None, production_date: str | None) -> 
 
 
 def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo", fs_alias: str = "fs") -> str:
-    """Compute status for announcements joining feature_options and feature_settings.
+    """Compute announcement category: feature_option, feature_preview, or feature_setting.
+
+    The pill indicates WHAT TYPE of thing the announcement is about.
+    Beta/prod timing is already shown via date pills.
 
     Priority:
-    1. If linked to an option → use the option's lifecycle_stage
-    2. If linked to a setting → compute setting status from dates
-    3. Otherwise → NULL (unlinked announcement)
+    1. Option with optional lifecycle → 'feature_option'
+    2. Option with feature_preview lifecycle → 'feature_preview'
+    3. Setting → 'feature_setting'
+    4. Unlinked → 'feature_preview' (new/unstable features default to preview)
     """
-    setting_status = _computed_status(fs_alias, f"{fs_alias}.status", "active")
     return f"""CASE
+        WHEN {fo_alias}.lifecycle_stage = 'optional'
+             THEN 'feature_option'
         WHEN {fo_alias}.lifecycle_stage IS NOT NULL
-             THEN {fo_alias}.lifecycle_stage
+             THEN 'feature_preview'
         WHEN {fa_alias}.setting_id IS NOT NULL AND {fs_alias}.setting_id IS NOT NULL
-             THEN {setting_status}
-        ELSE NULL
+             THEN 'feature_setting'
+        ELSE 'feature_preview'
     END"""
