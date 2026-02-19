@@ -80,7 +80,6 @@ def generate_implementation_status(
         Human-readable implementation status string.
     """
     status_map = {
-        'future_enforcement': 'Not yet available',
         'feature_preview': 'In feature preview (beta)',
         'optional': 'Available, disabled by default',
         'default_on': 'Available, enabled by default',

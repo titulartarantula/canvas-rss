@@ -592,7 +592,8 @@ class TestFeatureOptionsTable:
         expected = {
             "option_id", "feature_id", "name", "canonical_name", "description",
             "summary", "meta_summary", "meta_summary_updated_at", "implementation_status",
-            "lifecycle_stage", "prod_account_state", "prod_course_state",
+            "lifecycle_stage", "will_be_enforced",
+            "prod_account_state", "prod_course_state",
             "beta_account_state", "beta_course_state", "source", "doc_url",
             "user_group_url",
             "beta_date", "production_date", "deprecation_date",
@@ -652,14 +653,14 @@ class TestFeatureOptionsTable:
         temp_db.upsert_feature_option("opt1", "gradebook", "Preview Option", "preview")
         temp_db.upsert_feature_option("opt2", "speedgrader", "Stable Option", "optional")  # maps to stable
         temp_db.upsert_feature_option("opt3", "assignments", "Released Option", "released")  # maps to stable
-        temp_db.upsert_feature_option("opt4", "modules", "Pending Option", "pending")
+        temp_db.upsert_feature_option("opt4", "modules", "Pending Option", lifecycle_stage="optional", will_be_enforced=True)
 
         active = temp_db.get_active_feature_options()
         option_ids = {o["option_id"] for o in active}
         assert "opt1" in option_ids  # feature_preview - included
         assert "opt2" not in option_ids  # optional - excluded
         assert "opt3" not in option_ids  # optional - excluded
-        assert "opt4" in option_ids  # future_enforcement - included
+        assert "opt4" in option_ids  # will_be_enforced - included
         # Should include feature_name from JOIN
         assert all("feature_name" in o for o in active)
 
@@ -1467,7 +1468,7 @@ def test_upsert_feature_option_canonical_overrides_release_notes(tmp_path):
     )
     cursor.execute("SELECT * FROM feature_options WHERE option_id = 'test_option'")
     row = dict(cursor.fetchone())
-    assert row['lifecycle_stage'] == 'future_enforcement'
+    assert row['lifecycle_stage'] == 'optional'
     assert row['source'] == 'release_notes'
 
     # Then: canonical page overwrites

@@ -24,7 +24,7 @@ export default function DeploymentTimeline({
 
   stages.push({
     key: 'announced', label: 'Announced', date: firstSeen,
-    isActive: true, isComplete: !!firstSeen, isCurrent: normalizedStatus === 'future_enforcement' || normalizedStatus === 'pending',
+    isActive: true, isComplete: !!firstSeen, isCurrent: normalizedStatus === 'pending',
   })
   stages.push({
     key: 'beta', label: 'Beta', date: betaDate,

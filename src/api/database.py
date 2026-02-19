@@ -89,6 +89,6 @@ def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo") -> str:
              AND COALESCE({fa_alias}.production_date, {fo_alias}.production_date) <= date('now') THEN 'optional'
         WHEN COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) IS NOT NULL
              AND COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) <= date('now') THEN 'feature_preview'
-        WHEN {fa_alias}.option_id IS NOT NULL THEN 'future_enforcement'
+        WHEN {fa_alias}.option_id IS NOT NULL THEN 'optional'
         ELSE NULL
     END"""

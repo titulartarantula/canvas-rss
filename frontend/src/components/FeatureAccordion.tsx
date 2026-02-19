@@ -154,6 +154,9 @@ function FeatureAccordionContent({ featureId, featureName }: { featureId: string
                 className="flex items-center gap-3 px-3 py-2 border-b border-zinc-800/30 last:border-b-0 hover:bg-surface-3/50 transition-colors group"
               >
                 <StatusPill status={option.lifecycle_stage} size="sm" showDot={false} />
+                {option.will_be_enforced && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 flex-shrink-0">Enforced</span>
+                )}
                 <span className="flex-1 text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors truncate">
                   {option.canonical_name || option.name}
                 </span>

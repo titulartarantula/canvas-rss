@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api", tags=["options"])
 
 @router.get("/options")
 def get_options(
-    lifecycle_stage: Optional[str] = Query(None, description="Filter by lifecycle_stage (feature_preview, optional, future_enforcement)"),
+    lifecycle_stage: Optional[str] = Query(None, description="Filter by lifecycle_stage (feature_preview, optional)"),
     feature: Optional[str] = Query(None, description="Filter by feature_id"),
     sort: Optional[Literal["updated", "alphabetical", "beta_date", "production_date"]] = Query("updated", description="Sort order"),
 ):
@@ -25,6 +25,7 @@ def get_options(
                 fo.name,
                 fo.description,
                 fo.lifecycle_stage,
+                fo.will_be_enforced,
                 fo.prod_account_state,
                 fo.prod_course_state,
                 fo.beta_account_state,
@@ -43,7 +44,9 @@ def get_options(
         """
         params = []
 
-        if lifecycle_stage:
+        if lifecycle_stage == 'will_be_enforced':
+            query += " AND fo.will_be_enforced = 1"
+        elif lifecycle_stage:
             query += " AND fo.lifecycle_stage = ?"
             params.append(lifecycle_stage)
 
@@ -78,7 +81,7 @@ def get_option_detail(option_id: str):
             SELECT
                 fo.option_id, fo.feature_id, fo.canonical_name, fo.name,
                 fo.description, fo.meta_summary,
-                fo.lifecycle_stage,
+                fo.lifecycle_stage, fo.will_be_enforced,
                 fo.prod_account_state, fo.prod_course_state,
                 fo.beta_account_state, fo.beta_course_state,
                 fo.beta_date, fo.production_date, fo.deprecation_date,
@@ -103,6 +106,7 @@ def get_option_detail(option_id: str):
             "description": option["description"],
             "meta_summary": option["meta_summary"],
             "lifecycle_stage": option["lifecycle_stage"],
+            "will_be_enforced": bool(option.get("will_be_enforced", 0)),
             "beta_date": option["beta_date"],
             "production_date": option["production_date"],
             "deprecation_date": option["deprecation_date"],

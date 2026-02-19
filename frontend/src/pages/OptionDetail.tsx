@@ -64,6 +64,9 @@ export default function OptionDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-title text-zinc-100">{displayName}</h1>
           <StatusPill status={data.lifecycle_stage} size="md" />
+          {data.will_be_enforced && (
+            <span className="text-xs px-2 py-0.5 rounded bg-amber-400/15 text-amber-400 font-medium">Will Be Enforced</span>
+          )}
         </div>
 
         {data.feature && (

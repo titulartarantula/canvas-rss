@@ -135,6 +135,7 @@ class Database:
                 meta_summary_updated_at TIMESTAMP,
                 implementation_status TEXT,
                 lifecycle_stage TEXT NOT NULL DEFAULT 'optional',
+                will_be_enforced BOOLEAN NOT NULL DEFAULT 0,
                 prod_account_state TEXT DEFAULT 'N/A',
                 prod_course_state TEXT DEFAULT 'N/A',
                 beta_account_state TEXT DEFAULT 'N/A',
@@ -418,10 +419,10 @@ class Database:
                 SET lifecycle_stage = 'feature_preview'
                 WHERE status = 'preview' AND (lifecycle_stage IN ('stable', 'optional') OR lifecycle_stage IS NULL)
             """)
-            # status='pending' → lifecycle_stage='future_enforcement'
+            # status='pending' → lifecycle_stage='optional' (will_be_enforced handled in later migration)
             cursor.execute("""
                 UPDATE feature_options
-                SET lifecycle_stage = 'future_enforcement'
+                SET lifecycle_stage = 'optional'
                 WHERE status = 'pending' AND (lifecycle_stage IN ('stable', 'optional') OR lifecycle_stage IS NULL)
             """)
             # All other statuses → lifecycle_stage='optional'
@@ -491,6 +492,7 @@ class Database:
                 meta_summary_updated_at TIMESTAMP,
                 implementation_status TEXT,
                 lifecycle_stage TEXT NOT NULL DEFAULT 'optional',
+                will_be_enforced BOOLEAN NOT NULL DEFAULT 0,
                 prod_account_state TEXT DEFAULT 'N/A',
                 prod_course_state TEXT DEFAULT 'N/A',
                 beta_account_state TEXT DEFAULT 'N/A',
@@ -652,52 +654,59 @@ class Database:
         conn.commit()
 
     def _migrate_lifecycle_stage_rename(self, conn):
-        """Rename lifecycle_stage values from old to new and clean up spurious options.
+        """Rename lifecycle_stage values from old to new, add will_be_enforced,
+        and clean up spurious options.
 
         Old -> New:
-          'pending' -> 'future_enforcement'
+          'pending' -> 'optional' with will_be_enforced=1
           'stable'  -> 'optional'
           'preview' -> 'feature_preview'
+          'future_enforcement' -> 'optional' with will_be_enforced=1
 
-        Also renames disambiguated option_ids that used old suffixes,
-        and deletes spurious feature options that don't exist on the canonical page.
+        Also merges duplicate New Quizzes rows and deletes spurious options.
         """
         cursor = conn.cursor()
 
-        # Check if migration is needed (any old values still exist?)
+        # Ensure will_be_enforced column exists
+        cursor.execute("PRAGMA table_info(feature_options)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if 'will_be_enforced' not in columns:
+            cursor.execute("ALTER TABLE feature_options ADD COLUMN will_be_enforced BOOLEAN NOT NULL DEFAULT 0")
+            conn.commit()
+
+        # Migrate old lifecycle_stage values
         cursor.execute("""
             SELECT COUNT(*) FROM feature_options
-            WHERE lifecycle_stage IN ('pending', 'stable', 'preview')
+            WHERE lifecycle_stage IN ('pending', 'stable', 'preview', 'future_enforcement')
         """)
         old_count = cursor.fetchone()[0]
 
         if old_count > 0:
-            # Rename lifecycle_stage values
-            cursor.execute("UPDATE feature_options SET lifecycle_stage = 'future_enforcement' WHERE lifecycle_stage = 'pending'")
+            # 'pending' and 'future_enforcement' -> 'optional' with will_be_enforced=1
+            cursor.execute("UPDATE feature_options SET lifecycle_stage = 'optional', will_be_enforced = 1 WHERE lifecycle_stage = 'pending'")
+            cursor.execute("UPDATE feature_options SET lifecycle_stage = 'optional', will_be_enforced = 1 WHERE lifecycle_stage = 'future_enforcement'")
             cursor.execute("UPDATE feature_options SET lifecycle_stage = 'optional' WHERE lifecycle_stage = 'stable'")
             cursor.execute("UPDATE feature_options SET lifecycle_stage = 'feature_preview' WHERE lifecycle_stage = 'preview'")
 
-        # Rename disambiguated option_ids that used old lifecycle suffixes
-        renames = [
-            ('new_quizzes_pending', 'new_quizzes_future_enforcement'),
-            ('new_quizzes_preview', 'new_quizzes_feature_preview'),
-        ]
-        for old_id, new_id in renames:
-            cursor.execute("SELECT 1 FROM feature_options WHERE option_id = ?", (old_id,))
-            if cursor.fetchone() is None:
-                continue
-            # Check if new_id already exists (avoid conflict)
-            cursor.execute("SELECT 1 FROM feature_options WHERE option_id = ?", (new_id,))
+        # Merge duplicate New Quizzes rows: new_quizzes_feature_preview into new_quizzes
+        # The canonical page lists New Quizzes in both Pending and Feature Previews sections.
+        # We keep one row (new_quizzes) with will_be_enforced=1 and lifecycle_stage='feature_preview'.
+        for dup_id in ('new_quizzes_pending', 'new_quizzes_preview', 'new_quizzes_future_enforcement', 'new_quizzes_feature_preview'):
+            cursor.execute("SELECT 1 FROM feature_options WHERE option_id = ?", (dup_id,))
             if cursor.fetchone() is not None:
-                # Merge: re-point FK refs from old_id to new_id, then delete old_id
-                cursor.execute("UPDATE feature_announcements SET option_id = ? WHERE option_id = ?", (new_id, old_id))
-                cursor.execute("UPDATE content_feature_refs SET feature_option_id = ? WHERE feature_option_id = ?", (new_id, old_id))
-                cursor.execute("DELETE FROM feature_options WHERE option_id = ?", (old_id,))
-            else:
-                # Rename: update FK refs and the option itself
-                cursor.execute("UPDATE feature_announcements SET option_id = ? WHERE option_id = ?", (new_id, old_id))
-                cursor.execute("UPDATE content_feature_refs SET feature_option_id = ? WHERE feature_option_id = ?", (new_id, old_id))
-                cursor.execute("UPDATE feature_options SET option_id = ? WHERE option_id = ?", (new_id, old_id))
+                # Re-point FK refs to the canonical new_quizzes row
+                cursor.execute("UPDATE feature_announcements SET option_id = 'new_quizzes' WHERE option_id = ?", (dup_id,))
+                cursor.execute("UPDATE content_feature_refs SET feature_option_id = 'new_quizzes' WHERE feature_option_id = ?", (dup_id,))
+                cursor.execute("DELETE FROM feature_options WHERE option_id = ?", (dup_id,))
+
+        # Ensure the canonical new_quizzes row has correct flags
+        cursor.execute("SELECT 1 FROM feature_options WHERE option_id = 'new_quizzes'")
+        if cursor.fetchone() is not None:
+            cursor.execute("""
+                UPDATE feature_options
+                SET will_be_enforced = 1, lifecycle_stage = 'feature_preview'
+                WHERE option_id = 'new_quizzes'
+            """)
 
         # Delete spurious feature options that came from release notes but don't exist
         # on the canonical page
@@ -1019,6 +1028,7 @@ class Database:
         first_announced: str = None,
         # New direct params (used by canonical scraper)
         lifecycle_stage: str = None,
+        will_be_enforced: bool = False,
         prod_account_state: str = None,
         prod_course_state: str = None,
         beta_account_state: str = None,
@@ -1065,7 +1075,7 @@ class Database:
             if status == 'preview':
                 lifecycle_stage = 'feature_preview'
             elif status == 'pending':
-                lifecycle_stage = 'future_enforcement'
+                lifecycle_stage = 'optional'
             else:
                 lifecycle_stage = 'optional'
 
@@ -1085,10 +1095,11 @@ class Database:
         cursor.execute("""
             INSERT INTO feature_options
                 (option_id, feature_id, name, canonical_name, summary, lifecycle_stage,
+                 will_be_enforced,
                  prod_account_state, prod_course_state, beta_account_state, beta_course_state,
                  source, doc_url, user_group_url, first_announced,
                  last_updated, first_seen, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(option_id) DO UPDATE SET
                 name = COALESCE(excluded.name, feature_options.name),
                 canonical_name = COALESCE(excluded.canonical_name, feature_options.canonical_name),
@@ -1097,6 +1108,11 @@ class Database:
                     WHEN excluded.source = 'canonical_page' THEN excluded.lifecycle_stage
                     WHEN feature_options.source = 'canonical_page' THEN feature_options.lifecycle_stage
                     ELSE excluded.lifecycle_stage
+                END,
+                will_be_enforced = CASE
+                    WHEN excluded.will_be_enforced = 1 THEN 1
+                    WHEN feature_options.will_be_enforced = 1 THEN 1
+                    ELSE 0
                 END,
                 prod_account_state = CASE
                     WHEN excluded.source = 'canonical_page' THEN excluded.prod_account_state
@@ -1128,6 +1144,7 @@ class Database:
                 last_seen = ?
         """, (
             option_id, feature_id, name, canonical_name, summary, lifecycle_stage,
+            1 if will_be_enforced else 0,
             prod_account_state, prod_course_state, beta_account_state, beta_course_state,
             source, doc_url, user_group_url, first_announced, now, now, now, now, now
         ))
@@ -1144,14 +1161,14 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def get_active_feature_options(self) -> List[dict]:
-        """Get all non-stable feature options (preview and pending)."""
+        """Get all non-stable feature options (preview and will-be-enforced)."""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             SELECT fo.*, f.name as feature_name
             FROM feature_options fo
             JOIN features f ON fo.feature_id = f.feature_id
-            WHERE fo.lifecycle_stage IN ('future_enforcement', 'feature_preview')
+            WHERE fo.lifecycle_stage = 'feature_preview' OR fo.will_be_enforced = 1
             ORDER BY fo.first_announced DESC
         """)
         return [dict(row) for row in cursor.fetchall()]

@@ -9,12 +9,7 @@ interface StatusPillProps {
 }
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  // New lifecycle_stage values for feature_options
-  future_enforcement: {
-    label: 'Future Enforcement',
-    color: 'text-amber-400',
-    bg: 'bg-amber-400/15',
-  },
+  // lifecycle_stage values for feature_options
   feature_preview: {
     label: 'Preview',
     color: 'text-status-preview',

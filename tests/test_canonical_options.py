@@ -459,12 +459,13 @@ class TestParseCanonicalPageHtml:
     # --- Pending Feature Options section ---
 
     def test_pending_count(self, options):
-        pending = [o for o in options if o.lifecycle_stage == "future_enforcement"]
+        pending = [o for o in options if o.will_be_enforced]
         assert len(pending) == 3
 
     def test_pending_disable_classic_quiz(self, options):
         opt = next(o for o in options if o.name == "Disable Classic Quiz Creation")
-        assert opt.lifecycle_stage == "future_enforcement"
+        assert opt.lifecycle_stage == "optional"
+        assert opt.will_be_enforced is True
         assert opt.prod_account_state == "disabled_unlocked"
         assert opt.prod_course_state == "N/A"
         assert opt.doc_url is None  # no link in name cell
@@ -473,7 +474,7 @@ class TestParseCanonicalPageHtml:
     def test_pending_new_quizzes_has_doc_url(self, options):
         opt = next(
             o for o in options
-            if o.name == "New Quizzes" and o.lifecycle_stage == "future_enforcement"
+            if o.name == "New Quizzes" and o.will_be_enforced
         )
         assert opt.doc_url is not None
         assert "new-quizzes-doc" in opt.doc_url
@@ -489,6 +490,7 @@ class TestParseCanonicalPageHtml:
         optional_stable = [
             o for o in options
             if o.lifecycle_stage == "optional"
+            and not o.will_be_enforced
             and o.name not in ("Admin Analytics", "Comment Library")  # default optional
         ]
         assert len(optional_stable) == 7
@@ -709,7 +711,8 @@ class TestParseCanonicalPageHtmlEdgeCases:
         """
         options = parse_canonical_page_html(html)
         assert len(options) == 1
-        assert options[0].lifecycle_stage == "future_enforcement"
+        assert options[0].lifecycle_stage == "optional"
+        assert options[0].will_be_enforced is True
 
 
 class TestExtractConfigTextFromCell:

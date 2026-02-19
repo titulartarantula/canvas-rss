@@ -69,6 +69,7 @@ def test_get_option_detail(client, populated_db):
     assert data["option_id"] == "document_processor"
     assert data["canonical_name"] == "Document Processor"
     assert data["lifecycle_stage"] == "feature_preview"
+    assert "will_be_enforced" in data
     assert data["feature"]["feature_id"] == "assignments"
     assert "announcements" in data
     assert "community_posts" in data

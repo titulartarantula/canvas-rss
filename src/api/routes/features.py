@@ -39,7 +39,7 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
                 COUNT(fo.option_id) as option_count,
                 (SELECT COUNT(*) FROM feature_settings fs WHERE fs.feature_id = f.feature_id) as setting_count,
                 SUM(CASE WHEN fo.lifecycle_stage = 'feature_preview' THEN 1 ELSE 0 END) as preview_count,
-                SUM(CASE WHEN fo.lifecycle_stage = 'future_enforcement' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN fo.will_be_enforced = 1 THEN 1 ELSE 0 END) as enforced_count,
                 SUM(CASE WHEN fo.lifecycle_stage = 'optional' THEN 1 ELSE 0 END) as optional_count
             FROM features f
             LEFT JOIN feature_options fo ON f.feature_id = fo.feature_id
@@ -61,8 +61,8 @@ def get_features(category: Optional[str] = Query(None, description="Filter by ca
             summaries = []
             if feature["preview_count"]:
                 summaries.append(f"{feature['preview_count']} in preview")
-            if feature["pending_count"]:
-                summaries.append(f"{feature['pending_count']} pending enforcement")
+            if feature["enforced_count"]:
+                summaries.append(f"{feature['enforced_count']} pending enforcement")
             if feature["optional_count"]:
                 summaries.append(f"{feature['optional_count']} optional")
             if not summaries and feature["option_count"]:

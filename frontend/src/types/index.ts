@@ -20,7 +20,8 @@ export interface FeatureOption {
   name: string;
   description: string | null;
   meta_summary: string | null;
-  lifecycle_stage: string;  // 'feature_preview' | 'optional' | 'future_enforcement'
+  lifecycle_stage: string;  // 'feature_preview' | 'optional'
+  will_be_enforced: boolean;
   prod_account_state: string;
   prod_course_state: string;
   beta_account_state: string;

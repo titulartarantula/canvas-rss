@@ -34,11 +34,14 @@ CANONICAL_PAGE_URL = (
 
 # Section heading text -> lifecycle_stage mapping
 SECTION_LIFECYCLE_MAP: Dict[str, str] = {
-    "Pending Feature Options": "future_enforcement",
+    "Pending Feature Options": "optional",
     "Optional Features": "optional",
     "Default Optional Features": "optional",
     "Feature Previews": "feature_preview",
 }
+
+# Sections where options will eventually be enforced by Canvas
+ENFORCEMENT_SECTIONS = {"Pending Feature Options"}
 
 
 @dataclass
@@ -47,7 +50,8 @@ class CanonicalOption:
 
     name: str
     description: str
-    lifecycle_stage: str  # 'feature_preview' | 'optional' | 'future_enforcement'
+    lifecycle_stage: str  # 'feature_preview' | 'optional'
+    will_be_enforced: bool = False
     prod_account_state: str = "N/A"
     prod_course_state: str = "N/A"
     beta_account_state: str = "N/A"
@@ -339,6 +343,7 @@ def _parse_table_row(
     lifecycle_stage: str,
     section_heading: str,
     column_headers: List[str],
+    will_be_enforced: bool = False,
 ) -> Optional[CanonicalOption]:
     """Parse a single table row into a CanonicalOption.
 
@@ -420,6 +425,7 @@ def _parse_table_row(
         name=name,
         description=description,
         lifecycle_stage=lifecycle_stage,
+        will_be_enforced=will_be_enforced,
         prod_account_state=config_result.prod_account_state,
         prod_course_state=config_result.prod_course_state,
         beta_account_state=config_result.beta_account_state,
@@ -484,10 +490,12 @@ def parse_canonical_page_html(html: str) -> List[CanonicalOption]:
             ]
 
         # Parse data rows (skip header row)
+        will_be_enforced = heading_text in ENFORCEMENT_SECTIONS
         rows = table.find_all("tr")[1:]
         for row in rows:
             option = _parse_table_row(
-                row, lifecycle_stage, heading_text, column_headers
+                row, lifecycle_stage, heading_text, column_headers,
+                will_be_enforced=will_be_enforced,
             )
             if option:
                 options.append(option)
@@ -664,9 +672,9 @@ def scrape_canonical_options(db: "Database") -> List[CanonicalOption]:
         return []
 
     # Upsert each option into the database
-    # Track seen slugs to disambiguate duplicates (e.g., "New Quizzes" appears
-    # in both Pending and Feature Previews sections)
-    seen_slugs: Dict[str, int] = {}
+    # Track seen slugs to merge duplicates (e.g., "New Quizzes" appears
+    # in both Pending and Feature Previews sections — merge will_be_enforced)
+    seen_slugs: Dict[str, CanonicalOption] = {}
     upserted = 0
     for option in options:
         option_id = _slugify(option.name)
@@ -675,13 +683,28 @@ def scrape_canonical_options(db: "Database") -> List[CanonicalOption]:
             continue
 
         if option_id in seen_slugs:
-            # Disambiguate with lifecycle stage suffix
-            option_id = f"{option_id}_{option.lifecycle_stage}"
+            # Merge: carry forward will_be_enforced from earlier occurrence,
+            # prefer feature_preview lifecycle over optional (more specific)
+            prev = seen_slugs[option_id]
+            merged_enforced = option.will_be_enforced or prev.will_be_enforced
+            merged_stage = 'feature_preview' if option.lifecycle_stage == 'feature_preview' or prev.lifecycle_stage == 'feature_preview' else option.lifecycle_stage
             logger.info(
-                "Disambiguated duplicate slug for '%s' -> '%s'",
-                option.name, option_id,
+                "Merging duplicate '%s': lifecycle=%s, will_be_enforced=%s",
+                option.name, merged_stage, merged_enforced,
             )
-        seen_slugs[option_id] = seen_slugs.get(option_id, 0) + 1
+            option = CanonicalOption(
+                name=option.name,
+                description=option.description or prev.description,
+                lifecycle_stage=merged_stage,
+                will_be_enforced=merged_enforced,
+                prod_account_state=option.prod_account_state if option.prod_account_state != 'N/A' else prev.prod_account_state,
+                prod_course_state=option.prod_course_state if option.prod_course_state != 'N/A' else prev.prod_course_state,
+                beta_account_state=option.beta_account_state if option.beta_account_state != 'N/A' else prev.beta_account_state,
+                beta_course_state=option.beta_course_state if option.beta_course_state != 'N/A' else prev.beta_course_state,
+                doc_url=option.doc_url or prev.doc_url,
+                user_group_url=option.user_group_url or prev.user_group_url,
+            )
+        seen_slugs[option_id] = option
 
         feature_id = _match_feature_id(option.name)
 
@@ -693,6 +716,7 @@ def scrape_canonical_options(db: "Database") -> List[CanonicalOption]:
                 canonical_name=option.name,
                 summary=option.description,
                 lifecycle_stage=option.lifecycle_stage,
+                will_be_enforced=option.will_be_enforced,
                 prod_account_state=option.prod_account_state,
                 prod_course_state=option.prod_course_state,
                 beta_account_state=option.beta_account_state,
