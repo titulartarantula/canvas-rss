@@ -9,7 +9,68 @@ export default function Glossary() {
       </header>
 
       <div className="space-y-10">
-        {/* Section 1: Lifecycle Stages */}
+        {/* Section 1: Announcement Categories */}
+        <Section title="Announcement Categories">
+          <div className="card p-5 space-y-4">
+            <p className="text-sm text-zinc-400 leading-relaxed">
+              Each announcement in a release or deploy note is categorised by what type of change it represents.
+              The pill appears next to every announcement on the dashboard and release detail pages.
+            </p>
+
+            <dl className="space-y-4">
+              <Definition
+                term="Setting"
+                color="text-signal-cyan"
+              >
+                A change linked to a known feature &mdash; either a feature setting or a feature option.
+                This is the default category for all announcements. Most release note entries describe
+                configuration changes, UI updates, or behavioural tweaks that map to tracked features.
+              </Definition>
+              <Definition
+                term="Option"
+                color="text-status-optional"
+              >
+                The announcement IS a canonical feature option &mdash; its title matches the option name
+                on the{' '}
+                <a href="https://community.instructure.com/en/kb/articles/531316-unknown" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-200">
+                  Feature Option Summary
+                </a>{' '}
+                page. Shown only when the option&apos;s lifecycle is <span className="font-mono text-zinc-300">optional</span>.
+              </Definition>
+              <Definition
+                term="Preview"
+                color="text-status-preview"
+              >
+                The announcement IS a canonical feature option in the{' '}
+                <span className="font-mono text-zinc-300">feature_preview</span> lifecycle stage. These are
+                early-access features with user groups for feedback, not yet graduated to optional.
+              </Definition>
+            </dl>
+
+            {/* How recategorisation works */}
+            <div className="pt-4 border-t border-zinc-800/50">
+              <p className="text-xs font-mono text-zinc-500 mb-3">How categorisation works</p>
+              <div className="text-sm text-zinc-400 leading-relaxed space-y-2">
+                <p>
+                  New announcements default to <span className="font-mono text-signal-cyan">Setting</span> because
+                  most are configuration changes not yet catalogued on the canonical list. When the scraper detects
+                  that an announcement&apos;s title matches a canonical option name, it sets{' '}
+                  <span className="font-mono text-zinc-300">is_canonical_option</span> and the pill automatically
+                  updates to <span className="font-mono text-status-optional">Option</span> or{' '}
+                  <span className="font-mono text-status-preview">Preview</span> based on the option&apos;s lifecycle.
+                </p>
+                <p>
+                  Announcements that <em>reference</em> a canonical option (e.g. &ldquo;Sub-account Apps &amp; Monitor
+                  Access&rdquo; referencing the LTI Apps-Monitor option) remain{' '}
+                  <span className="font-mono text-signal-cyan">Setting</span> because the announcement describes a
+                  separate change, not the option itself.
+                </p>
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* Section 2: Lifecycle Stages */}
         <Section title="Lifecycle Stages">
           <div className="card p-5 space-y-4">
             <p className="text-sm text-zinc-400 leading-relaxed">
