@@ -9,6 +9,8 @@ import Releases from './pages/Releases'
 import ReleaseDetail from './pages/ReleaseDetail'
 import AnnouncementDetail from './pages/AnnouncementDetail'
 import Glossary from './pages/Glossary'
+import Options from './pages/Options'
+import Settings from './pages/Settings'
 
 function App() {
   return (
@@ -17,7 +19,9 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="registry" element={<Registry />} />
         <Route path="features/:featureId" element={<FeatureDetail />} />
+        <Route path="options" element={<Options />} />
         <Route path="options/:optionId" element={<OptionDetail />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="settings/:settingId" element={<SettingDetail />} />
         <Route path="releases" element={<Releases />} />
         <Route path="releases/:contentId" element={<ReleaseDetail />} />
@@ -25,7 +29,6 @@ function App() {
         <Route path="glossary" element={<Glossary />} />
         {/* Redirects from old routes */}
         <Route path="features" element={<Navigate to="/registry" replace />} />
-        <Route path="options" element={<Navigate to="/registry" replace />} />
       </Route>
     </Routes>
   )

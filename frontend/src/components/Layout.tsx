@@ -9,8 +9,10 @@ export default function Layout() {
 
   const navLinks = [
     { path: '/', label: 'Dashboard' },
-    { path: '/registry', label: 'Feature Registry' },
-    { path: '/releases', label: 'Release History' },
+    { path: '/registry', label: 'Registry' },
+    { path: '/options', label: 'Options' },
+    { path: '/settings', label: 'Settings' },
+    { path: '/releases', label: 'Releases' },
     { path: '/glossary', label: 'Glossary' },
   ]
 
@@ -19,8 +21,6 @@ export default function Layout() {
     if (path === '/registry') {
       return location.pathname.startsWith('/registry')
         || location.pathname.startsWith('/features/')
-        || location.pathname.startsWith('/options/')
-        || location.pathname.startsWith('/settings/')
     }
     return location.pathname.startsWith(path)
   }
@@ -129,7 +129,7 @@ export default function Layout() {
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <span className="text-xs font-mono text-zinc-500">
-              canvas/tracker <span className="text-zinc-500">v2.0</span>
+              canvas/tracker <span className="text-zinc-500">v2.1</span>
             </span>
             <div className="flex items-center gap-4 text-xs font-mono text-zinc-500">
               <a

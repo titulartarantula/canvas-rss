@@ -12,25 +12,40 @@ export default function Glossary() {
         {/* Section 1: Lifecycle Stages */}
         <Section title="Lifecycle Stages">
           <div className="card p-5 space-y-4">
+            <p className="text-sm text-zinc-400 leading-relaxed">
+              Feature <strong className="text-zinc-300">options</strong> (admin toggles) progress through lifecycle stages.
+              Feature <strong className="text-zinc-300">settings</strong> (automatic changes) use date-based statuses instead.
+            </p>
+
+            <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 pt-2">
+              Feature Option Stages
+            </h3>
             <dl className="space-y-4">
               <Definition
                 term="Preview"
                 color="text-status-preview"
               >
-                In active development. Has user groups for feedback. Will eventually graduate to a later stage.
+                In active development. Has user groups for feedback. Will eventually graduate to Optional.
               </Definition>
               <Definition
-                term="Stable"
-                color="text-status-released"
+                term="Optional"
+                color="text-status-optional"
               >
-                Released and available for admin configuration. May be permanent. Includes both
-                &ldquo;Optional&rdquo; (default off) and &ldquo;Default Optional&rdquo; (default on) features.
+                Released and available for admin configuration. Admins can enable or disable at account or course level.
+                Most features stay here permanently.
               </Definition>
+            </dl>
+
+            <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 pt-2">
+              Enforcement
+            </h3>
+            <dl className="space-y-4">
               <Definition
-                term="Pending"
-                color="text-status-pending"
+                term="Will Be Enforced"
+                color="text-amber-400"
               >
-                Will be enforced for all users. Last stage before the feature option is removed
+                An optional feature that Instructure has flagged for future enforcement.
+                The toggle will eventually be removed and the feature enabled for everyone
                 (e.g., New Quizzes replacing Classic Quizzes).
               </Definition>
             </dl>
@@ -41,16 +56,34 @@ export default function Glossary() {
               <div className="flex items-center gap-2 flex-wrap text-sm font-mono">
                 <span className="px-2.5 py-1 rounded-md bg-status-preview/15 text-status-preview">Preview</span>
                 <Arrow />
-                <span className="px-2.5 py-1 rounded-md bg-status-released/15 text-status-released">Stable</span>
+                <span className="px-2.5 py-1 rounded-md bg-status-optional/15 text-status-optional">Optional</span>
                 <Arrow />
-                <span className="px-2.5 py-1 rounded-md bg-status-pending/15 text-status-pending">Pending</span>
+                <div className="flex items-center gap-1">
+                  <span className="px-2.5 py-1 rounded-md bg-status-optional/15 text-status-optional">Optional</span>
+                  <span className="px-1.5 py-0.5 text-xs rounded bg-amber-400/15 text-amber-400">Enforced</span>
+                </div>
                 <Arrow />
-                <span className="px-2.5 py-1 rounded-md bg-surface-3 text-zinc-500">Enforced (removed)</span>
+                <span className="px-2.5 py-1 rounded-md bg-surface-3 text-zinc-500">Removed</span>
               </div>
               <p className="mt-3 text-xs text-zinc-500">
-                Not all features follow every stage. Many stay stable permanently.
+                Not all features follow every stage. Many stay optional permanently.
               </p>
             </div>
+
+            <h3 className="text-xs font-mono font-medium uppercase tracking-widest text-zinc-500 pt-2">
+              Feature Setting Statuses
+            </h3>
+            <dl className="space-y-4">
+              <Definition term="Pending" color="text-status-pending">
+                Announced but neither beta nor production date has arrived.
+              </Definition>
+              <Definition term="Beta" color="text-status-beta">
+                Available on the beta environment for testing.
+              </Definition>
+              <Definition term="Released" color="text-status-released">
+                Production date has passed. Active in production for all users.
+              </Definition>
+            </dl>
           </div>
         </Section>
 
