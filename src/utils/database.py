@@ -338,6 +338,13 @@ class Database:
         except sqlite3.OperationalError:
             pass
 
+        # Migration: Add is_canonical_option to feature_announcements
+        try:
+            cursor.execute("ALTER TABLE feature_announcements ADD COLUMN is_canonical_option BOOLEAN DEFAULT 0")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         # Indexes for feature_announcements
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_feature ON feature_announcements(feature_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_announcements_option ON feature_announcements(option_id)")
@@ -1435,6 +1442,7 @@ class Database:
         affected_areas: List[str] = None,
         affects_ui: bool = None,
         added_date: str = None,
+        is_canonical_option: bool = False,
     ) -> int:
         """Insert a feature announcement (H4 entry from release/deploy notes).
 
@@ -1457,6 +1465,7 @@ class Database:
             affected_areas: List of affected Canvas areas.
             affects_ui: Does it affect user interface?
             added_date: From [Added YYYY-MM-DD] annotation.
+            is_canonical_option: True if h4_title matches the canonical option name.
 
         Returns:
             The ID of the inserted row.
@@ -1472,13 +1481,13 @@ class Database:
                 (feature_id, option_id, setting_id, content_id, h4_title, anchor_id, section, category,
                  raw_content, summary, enable_location_account, enable_location_course,
                  subaccount_config, account_course_setting, permissions, affected_areas,
-                 affects_ui, added_date, announced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 affects_ui, added_date, announced_at, is_canonical_option)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             feature_id, option_id, setting_id, content_id, h4_title, anchor_id, section, category,
             raw_content, summary, enable_location_account, enable_location_course,
             subaccount_config, account_course_setting, permissions, affected_areas_json,
-            affects_ui, added_date, announced_at
+            affects_ui, added_date, announced_at, is_canonical_option
         ))
 
         conn.commit()

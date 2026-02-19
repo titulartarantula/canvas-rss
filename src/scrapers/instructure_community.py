@@ -2411,6 +2411,15 @@ def classify_release_features(
                     mention_type='announces',
                 )
 
+        # Determine if this announcement IS the canonical option (title matches)
+        # Use full-length normalized comparison (not _slugify which truncates)
+        is_canonical_match = (
+            is_option
+            and canonical_name
+            and re.sub(r'[^a-z0-9]', '', feature.name.lower())
+                == re.sub(r'[^a-z0-9]', '', canonical_name.lower())
+        )
+
         # Insert feature announcement (H4 entry snapshot)
         table_data = feature.table_data
         db.insert_feature_announcement(
@@ -2420,6 +2429,7 @@ def classify_release_features(
             feature_id=feature_id,
             option_id=entity_id if is_option else None,
             setting_id=entity_id if not is_option else None,
+            is_canonical_option=is_canonical_match,
             anchor_id=feature.anchor_id,
             section=feature.section or "New Features",
             category=feature.category,
@@ -2621,6 +2631,15 @@ def classify_deploy_changes(
                     mention_type='announces',
                 )
 
+        # Determine if this announcement IS the canonical option (title matches)
+        # Use full-length normalized comparison (not _slugify which truncates)
+        is_canonical_match = (
+            is_option
+            and canonical_name
+            and re.sub(r'[^a-z0-9]', '', change.name.lower())
+                == re.sub(r'[^a-z0-9]', '', canonical_name.lower())
+        )
+
         # Insert feature announcement (H4 entry snapshot)
         table_data = change.table_data
         db.insert_feature_announcement(
@@ -2630,6 +2649,7 @@ def classify_deploy_changes(
             feature_id=feature_id,
             option_id=entity_id if is_option else None,
             setting_id=entity_id if not is_option else None,
+            is_canonical_option=is_canonical_match,
             anchor_id=change.anchor_id,
             section=change.section,
             category=change.category,

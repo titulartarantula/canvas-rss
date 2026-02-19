@@ -126,6 +126,7 @@ def test_db(tmp_path):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             beta_date DATE,
             production_date DATE,
+            is_canonical_option BOOLEAN DEFAULT 0,
             FOREIGN KEY (feature_id) REFERENCES features(feature_id),
             FOREIGN KEY (option_id) REFERENCES feature_options(option_id),
             FOREIGN KEY (setting_id) REFERENCES feature_settings(setting_id),

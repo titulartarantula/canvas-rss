@@ -77,20 +77,22 @@ def compute_availability(beta_date: str | None, production_date: str | None) -> 
 
 
 def announcement_status_sql(fa_alias: str = "fa", fs_alias: str = "fs", fo_alias: str = "fo", **_kwargs) -> str:
-    """Compute announcement category: setting or preview.
+    """Compute announcement category: option, preview, or setting.
 
-    Announcements linked to a known feature (option or setting) are
-    categorised as 'feature_setting'. Only truly unlinked announcements
-    are 'feature_preview'.
+    Three-tier classification based on canonical linkage:
+    1. is_canonical_option = true → use option lifecycle (option or preview)
+    2. Linked to feature_settings → setting
+    3. Everything else → setting (default; most are uncatalogued settings)
 
-    Categories:
-    - 'feature_setting': linked to a feature_settings or feature_options record
-    - 'feature_preview': not linked to any known feature
+    The is_canonical_option flag distinguishes announcements that ARE the
+    canonical option from those that merely reference one.
     """
     return f"""CASE
+        WHEN {fa_alias}.is_canonical_option = 1 AND {fo_alias}.lifecycle_stage = 'optional'
+             THEN 'feature_option'
+        WHEN {fa_alias}.is_canonical_option = 1 AND {fo_alias}.lifecycle_stage IS NOT NULL
+             THEN 'feature_preview'
         WHEN {fa_alias}.setting_id IS NOT NULL AND {fs_alias}.setting_id IS NOT NULL
              THEN 'feature_setting'
-        WHEN {fa_alias}.option_id IS NOT NULL AND {fo_alias}.option_id IS NOT NULL
-             THEN 'feature_setting'
-        ELSE 'feature_preview'
+        ELSE 'feature_setting'
     END"""
