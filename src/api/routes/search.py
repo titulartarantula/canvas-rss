@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["search"])
 def search(q: str = Query("", description="Search query")):
     """Search across features, options, and content."""
     if not q or len(q.strip()) < 2:
-        return {"features": [], "options": [], "content": []}
+        return {"features": [], "options": [], "settings": [], "content": []}
 
     search_term = f"%{q}%"
 
@@ -51,8 +51,23 @@ def search(q: str = Query("", description="Search query")):
         """, (search_term, search_term))
         content = rows_to_list(cursor.fetchall())
 
+        # Search settings
+        cursor.execute("""
+            SELECT
+                fs.setting_id, fs.name, fs.description,
+                fs.feature_id,
+                f.name as feature_name
+            FROM feature_settings fs
+            JOIN features f ON fs.feature_id = f.feature_id
+            WHERE fs.name LIKE ? OR fs.description LIKE ?
+            ORDER BY fs.name
+            LIMIT 10
+        """, (search_term, search_term))
+        settings = rows_to_list(cursor.fetchall())
+
         return {
             "features": features,
             "options": options,
+            "settings": settings,
             "content": content,
         }

@@ -45,3 +45,28 @@ def test_search_no_results(client, populated_db):
     assert data["features"] == []
     assert data["options"] == []
     assert data["content"] == []
+
+
+def test_search_returns_settings(client, populated_db):
+    """Test search returns settings key in response."""
+    response = client.get("/api/search?q=document")
+    assert response.status_code == 200
+    data = response.json()
+    assert "settings" in data
+
+
+def test_search_finds_settings_by_name(client, populated_db):
+    """Test search finds feature settings by name."""
+    import sqlite3
+    conn = sqlite3.connect(populated_db)
+    conn.execute("""
+        INSERT INTO feature_settings (setting_id, feature_id, name, description, status)
+        VALUES ('test_setting', 'assignments', 'Assignment Redesign', 'New assignment UI', 'active')
+    """)
+    conn.commit()
+    conn.close()
+
+    response = client.get("/api/search?q=Redesign")
+    data = response.json()
+    assert len(data["settings"]) >= 1
+    assert data["settings"][0]["setting_id"] == "test_setting"
