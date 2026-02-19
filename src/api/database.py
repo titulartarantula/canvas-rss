@@ -76,19 +76,19 @@ def compute_availability(beta_date: str | None, production_date: str | None) -> 
     return 'no_dates'
 
 
-def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo") -> str:
-    """Compute status for announcements that join to feature_options.
+def announcement_status_sql(fa_alias: str = "fa", fo_alias: str = "fo", fs_alias: str = "fs") -> str:
+    """Compute status for announcements joining feature_options and feature_settings.
 
-    Uses the option's lifecycle_stage directly, with date-based availability
-    as a fallback when no option is linked.
+    Priority:
+    1. If linked to an option → use the option's lifecycle_stage
+    2. If linked to a setting → compute setting status from dates
+    3. Otherwise → NULL (unlinked announcement)
     """
+    setting_status = _computed_status(fs_alias, f"{fs_alias}.status", "active")
     return f"""CASE
         WHEN {fo_alias}.lifecycle_stage IS NOT NULL
              THEN {fo_alias}.lifecycle_stage
-        WHEN COALESCE({fa_alias}.production_date, {fo_alias}.production_date) IS NOT NULL
-             AND COALESCE({fa_alias}.production_date, {fo_alias}.production_date) <= date('now') THEN 'optional'
-        WHEN COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) IS NOT NULL
-             AND COALESCE({fa_alias}.beta_date, {fo_alias}.beta_date) <= date('now') THEN 'feature_preview'
-        WHEN {fa_alias}.option_id IS NOT NULL THEN 'optional'
+        WHEN {fa_alias}.setting_id IS NOT NULL AND {fs_alias}.setting_id IS NOT NULL
+             THEN {setting_status}
         ELSE NULL
     END"""

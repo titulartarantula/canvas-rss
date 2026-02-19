@@ -30,6 +30,7 @@ def _get_announcements(cursor, content_id: str) -> list:
             {announcement_status_sql()} as option_status
         FROM feature_announcements fa
         LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
+        LEFT JOIN feature_settings fs ON fa.setting_id = fs.setting_id
         WHERE fa.content_id = ?
         ORDER BY fa.section, fa.category
     """, (content_id,))

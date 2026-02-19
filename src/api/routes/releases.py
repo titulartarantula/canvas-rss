@@ -89,6 +89,7 @@ def get_release_detail(content_id: str):
                 {announcement_status_sql()} as option_status
             FROM feature_announcements fa
             LEFT JOIN feature_options fo ON fa.option_id = fo.option_id
+            LEFT JOIN feature_settings fs ON fa.setting_id = fs.setting_id
             WHERE fa.content_id = ?
             ORDER BY fa.section, fa.category, fa.h4_title
         """, (content_id,))
@@ -119,7 +120,7 @@ def get_announcement_detail(announcement_id: int):
                 fa.enable_location_account, fa.enable_location_course,
                 COALESCE(fa.beta_date, fo.beta_date) as beta_date,
                 COALESCE(fa.production_date, fo.production_date) as production_date,
-                {announcement_status_sql()} as option_status,
+                {announcement_status_sql("fa", "fo", "fs")} as option_status,
                 fa.content_id,
                 ci.title as release_title,
                 ci.url as release_url,
