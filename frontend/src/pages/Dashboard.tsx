@@ -274,16 +274,14 @@ function AnnouncementsTable({
 function AnnouncementRow({ announcement }: { announcement: Announcement }) {
   return (
     <div className="data-row">
-      {/* Status */}
-      <div className="w-20 flex-shrink-0">
-        {announcement.option_status ? (
-          <StatusPill status={announcement.option_status} size="sm" showDot={false} />
-        ) : (
-          <span className="text-xs font-mono text-zinc-500">--</span>
-        )}
+      {/* Category */}
+      <div className="w-28 flex-shrink-0">
+        <span className="pill bg-surface-3 text-zinc-500">
+          {announcement.category || 'General'}
+        </span>
       </div>
 
-      {/* Title & Description */}
+      {/* Title, Description & Metadata */}
       <div className="flex-1 min-w-0">
         <Link
           to={`/announcements/${announcement.id}`}
@@ -294,12 +292,13 @@ function AnnouncementRow({ announcement }: { announcement: Announcement }) {
         {announcement.description && (
           <p className="text-xs text-zinc-500 mt-0.5 line-clamp-4">{announcement.description}</p>
         )}
-      </div>
-
-      {/* Dates */}
-      <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
-        <DatePill label="Beta" date={announcement.beta_date || null} variant="beta" />
-        <DatePill label="Prod" date={announcement.production_date || null} variant="prod" />
+        <div className="hidden sm:flex items-center gap-3 mt-1.5">
+          <DatePill label="Beta" date={announcement.beta_date || null} variant="beta" />
+          <DatePill label="Prod" date={announcement.production_date || null} variant="prod" />
+          {announcement.option_status && (
+            <StatusPill status={announcement.option_status} size="sm" showDot={false} />
+          )}
+        </div>
       </div>
     </div>
   )
