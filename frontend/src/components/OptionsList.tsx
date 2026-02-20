@@ -24,7 +24,7 @@ export default function OptionsList({ options, emptyMessage = 'No feature option
           <div className="flex-shrink-0 flex items-center gap-1">
             <StatusPill status={option.lifecycle_stage} size="sm" showDot={false} />
             {option.will_be_enforced && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400">Enforced</span>
+              <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400">Enforced</span>
             )}
           </div>
           <div className="flex-1 min-w-0">

@@ -60,7 +60,7 @@ export default function CategoryFilter({ value, onChange }: CategoryFilterProps)
           }
         `}
       >
-        <span className="truncate text-[13px]">{selectedCategory.label}</span>
+        <span className="truncate text-[0.8125rem]">{selectedCategory.label}</span>
         <ChevronIcon className={`w-3 h-3 text-zinc-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -71,7 +71,7 @@ export default function CategoryFilter({ value, onChange }: CategoryFilterProps)
               key={category.id}
               onClick={() => { onChange(category.id); setIsOpen(false) }}
               className={`
-                w-full px-3 py-2 text-left text-[13px] font-mono transition-colors
+                w-full px-3 py-2 text-left text-[0.8125rem] font-mono transition-colors
                 ${value === category.id
                   ? 'bg-surface-3 text-signal-blue'
                   : 'text-zinc-400 hover:bg-surface-3 hover:text-zinc-200'

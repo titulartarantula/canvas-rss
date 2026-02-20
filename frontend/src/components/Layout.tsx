@@ -67,7 +67,7 @@ export default function Layout() {
                   key={link.path}
                   to={link.path}
                   className={`
-                    px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors
+                    px-3 py-1.5 rounded-md text-[0.8125rem] font-medium transition-colors
                     ${isActive(link.path)
                       ? 'bg-zinc-800 text-white'
                       : 'text-zinc-500 hover:text-zinc-300'
@@ -85,7 +85,7 @@ export default function Layout() {
               className="
                 flex items-center gap-2 px-2.5 py-1.5 w-52
                 bg-surface-2 border border-zinc-800 rounded-md
-                text-[13px] text-zinc-500
+                text-[0.8125rem] text-zinc-500
                 hover:border-zinc-700 hover:text-zinc-400
                 transition-colors
               "
@@ -106,7 +106,7 @@ export default function Layout() {
               key={link.path}
               to={link.path}
               className={`
-                px-3 py-1 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors
+                px-3 py-1 rounded-md text-[0.8125rem] font-medium whitespace-nowrap transition-colors
                 ${isActive(link.path)
                   ? 'bg-zinc-800 text-white'
                   : 'text-zinc-500'

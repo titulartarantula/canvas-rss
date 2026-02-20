@@ -81,7 +81,7 @@ export default function StatusPill({ status, size = 'sm', showDot = true }: Stat
   }, [status])
 
   const sizeClasses = size === 'sm'
-    ? 'px-1.5 py-0.5 text-[11px] gap-1'
+    ? 'px-1.5 py-0.5 text-[0.6875rem] gap-1'
     : 'px-2.5 py-0.5 text-xs gap-1.5'
 
   return (
